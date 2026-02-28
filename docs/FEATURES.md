@@ -4,10 +4,10 @@
 
 ### Highlight-to-Popup (Step 1 — ChatGPT only)
 - Select any text inside a ChatGPT AI response to open a floating popup
-- Popup displays the highlighted text (truncated to 120 characters) in a blockquote and provides a text input for follow-up questions
+- Popup displays the highlighted text in a blockquote and provides an inline contenteditable input for follow-up questions with a send arrow (hover to pick Brief/Elaborate)
 - Popup positions itself centered below the selection; flips above if it would overflow the viewport; clamps horizontally to stay on screen
 - Dismisses on click outside, Escape key, or SPA navigation (route change)
-- Send button and Enter key submit the follow-up question through ChatGPT's real chat input
+- Send arrow with hover dropdown (Brief/Elaborate) submits the follow-up question through ChatGPT's real chat input
 - Dark mode support — automatically matches ChatGPT's theme
 
 ### Sentence Context Extraction (Step 1b)
@@ -39,11 +39,11 @@
 - Graceful error handling: logs to console if chat input or send button is not found
 
 ### Response Length Toggle (Step 2b)
-- Split send button: main area labeled "Regular" or "Brief" acts as the send button; small `▾` toggle opens a dropdown to switch modes
-- Default mode: **Regular** — appends an instruction to respond naturally and ignore any prior brevity requests from earlier messages
+- Both the initial question input and the edit question send use a hover dropdown with **Brief** and **Elaborate** options
+- Hovering the send arrow reveals the dropdown below; the user must pick a mode to send
 - **Brief** mode appends a one-time instruction to keep it to 2-3 sentences, explicitly scoped to this single response only
-- Mode persists across popups within the same page session; resets on page reload
-- Dropdown appears above the split button, themed via CSS variables for light/dark mode
+- **Elaborate** mode appends an instruction to respond at natural length, ignoring any prior brevity requests
+- Dropdown appears below the send arrow, themed via CSS variables for light/dark mode
 
 ### Response Capture & Hide Q&A (Step 3 — ChatGPT only)
 - After sending a follow-up question, the popup transitions to a loading state ("Waiting for response…")
@@ -92,16 +92,20 @@
 
 ### Storage Layer
 - Highlights and their Q&A chain metadata persist via `chrome.storage.local`
-- Each highlight stores: id, text, sentence, blockTypes, responseHTML, url, site, parentId, sourceTurnIndex, questionIndex, responseIndex, createdAt
+- Each highlight stores: id, text, sentence, blockTypes, responseHTML, url, site, parentId, sourceTurnIndex, questionIndex, responseIndex, color, createdAt
 - `saveHighlight()` accepts all fields in a single call — no separate `linkQA()` needed for new highlights
 - `updateHighlightResponseHTML()` updates a parent's `responseHTML` in storage after a chained highlight is captured, so chained spans persist across page reload
 - Supports child/descendant queries for chained popups
+- `updateHighlightColor()` persists a highlight's chosen color
+- `countDescendants()` counts all chained Q&As under a highlight (for delete confirmation)
 - Cascade delete removes a highlight and all its descendants
+- `jumpreturn_deleted_turns` storage key (per-URL) tracks turn indices that should stay hidden after deletion
 
 ### Persistence Across Reload (Step 4)
 - On page load, `restoreHighlights()` queries storage for the current conversation URL
 - Polls the DOM for conversation turns to appear (ChatGPT renders asynchronously), up to 15 seconds
-- For each saved highlight: finds the source turn by `sourceTurnIndex`, locates the text via `findTextRange()`, wraps it in highlight spans using `highlightRange()`, and hides the Q&A turns
+- For each saved highlight: finds the source turn by `sourceTurnIndex`, locates the text via `findTextRange()`, wraps it in highlight spans using `highlightRange()`
+- All Q&A turns (level-1 and chained, all versions) are hidden from the main chat on reload
 - Restored highlights are fully interactive — clicking re-opens the read-only popup with the saved AI response
 - SPA navigation cleans up old highlights and restores for the new conversation after React re-renders
 - Highlights that can't be matched (e.g., conversation was edited) are silently skipped
@@ -109,7 +113,7 @@
 ### Chained Popups (Step 4b)
 - Highlighting text inside a popup's response area spawns a new child popup **next to the parent** — both popups visible simultaneously
 - The selected text in the parent popup's response is wrapped in source highlight spans (same `highlightRange()` as the main chat)
-- The chained popup shows the selected text as context in a blockquote, with an input field and split send button
+- The chained popup shows the selected text as context in a blockquote, with a contenteditable input and send arrow
 - Chained questions are injected into the same ChatGPT thread, so the AI retains full context from the entire conversation
 - After response capture, highlight spans in the parent response become clickable (`jr-source-highlight-done`) — clicking reopens the chained popup
 - Popup stack: Escape peels off the topmost popup (returning to parent), click outside closes the entire chain
@@ -140,11 +144,66 @@
 - Tables have collapsed borders, themed header backgrounds, and consistent cell padding
 - Links use the accent color with underline; images are constrained to `max-width: 100%`
 
+### Streaming Response in Popup (Step 6)
+- While the AI is generating a response, the popup streams partial content in real time instead of showing a static "Waiting for response…" message
+- The response turn is hidden from the main chat immediately when detected; a `MutationObserver` on the response turn fires on every DOM change — the same events that drive ChatGPT's own rendering — so the popup updates at exactly the same speed
+- Updates are coalesced via `requestAnimationFrame` (one sync per frame) and use `cloneNode` + `replaceChildren` instead of `innerHTML` to avoid flicker
+- The response area auto-scrolls to the bottom during streaming so users can follow along as new content appears
+- Works for both level-1 popups and chained popups
+- Works with detached popups: if the user dismisses the popup during generation, the observer keeps running in the background; reopening the highlight shows the current partial response and continues streaming
+- On timeout, any partial streaming content is replaced with the "Response timed out." message and hidden turns are unhidden
+
+### Popup Anchor Arrow (Step 5c)
+- Each popup has a small CSS triangle arrow on its edge pointing toward the source highlight it belongs to
+- Arrow sits on the top edge when the popup is below the highlight (up-pointing), or bottom edge when above (down-pointing)
+- Arrow position tracks the horizontal center of the source highlight, clamped within the popup's border-radius
+- Two-layer border trick: outer pseudo-element in `--jr-border` color, inner in `--jr-bg` — matches the popup's border and background
+- Arrow updates automatically on popup position, window resize, parent scroll, and drag-to-resize
+- Works for level-1 popups, completed popups, and chained popups in both light and dark mode
+
+### Show Question in Popup (Step 5d)
+- After a response is captured, the user's follow-up question is displayed inside the popup between the context blockquote and the AI response
+- Styled with a subtle background (`--jr-highlight-bg`), 14px font, medium weight — visually distinct from both the context quote and the response text
+- The question appears immediately after sending (before the response arrives), so the user knows what they asked
+- Persisted in `chrome.storage.local` via the `question` field on each highlight entry
+- Shows on popup reopen and after page reload for both regular and chained popups
+
+### Edit Question & Response Versions (Step 5e)
+- Completed popups show a pencil icon and a send arrow next to the question text
+- Clicking the pencil toggles edit mode: the question text becomes editable in place (contenteditable) with a subtle underline, and the pencil turns blue
+- Clicking the pencil again exits edit mode and discards any changes (restores original text)
+- A send arrow appears during edit mode, greyed out until the text actually changes from the original
+- Hovering the send arrow reveals a Brief/Elaborate dropdown (same as initial question); Escape cancels edit mode
+- On send: the new question is injected into the chat thread, the response is replaced with loading/streaming for the new response
+- Both old and new responses are kept as **versions** — a version nav bar (`◀ 1 / 2 ▶`) appears when multiple versions exist
+- Clicking version nav arrows switches the displayed question text and response HTML
+- All versions' Q&A turns stay hidden in the main chat (both on page and after reload)
+- Storage: `versions` array and `activeVersion` index on each highlight; backward compatible with single-version highlights
+- Dismissing the popup during an edit response detaches (keeps polling), same as new popups
+- Works for both level-1 and chained popups
+
+### Highlight Toolbar — Color Picker & Delete (Step 7a)
+- A floating pill-shaped toolbar appears near the highlighted text on the opposite side from the popup (popup below → toolbar above, and vice versa)
+- Contains 5 color swatches (blue, yellow, green, pink, purple) and a trash icon
+- Clicking a swatch immediately changes the highlight's background color on the page and in the popup blockquote, and persists the color in storage
+- Active swatch is indicated by a border ring matching the text color
+- Trash icon opens a confirmation overlay inside the popup showing how many chained follow-ups will also be deleted
+- On confirm: highlight spans are unwrapped, Q&A turns stay hidden (not returned to chat), all descendants are cascade-deleted from storage, popup closes
+- Deleted turns persist as hidden across page reload via `jumpreturn_deleted_turns` storage key (per-URL)
+- On cancel: popup returns to its normal state
+- Highlight colors persist across page reload — restored highlights use their saved color
+- The toolbar only appears on completed highlights, not on new/in-progress popups
+- Works in both light and dark mode
+
+### Highlight Hover & Active States (Step 7b)
+- Completed highlights darken on mouse hover via `:hover` pseudo-class with a smooth 0.12s transition
+- When a highlight's popup is open, the highlight gets a `.jr-source-highlight-active` class with an even darker background
+- Active state overrides hover so the color stays consistent while the popup is open
+- Works for all 5 highlight colors (blue, yellow, green, pink, purple) plus the default blue
+- `JR.syncHighlightActive(hlId)` toggles the active class — called on popup open, close, and response capture
+- Works for both level-1 highlights in the chat and chained highlights inside popup responses
+- Light and dark mode have independently tuned alpha values
+
 ## Planned
-- **Popup anchor arrow** (Step 5c) — CSS triangle on the popup border pointing at the source highlight
-- **Show question in popup** (Step 5d) — display the user's follow-up question between the context blockquote and the AI response
-- **Delete highlight** (Step 6a) — remove a highlight and its Q&A from JR's view (messages stay in ChatGPT's history)
-- **Highlight hover & active states** (Step 6b) — darken highlight on hover; distinct color when popup is open
-- **Edit follow-up question** (Step 6c) — revise a question and re-send it, replacing the old response
-- **Highlight navigation arrows** (Step 6d) — jump between highlights in the chat (level-1) or within a popup (level-2)
-- **Multi-site support** (Step 7) — extend selectors and injection logic for Claude, Gemini, and Microsoft Copilot
+- **Highlight navigation arrows** (Step 7d) — jump between highlights in the chat (level-1) or within a popup (level-2)
+- **Multi-site support** (Step 8) — extend selectors and injection logic for Claude, Gemini, and Microsoft Copilot

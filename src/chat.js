@@ -1,0 +1,592 @@
+// chat.js — Chat injection, response capture, and scroll locking for Jump Return
+(function () {
+  "use strict";
+
+  var S = JR.SELECTORS;
+  var st = JR.state;
+
+  // --- Chat injection ---
+
+  JR.findSendButton = function () {
+    var btn = document.querySelector(S.sendButton);
+    if (btn) return btn;
+    btn = document.querySelector('button[aria-label="Send prompt"]');
+    if (btn) return btn;
+    btn = document.querySelector('form button[type="submit"]');
+    return btn || null;
+  };
+
+  JR.injectAndSend = function (message) {
+    var chatInput = document.querySelector(S.chatInput);
+    if (!chatInput) {
+      console.error("[Jump Return] Chat input not found");
+      return;
+    }
+
+    chatInput.focus({ preventScroll: true });
+
+    var dt = new DataTransfer();
+    dt.setData("text/plain", message);
+    chatInput.dispatchEvent(new ClipboardEvent("paste", {
+      clipboardData: dt,
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    var attempts = 0;
+    function trySend() {
+      var sendBtn = JR.findSendButton();
+      if (sendBtn && !sendBtn.disabled) {
+        sendBtn.click();
+        return;
+      }
+      attempts++;
+      if (attempts < 20) {
+        setTimeout(trySend, 150);
+      } else {
+        console.error(
+          "[Jump Return] Send button not found or disabled after retries.",
+          "Button found:", !!sendBtn,
+          "Input text:", chatInput.textContent.slice(0, 50)
+        );
+      }
+    }
+    requestAnimationFrame(trySend);
+  };
+
+  // --- Response capture ---
+
+  /**
+   * Display the AI response content inside the popup.
+   * Reuses an existing .jr-popup-response div if streaming already created one.
+   */
+  JR.showResponseInPopup = function (popup, responseTurn) {
+    var loading = popup.querySelector(".jr-popup-loading");
+    if (loading) loading.remove();
+
+    var responseDiv = popup.querySelector(".jr-popup-response");
+    if (!responseDiv) {
+      responseDiv = document.createElement("div");
+      responseDiv.className = "jr-popup-response";
+      popup.appendChild(responseDiv);
+    }
+
+    var markdown = responseTurn.querySelector(S.responseContent);
+    if (markdown) {
+      responseDiv.innerHTML = markdown.innerHTML;
+    } else {
+      var text = responseTurn.textContent || "";
+      text = text.replace(JR.AI_LABEL_TEXT, "").trim();
+      responseDiv.textContent = text;
+    }
+  };
+
+  /**
+   * Block programmatic auto-scrolling on a container. Returns an unlock function.
+   */
+  JR.lockScroll = function (container, anchorEl) {
+    var savedTop = container.scrollTop;
+    var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+    var userScrolling = false;
+    var wheelTimer = null;
+    var rafId = null;
+
+    function markUser() {
+      userScrolling = true;
+      if (wheelTimer) clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(function () { userScrolling = false; }, 800);
+    }
+
+    function addListeners(el) {
+      el.addEventListener("wheel", markUser, { passive: true });
+      el.addEventListener("touchstart", markUser, { passive: true });
+      el.addEventListener("touchend", markUser, { passive: true });
+    }
+    function removeListeners(el) {
+      el.removeEventListener("wheel", markUser);
+      el.removeEventListener("touchstart", markUser);
+      el.removeEventListener("touchend", markUser);
+    }
+
+    function enforce() {
+      if (!container.isConnected && anchorEl && anchorEl.isConnected) {
+        removeListeners(container);
+        container.scrollTo = origScrollTo;
+        container.scrollBy = origScrollBy;
+        container = JR.getScrollParent(anchorEl);
+        savedTop = container.scrollTop;
+        origScrollTo = container.scrollTo;
+        origScrollBy = container.scrollBy;
+        patchScroll();
+        addListeners(container);
+      }
+      if (!container.isConnected) return;
+
+      if (userScrolling) {
+        savedTop = container.scrollTop;
+        if (anchorEl && anchorEl.isConnected) {
+          savedAnchorY = anchorEl.getBoundingClientRect().top;
+        }
+      } else {
+        if (anchorEl && anchorEl.isConnected && savedAnchorY !== null) {
+          var currentY = anchorEl.getBoundingClientRect().top;
+          var drift = currentY - savedAnchorY;
+          if (Math.abs(drift) > 1) {
+            container.scrollTop += drift;
+            savedTop = container.scrollTop;
+          }
+        } else if (container.scrollTop !== savedTop) {
+          container.scrollTop = savedTop;
+        }
+      }
+      rafId = requestAnimationFrame(enforce);
+    }
+    rafId = requestAnimationFrame(enforce);
+
+    var origScrollTo = container.scrollTo;
+    var origScrollBy = container.scrollBy;
+    function patchScroll() {
+      container.scrollTo = function () {
+        if (userScrolling) {
+          origScrollTo.apply(container, arguments);
+          savedTop = container.scrollTop;
+        }
+      };
+      container.scrollBy = function () {
+        if (userScrolling) {
+          origScrollBy.apply(container, arguments);
+          savedTop = container.scrollTop;
+        }
+      };
+    }
+    patchScroll();
+    addListeners(container);
+
+    return function unlock() {
+      if (rafId) cancelAnimationFrame(rafId);
+      removeListeners(container);
+      container.scrollTo = origScrollTo;
+      container.scrollBy = origScrollBy;
+      if (wheelTimer) clearTimeout(wheelTimer);
+    };
+  };
+
+  JR.waitForResponse = function (popup, turnsBefore, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts) {
+    var startTime = Date.now();
+    var timeoutMs = 100000; // 100 seconds
+    var timerId = null;
+    var questionTurn = null;
+    var responseTurn = null;
+    var cancelled = false;
+    var detached = false;
+    var detachedSpans = null;
+    var detachedHlId = editOpts ? editOpts.hlId : null;
+    var streamObserver = null;
+    var streamRafId = null;
+    var streamDirty = false;
+
+    function unhideTurns() {
+      if (questionTurn) questionTurn.classList.remove("jr-hidden");
+      if (responseTurn) responseTurn.classList.remove("jr-hidden");
+    }
+
+    function cleanup() {
+      if (streamObserver) {
+        streamObserver.disconnect();
+        streamObserver = null;
+      }
+      if (streamRafId) {
+        cancelAnimationFrame(streamRafId);
+        streamRafId = null;
+      }
+      if (unlockScroll) unlockScroll();
+    }
+
+    /**
+     * Find the popup that should receive streaming updates.
+     */
+    function getStreamTarget() {
+      if (!detached && popup && popup.isConnected) return popup;
+      if (detached && detachedHlId && st.activePopup && st.activePopup.isConnected) {
+        if (st.activeSourceHighlights.length > 0 &&
+            st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id") === detachedHlId) {
+          return st.activePopup;
+        }
+      }
+      return null;
+    }
+
+    /**
+     * Clone current response content into the popup using cloneNode
+     * instead of innerHTML to avoid flicker.
+     */
+    function syncStreamContent() {
+      streamDirty = false;
+      streamRafId = null;
+
+      var markdown = responseTurn.querySelector(S.responseContent);
+      if (!markdown) return;
+
+      var targetPopup = getStreamTarget();
+      if (!targetPopup) return;
+
+      // Remove loading div if still present
+      var loadingEl = targetPopup.querySelector(".jr-popup-loading");
+      if (loadingEl) loadingEl.remove();
+
+      // Create or reuse the response div
+      var responseDiv = targetPopup.querySelector(".jr-popup-response");
+      var isNew = false;
+      if (!responseDiv) {
+        responseDiv = document.createElement("div");
+        responseDiv.className = "jr-popup-response";
+        targetPopup.appendChild(responseDiv);
+        isNew = true;
+      }
+
+      // Clone children from source — no innerHTML destruction/rebuild
+      var cloned = markdown.cloneNode(true);
+      var nodes = [];
+      while (cloned.firstChild) nodes.push(cloned.removeChild(cloned.firstChild));
+      responseDiv.replaceChildren.apply(responseDiv, nodes);
+
+      // Auto-scroll to bottom during streaming
+      responseDiv.scrollTop = responseDiv.scrollHeight;
+
+      if (isNew) JR.repositionPopup();
+    }
+
+    /**
+     * MutationObserver callback — coalesces into one sync per frame.
+     */
+    function onStreamMutation() {
+      if (streamDirty) return;
+      streamDirty = true;
+      streamRafId = requestAnimationFrame(syncStreamContent);
+    }
+
+    /**
+     * Attach a MutationObserver to the response turn so the popup
+     * updates at the same speed ChatGPT renders tokens.
+     */
+    function startStreaming() {
+      responseTurn.classList.add("jr-hidden");
+      syncStreamContent();
+      streamObserver = new MutationObserver(onStreamMutation);
+      streamObserver.observe(responseTurn, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+
+    st.cancelResponseWatch = function (detachMode) {
+      if (detachMode) {
+        detachedSpans = st.activeSourceHighlights.slice();
+        detached = true;
+
+        if (editOpts) {
+          // Edit mode detach — spans and entry already exist
+          // detachedHlId already set from editOpts.hlId
+          // Keep observer running — streaming continues in background
+          if (unlockScroll) unlockScroll();
+          st.cancelResponseWatch = null;
+          return;
+        }
+
+        detachedHlId = crypto.randomUUID();
+        var sourceArticle = detachedSpans[0].closest(S.aiTurn);
+        var contentContainer = sourceArticle ? sourceArticle.parentElement : document.body;
+        for (var k = 0; k < detachedSpans.length; k++) {
+          detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
+          detachedSpans[k].classList.add("jr-source-highlight-done");
+        }
+        st.completedHighlights.set(detachedHlId, {
+          spans: detachedSpans.slice(),
+          responseHTML: null,
+          text: text,
+          sentence: sentence,
+          blockTypes: blockTypes,
+          question: question || null,
+          contentContainer: contentContainer,
+          parentId: parentId || null,
+        });
+
+        // Keep observer running — streaming continues in background
+        if (unlockScroll) unlockScroll();
+        st.cancelResponseWatch = null;
+        return;
+      }
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+      cleanup();
+      unhideTurns();
+    };
+
+    function captureResponse() {
+      var spans = detached ? detachedSpans : st.activeSourceHighlights;
+
+      // Stop streaming before final capture
+      if (streamObserver) {
+        streamObserver.disconnect();
+        streamObserver = null;
+      }
+      if (streamRafId) {
+        cancelAnimationFrame(streamRafId);
+        streamRafId = null;
+      }
+
+      responseTurn.classList.add("jr-hidden");
+
+      // --- Edit mode: add version instead of creating new highlight ---
+      if (editOpts) {
+        var hlId = editOpts.hlId;
+
+        var responseHTML = null;
+        var markdown = responseTurn.querySelector(S.responseContent);
+        if (markdown) responseHTML = markdown.innerHTML;
+        cleanup();
+
+        var qNum = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
+        var rNum = JR.getTurnNumber(responseTurn);
+
+        var versionObj = {
+          question: question,
+          responseHTML: responseHTML,
+          questionIndex: qNum,
+          responseIndex: rNum,
+        };
+
+        // Persist new version to storage
+        addHighlightVersion(hlId, versionObj);
+
+        // Update in-memory entry
+        var memEntry = st.completedHighlights.get(hlId);
+        if (memEntry) {
+          if (!memEntry.versions) {
+            memEntry.versions = [{
+              question: memEntry.question,
+              responseHTML: memEntry.responseHTML,
+            }];
+          }
+          memEntry.versions.push({ question: question, responseHTML: responseHTML });
+          memEntry.activeVersion = memEntry.versions.length - 1;
+          memEntry.question = question;
+          memEntry.responseHTML = responseHTML;
+        }
+
+        // Rebuild popup UI if it's open for this highlight
+        if (!detached && popup && popup.isConnected) {
+          JR.rebuildPopupAfterEdit(popup, hlId);
+        } else if (detached && st.activePopup && st.activeSourceHighlights.length > 0 &&
+                   st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id") === hlId) {
+          JR.rebuildPopupAfterEdit(st.activePopup, hlId);
+        }
+
+        st.activeHighlightId = hlId;
+        JR.syncHighlightActive(hlId);
+        st.cancelResponseWatch = null;
+        return;
+      }
+
+      // --- Normal (non-edit) capture ---
+      var responseHTML = null;
+      if (detached) {
+        var markdown2 = responseTurn.querySelector(S.responseContent);
+        if (markdown2) responseHTML = markdown2.innerHTML;
+        cleanup();
+      } else {
+        JR.repositionPopup();
+        JR.showResponseInPopup(popup, responseTurn);
+        cleanup();
+        JR.repositionPopup();
+        var responseDiv = popup.querySelector(".jr-popup-response");
+        if (responseDiv) responseHTML = responseDiv.innerHTML;
+      }
+
+      var hlId2;
+
+      if (detached) {
+        hlId2 = detachedHlId;
+        var entry = st.completedHighlights.get(hlId2);
+        if (entry) entry.responseHTML = responseHTML;
+
+        if (st.activePopup && st.activeSourceHighlights.length > 0 &&
+            st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id") === hlId2) {
+          var loadingEl = st.activePopup.querySelector(".jr-popup-loading");
+          if (loadingEl) loadingEl.remove();
+          var respDiv = st.activePopup.querySelector(".jr-popup-response");
+          if (!respDiv) {
+            respDiv = document.createElement("div");
+            respDiv.className = "jr-popup-response";
+            st.activePopup.appendChild(respDiv);
+          }
+          if (responseHTML) {
+            respDiv.innerHTML = responseHTML;
+          } else {
+            respDiv.textContent = "No response content found.";
+          }
+          JR.repositionPopup();
+          st.activeHighlightId = hlId2;
+          JR.syncHighlightActive(hlId2);
+        }
+      } else {
+        hlId2 = crypto.randomUUID();
+        if (spans.length > 0 && responseHTML) {
+          var contentContainer = popup.parentElement;
+          for (var k = 0; k < spans.length; k++) {
+            spans[k].setAttribute("data-jr-highlight-id", hlId2);
+            spans[k].classList.add("jr-source-highlight-done");
+          }
+          st.completedHighlights.set(hlId2, {
+            spans: spans.slice(),
+            responseHTML: responseHTML,
+            text: text,
+            sentence: sentence,
+            blockTypes: blockTypes,
+            question: question || null,
+            contentContainer: contentContainer,
+            parentId: parentId || null,
+          });
+        }
+        st.activeHighlightId = hlId2;
+        JR.syncHighlightActive(hlId2);
+      }
+
+      var qNum2 = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
+      var rNum2 = JR.getTurnNumber(responseTurn);
+      var sourceArticle = spans.length > 0
+        ? spans[0].closest(S.aiTurn)
+        : null;
+      var sourceTurnIdx = sourceArticle ? JR.getTurnNumber(sourceArticle) : -1;
+      saveHighlight({
+        id: hlId2,
+        text: text,
+        sentence: sentence,
+        blockTypes: blockTypes,
+        responseHTML: responseHTML,
+        question: question || null,
+        url: location.href,
+        site: "chatgpt",
+        parentId: parentId || null,
+        sourceTurnIndex: sourceTurnIdx,
+        questionIndex: qNum2,
+        responseIndex: rNum2,
+      });
+
+      st.cancelResponseWatch = null;
+    }
+
+    /**
+     * Re-verify that hidden turns are still hidden. React may unmount
+     * and remount article elements, losing our jr-hidden class.
+     */
+    function enforceHidden() {
+      var allTurns = document.querySelectorAll(S.aiTurn);
+      if (questionTurn) {
+        var qCurrent = allTurns[turnsBefore];
+        if (qCurrent && qCurrent !== questionTurn) {
+          // React swapped the element — update reference
+          questionTurn = qCurrent;
+        }
+        questionTurn.classList.add("jr-hidden");
+      }
+      if (responseTurn) {
+        var rCurrent = allTurns[turnsBefore + 1];
+        if (rCurrent && rCurrent !== responseTurn) {
+          responseTurn = rCurrent;
+          responseTurn.classList.add("jr-hidden");
+        }
+      }
+    }
+
+    function poll() {
+      if (cancelled) return;
+
+      var allTurns = document.querySelectorAll(S.aiTurn);
+
+      if (!questionTurn && allTurns.length > turnsBefore) {
+        var candidate = allTurns[turnsBefore];
+        var label = candidate.querySelector(S.aiLabel);
+        if (!label || !label.textContent.includes(JR.AI_LABEL_TEXT)) {
+          questionTurn = candidate;
+          questionTurn.classList.add("jr-hidden");
+          JR.repositionPopup();
+        }
+      }
+
+      if (!responseTurn && allTurns.length > turnsBefore + 1) {
+        var candidate2 = allTurns[turnsBefore + 1];
+        var label2 = candidate2.querySelector(S.aiLabel);
+        if (label2 && label2.textContent.includes(JR.AI_LABEL_TEXT)) {
+          responseTurn = candidate2;
+          startStreaming();
+        }
+      }
+
+      // React can remount DOM elements — re-apply hiding every cycle
+      enforceHidden();
+
+      if (responseTurn && !JR.isGenerating()) {
+        // Delay capture slightly — ChatGPT's markdown renderer may still be
+        // processing the final tokens after the stop button disappears.
+        setTimeout(captureResponse, 300);
+        return;
+      }
+
+      if (Date.now() - startTime >= timeoutMs) {
+        if (editOpts) {
+          // Edit timeout — just show timeout message, don't destroy the existing highlight
+          if (!detached && popup && popup.isConnected) {
+            var streamingDiv2 = popup.querySelector(".jr-popup-response");
+            if (streamingDiv2) streamingDiv2.remove();
+            var loading2 = popup.querySelector(".jr-popup-loading");
+            if (!loading2) {
+              loading2 = JR.createLoadingDiv();
+              popup.appendChild(loading2);
+            }
+            loading2.textContent = "Response timed out.";
+          }
+          cleanup();
+          unhideTurns();
+          st.cancelResponseWatch = null;
+          return;
+        }
+        if (!detached) {
+          var streamingDiv = popup.querySelector(".jr-popup-response");
+          if (streamingDiv) streamingDiv.remove();
+          var loading = popup.querySelector(".jr-popup-loading");
+          if (!loading) {
+            loading = JR.createLoadingDiv();
+            popup.appendChild(loading);
+          }
+          loading.textContent = "Response timed out.";
+        }
+        cleanup();
+        unhideTurns();
+        if (detached && detachedSpans) {
+          if (detachedHlId) st.completedHighlights.delete(detachedHlId);
+          for (var ds = 0; ds < detachedSpans.length; ds++) {
+            var span = detachedSpans[ds];
+            span.removeAttribute("data-jr-highlight-id");
+            span.classList.remove("jr-source-highlight-done");
+            var parent = span.parentNode;
+            if (!parent) continue;
+            while (span.firstChild) parent.insertBefore(span.firstChild, span);
+            parent.removeChild(span);
+            parent.normalize();
+          }
+          detachedSpans = null;
+        }
+        st.cancelResponseWatch = null;
+        return;
+      }
+
+      // Poll fast initially to catch new turns quickly, then slow down
+      var interval = (questionTurn && responseTurn) ? 500 : 80;
+      timerId = setTimeout(poll, interval);
+    }
+
+    timerId = setTimeout(poll, 80);
+  };
+})();

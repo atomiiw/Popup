@@ -23,7 +23,17 @@
         "https://gemini.google.com/*",
         "https://copilot.microsoft.com/*"
       ],
-      "js": ["storage.js", "content.js"],
+      "js": [
+        "storage.js",
+        "src/jr-namespace.js",
+        "src/dom-helpers.js",
+        "src/text-extraction.js",
+        "src/highlight.js",
+        "src/chat.js",
+        "src/popup-helpers.js",
+        "src/popup.js",
+        "content.js"
+      ],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }

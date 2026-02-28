@@ -13,6 +13,23 @@
   --jr-mark-bg: rgba(37, 99, 235, 0.12);
   --jr-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
   --jr-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --jr-color-blue: rgba(37, 99, 235, 0.15);
+  --jr-color-yellow: rgba(234, 179, 8, 0.15);
+  --jr-color-green: rgba(34, 197, 94, 0.15);
+  --jr-color-pink: rgba(236, 72, 153, 0.15);
+  --jr-color-purple: rgba(168, 85, 247, 0.15);
+  --jr-mark-bg-hover: rgba(37, 99, 235, 0.22);
+  --jr-mark-bg-active: rgba(37, 99, 235, 0.22);
+  --jr-color-blue-hover: rgba(37, 99, 235, 0.28);
+  --jr-color-blue-active: rgba(37, 99, 235, 0.28);
+  --jr-color-yellow-hover: rgba(234, 179, 8, 0.28);
+  --jr-color-yellow-active: rgba(234, 179, 8, 0.28);
+  --jr-color-green-hover: rgba(34, 197, 94, 0.28);
+  --jr-color-green-active: rgba(34, 197, 94, 0.28);
+  --jr-color-pink-hover: rgba(236, 72, 153, 0.28);
+  --jr-color-pink-active: rgba(236, 72, 153, 0.28);
+  --jr-color-purple-hover: rgba(168, 85, 247, 0.28);
+  --jr-color-purple-active: rgba(168, 85, 247, 0.28);
 }
 
 html.dark,
@@ -27,6 +44,23 @@ html[class*="dark"] {
   --jr-highlight-border: #4a4a5a;
   --jr-mark-bg: rgba(59, 130, 246, 0.2);
   --jr-shadow: 0 4px 24px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.2);
+  --jr-color-blue: rgba(37, 99, 235, 0.25);
+  --jr-color-yellow: rgba(234, 179, 8, 0.25);
+  --jr-color-green: rgba(34, 197, 94, 0.25);
+  --jr-color-pink: rgba(236, 72, 153, 0.25);
+  --jr-color-purple: rgba(168, 85, 247, 0.25);
+  --jr-mark-bg-hover: rgba(59, 130, 246, 0.32);
+  --jr-mark-bg-active: rgba(59, 130, 246, 0.32);
+  --jr-color-blue-hover: rgba(37, 99, 235, 0.38);
+  --jr-color-blue-active: rgba(37, 99, 235, 0.38);
+  --jr-color-yellow-hover: rgba(234, 179, 8, 0.38);
+  --jr-color-yellow-active: rgba(234, 179, 8, 0.38);
+  --jr-color-green-hover: rgba(34, 197, 94, 0.38);
+  --jr-color-green-active: rgba(34, 197, 94, 0.38);
+  --jr-color-pink-hover: rgba(236, 72, 153, 0.38);
+  --jr-color-pink-active: rgba(236, 72, 153, 0.38);
+  --jr-color-purple-hover: rgba(168, 85, 247, 0.38);
+  --jr-color-purple-active: rgba(168, 85, 247, 0.38);
 }
 
 /* Popup container */
@@ -42,7 +76,63 @@ html[class*="dark"] {
   color: var(--jr-text);
   padding: 14px;
   box-sizing: border-box;
+  overflow: visible;
   animation: jr-fade-in 0.15s ease-out;
+}
+
+/* Arrow pointing from popup to source highlight */
+.jr-popup-arrow {
+  position: absolute;
+  pointer-events: none;
+  width: 18px;
+  height: 9px;
+}
+
+.jr-popup-arrow::before,
+.jr-popup-arrow::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+}
+
+/* Up arrow — popup is below the highlight */
+.jr-popup-arrow--up {
+  top: -9px;
+}
+
+.jr-popup-arrow--up::before {
+  top: 0;
+  border-bottom: 9px solid var(--jr-border);
+}
+
+.jr-popup-arrow--up::after {
+  top: 1px;
+  left: 1px;
+  border-left-width: 8px;
+  border-right-width: 8px;
+  border-bottom: 8px solid var(--jr-bg);
+}
+
+/* Down arrow — popup is above the highlight */
+.jr-popup-arrow--down {
+  bottom: -9px;
+}
+
+.jr-popup-arrow--down::before {
+  bottom: 0;
+  border-top: 9px solid var(--jr-border);
+}
+
+.jr-popup-arrow--down::after {
+  bottom: 1px;
+  left: 1px;
+  border-left-width: 8px;
+  border-right-width: 8px;
+  border-top: 8px solid var(--jr-bg);
 }
 
 @keyframes jr-fade-in {
@@ -273,6 +363,57 @@ ol.jr-popup-context-list .jr-depth-2 {
 /* Completed highlight — stays visible after popup dismiss, clickable to re-open */
 .jr-source-highlight-done {
   cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+/* Hover state — darken all spans of a highlight on mouse hover (Step 7b) */
+.jr-source-highlight-done.jr-source-highlight-hover {
+  background: var(--jr-mark-bg-hover);
+}
+
+.jr-source-highlight-done.jr-highlight-color-blue.jr-source-highlight-hover {
+  background: var(--jr-color-blue-hover);
+}
+
+.jr-source-highlight-done.jr-highlight-color-yellow.jr-source-highlight-hover {
+  background: var(--jr-color-yellow-hover);
+}
+
+.jr-source-highlight-done.jr-highlight-color-green.jr-source-highlight-hover {
+  background: var(--jr-color-green-hover);
+}
+
+.jr-source-highlight-done.jr-highlight-color-pink.jr-source-highlight-hover {
+  background: var(--jr-color-pink-hover);
+}
+
+.jr-source-highlight-done.jr-highlight-color-purple.jr-source-highlight-hover {
+  background: var(--jr-color-purple-hover);
+}
+
+/* Active state — highlight whose popup is currently open (Step 7b) */
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active {
+  background: var(--jr-mark-bg-active);
+}
+
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-blue {
+  background: var(--jr-color-blue-active);
+}
+
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-yellow {
+  background: var(--jr-color-yellow-active);
+}
+
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-green {
+  background: var(--jr-color-green-active);
+}
+
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-pink {
+  background: var(--jr-color-pink-active);
+}
+
+.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-purple {
+  background: var(--jr-color-purple-active);
 }
 
 /* Hidden turn — hides injected Q&A from main chat */
@@ -288,14 +429,212 @@ ol.jr-popup-context-list .jr-depth-2 {
   color: var(--jr-text-muted);
 }
 
+/* Follow-up question shown between context and response */
+.jr-popup-question {
+  margin-top: 10px;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--jr-text);
+  line-height: 1.6;
+  word-break: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.jr-popup-question-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* Editable question text — subtle caret/outline when contenteditable */
+.jr-popup-question-text[contenteditable="true"] {
+  outline: none;
+  border-bottom: 1px solid var(--jr-border);
+  padding-bottom: 2px;
+  cursor: text;
+}
+
+.jr-popup-question-text[contenteditable="true"]:focus {
+  border-bottom-color: var(--jr-accent);
+}
+
+/* Placeholder for empty contenteditable */
+.jr-popup-question-text[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--jr-text-muted);
+  pointer-events: none;
+}
+
+/* Pencil edit toggle button next to question text */
+.jr-popup-edit-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--jr-text-muted);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+  margin-top: 2px;
+}
+
+.jr-popup-edit-btn:hover {
+  color: var(--jr-text);
+  background: var(--jr-highlight-bg);
+}
+
+/* Pencil active/pressed state — editing is on: blue, no background */
+.jr-popup-edit-btn--active {
+  color: var(--jr-accent);
+  background: none;
+}
+
+.jr-popup-edit-btn--active:hover {
+  color: var(--jr-accent-hover);
+  background: var(--jr-highlight-bg);
+}
+
+.jr-popup-edit-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Edit-send wrapper — positions dropdown relative to the send icon */
+.jr-edit-send-wrapper {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Send icon for edited question */
+.jr-popup-edit-send {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--jr-accent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.jr-popup-edit-send:hover:not(:disabled) {
+  background: var(--jr-highlight-bg);
+}
+
+.jr-popup-edit-send:disabled {
+  color: var(--jr-text-muted);
+  opacity: 0.35;
+  cursor: default;
+}
+
+.jr-popup-edit-send svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Dropdown beneath the send icon — Brief / Elaborate */
+.jr-edit-send-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  padding-top: 4px;
+  z-index: 2;
+}
+
+.jr-edit-send-dropdown-menu {
+  background: var(--jr-bg);
+  border: 1px solid var(--jr-border);
+  border-radius: 8px;
+  box-shadow: var(--jr-shadow);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Show dropdown on hover when send is enabled */
+.jr-edit-send-wrapper:hover .jr-edit-send-dropdown:not(.jr-disabled) {
+  display: block;
+}
+
+.jr-edit-send-dropdown-item {
+  padding: 5px 10px;
+  font-family: var(--jr-font);
+  font-size: 12px;
+  color: var(--jr-text);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.jr-edit-send-dropdown-item:hover {
+  background: var(--jr-highlight-bg);
+}
+
+/* Version navigation bar */
+.jr-popup-version-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jr-popup-version-prev,
+.jr-popup-version-next {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--jr-border);
+  border-radius: 4px;
+  background: var(--jr-bg);
+  color: var(--jr-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: background 0.15s ease;
+}
+
+.jr-popup-version-prev:hover:not(:disabled),
+.jr-popup-version-next:hover:not(:disabled) {
+  background: var(--jr-highlight-bg);
+}
+
+.jr-popup-version-prev:disabled,
+.jr-popup-version-next:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.jr-popup-version-indicator {
+  font-size: 13px;
+  color: var(--jr-text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+
 /* AI response displayed inside popup */
 .jr-popup-response {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--jr-border);
-  max-height: 300px;
+  max-height: 350px;
   overflow-y: auto;
-  font-size: 14px;
+  overflow-x: hidden;
+  font-size: 16px;
   line-height: 1.6;
   word-break: break-word;
   user-select: text;
@@ -424,4 +763,167 @@ ol.jr-popup-context-list .jr-depth-2 {
 .jr-popup-response img {
   max-width: 100%;
   height: auto;
+}
+
+/* --- Highlight color classes (Step 7a) --- */
+/* Double class for specificity to override .jr-source-highlight background */
+
+.jr-source-highlight.jr-highlight-color-blue {
+  background: var(--jr-color-blue);
+}
+
+.jr-source-highlight.jr-highlight-color-yellow {
+  background: var(--jr-color-yellow);
+}
+
+.jr-source-highlight.jr-highlight-color-green {
+  background: var(--jr-color-green);
+}
+
+.jr-source-highlight.jr-highlight-color-pink {
+  background: var(--jr-color-pink);
+}
+
+.jr-source-highlight.jr-highlight-color-purple {
+  background: var(--jr-color-purple);
+}
+
+/* Also apply color to the inline mark in the popup blockquote */
+.jr-popup-mark.jr-highlight-color-blue {
+  background: var(--jr-color-blue);
+}
+
+.jr-popup-mark.jr-highlight-color-yellow {
+  background: var(--jr-color-yellow);
+}
+
+.jr-popup-mark.jr-highlight-color-green {
+  background: var(--jr-color-green);
+}
+
+.jr-popup-mark.jr-highlight-color-pink {
+  background: var(--jr-color-pink);
+}
+
+.jr-popup-mark.jr-highlight-color-purple {
+  background: var(--jr-color-purple);
+}
+
+/* --- Floating toolbar near highlight (Step 7a) --- */
+
+.jr-popup-toolbar {
+  position: absolute;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--jr-bg);
+  border: 1px solid var(--jr-border);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: jr-fade-in 0.15s ease-out;
+  transition: opacity 0.12s ease-in;
+}
+
+.jr-popup-toolbar.jr-toolbar-hiding {
+  opacity: 0;
+}
+
+.jr-toolbar-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.jr-toolbar-swatch--active {
+  border-color: var(--jr-text);
+}
+
+.jr-toolbar-swatch:hover:not(.jr-toolbar-swatch--active) {
+  border-color: var(--jr-text-muted);
+}
+
+.jr-toolbar-swatch--blue { background: var(--jr-color-blue); }
+.jr-toolbar-swatch--yellow { background: var(--jr-color-yellow); }
+.jr-toolbar-swatch--green { background: var(--jr-color-green); }
+.jr-toolbar-swatch--pink { background: var(--jr-color-pink); }
+.jr-toolbar-swatch--purple { background: var(--jr-color-purple); }
+
+.jr-toolbar-delete {
+  margin-left: auto;
+  padding: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--jr-text-muted);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.jr-toolbar-delete:hover {
+  color: #ef4444;
+  background: var(--jr-highlight-bg);
+}
+
+.jr-toolbar-delete svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Confirmation overlay inside popup */
+.jr-popup-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 14px;
+  text-align: center;
+  gap: 14px;
+}
+
+.jr-popup-confirm-text {
+  font-size: 14px;
+  color: var(--jr-text);
+  line-height: 1.5;
+}
+
+.jr-popup-confirm-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.jr-popup-confirm-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--jr-border);
+  border-radius: 6px;
+  background: var(--jr-bg);
+  color: var(--jr-text);
+  font-family: var(--jr-font);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.jr-popup-confirm-btn:hover {
+  background: var(--jr-highlight-bg);
+}
+
+.jr-popup-confirm-btn--danger {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.jr-popup-confirm-btn--danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
 }
