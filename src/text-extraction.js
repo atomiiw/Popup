@@ -407,16 +407,28 @@
   };
 
   /**
-   * Find a text substring within an element and return a Range.
-   * Walks all text nodes, concatenates their content, finds the substring,
-   * then maps the match back to the original text nodes/offsets.
+   * Check if a text node is inside a ChatGPT code block toolbar
+   * (the bar with language label, copy, run buttons).
+   * These elements are inside .contain-inline-size but outside <pre>/<code>.
    */
+  function isToolbarTextNode(textNode) {
+    var parent = textNode.parentElement;
+    if (!parent) return false;
+    // If inside <pre> or <code>, it's actual code — keep it
+    if (parent.closest("pre") || parent.closest("code")) return false;
+    // If inside .contain-inline-size but NOT inside pre/code, it's toolbar
+    if (parent.closest(".contain-inline-size")) return true;
+    return false;
+  }
+
   JR.findTextRange = function (root, searchText) {
+    // Collect text nodes, skipping ChatGPT code block toolbar nodes
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     var nodes = [];
     var fullText = "";
     var node;
     while ((node = walker.nextNode())) {
+      if (isToolbarTextNode(node)) continue;
       nodes.push({ node: node, start: fullText.length });
       fullText += node.textContent;
     }
@@ -424,7 +436,51 @@
     if (nodes.length === 0) return null;
 
     var idx = fullText.indexOf(searchText);
-    if (idx === -1) return null;
+
+    // If not found, toolbar text inside <code> may be inflating the text.
+    // Try a second pass: for each <code> element inside the root, check if
+    // its textContent includes toolbar labels at the start and account for them.
+    if (idx === -1) {
+      // Rebuild nodes + fullText, this time also skipping suspected toolbar
+      // spans inside <code> (short capitalized words followed by known labels)
+      var walker2 = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      nodes = [];
+      fullText = "";
+      var skipNodes = new Set();
+
+      // Identify toolbar text nodes inside code elements
+      var codeEls = root.querySelectorAll("code");
+      for (var ci = 0; ci < codeEls.length; ci++) {
+        var codeFullText = codeEls[ci].textContent;
+        // Check if code starts with toolbar prefix pattern: "PythonCopyRun..." or "JavaScriptCopy..."
+        var tbMatch = codeFullText.match(/^([A-Z][a-zA-Z+#.]*?)?(Copy code|Copied!|Copy|Run)+/);
+        if (!tbMatch) continue;
+        var tbLen = tbMatch[0].length;
+        // Walk child text nodes and mark the ones that make up the toolbar prefix
+        var consumed = 0;
+        var codeWalker = document.createTreeWalker(codeEls[ci], NodeFilter.SHOW_TEXT, null);
+        var tn;
+        while ((tn = codeWalker.nextNode()) && consumed < tbLen) {
+          var tnLen = tn.textContent.length;
+          if (consumed + tnLen <= tbLen) {
+            skipNodes.add(tn);
+          }
+          // If this node partially overlaps the toolbar prefix, we can't skip it cleanly
+          // (partial skip not supported — just skip whole nodes that fit within toolbar)
+          consumed += tnLen;
+        }
+      }
+
+      while ((node = walker2.nextNode())) {
+        if (isToolbarTextNode(node)) continue;
+        if (skipNodes.has(node)) continue;
+        nodes.push({ node: node, start: fullText.length });
+        fullText += node.textContent;
+      }
+
+      idx = fullText.indexOf(searchText);
+      if (idx === -1) return null;
+    }
 
     var endIdx = idx + searchText.length;
     var startNode = null, startOffset = 0;

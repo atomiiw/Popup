@@ -204,6 +204,17 @@
 - Works for both level-1 highlights in the chat and chained highlights inside popup responses
 - Light and dark mode have independently tuned alpha values
 
+### Highlight Navigation Arrows (Step 7d)
+- A floating vertical widget appears on the right side of the viewport (middle of the right-side white gap) when there is 1+ level-1 highlight
+- Contains up/down arrow buttons and a position indicator (e.g. "2 / 5")
+- Only navigates level-1 (outer-layer) highlights in document order — chained/nested highlights are ignored
+- Clicking an arrow scrolls the chat to the target highlight and opens its popup
+- When no highlight is focused, the indicator shows just the total count; clicking an arrow starts navigation from the first or last highlight
+- Buttons are disabled at the endpoints (first highlight disables up, last disables down)
+- The widget updates automatically when highlights are created, deleted, restored, or when popups open/close
+- `navNavigating` flag suppresses intermediate widget updates during navigation (prevents flicker)
+- Cleaned up on SPA navigation and re-created after highlights are restored for the new conversation
+- `position: fixed`, vertically centered, no background/border — just arrows and indicator
+
 ## Planned
-- **Highlight navigation arrows** (Step 7d) — jump between highlights in the chat (level-1) or within a popup (level-2)
 - **Multi-site support** (Step 8) — extend selectors and injection logic for Claude, Gemini, and Microsoft Copilot

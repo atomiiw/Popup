@@ -43,6 +43,7 @@
       hoverToolbarHlId: null,           // highlight id the toolbar is showing for
       hoverToolbarTimer: null,          // delayed hide timer
       confirmingDelete: false,          // true while delete confirmation is showing
+      navWidget: null,                  // floating highlight navigation widget element
     },
   };
 })();

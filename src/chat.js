@@ -5,6 +5,16 @@
   var S = JR.SELECTORS;
   var st = JR.state;
 
+  /**
+   * Read the auto-assigned color stashed on spans by createPopup,
+   * or re-detect if not available.
+   */
+  function getAutoColor(spans) {
+    if (spans.length === 0) return null;
+    if (spans[0]._jrAutoColor) return spans[0]._jrAutoColor;
+    return JR.pickNonConflictingColor(spans);
+  }
+
   // --- Chat injection ---
 
   JR.findSendButton = function () {
@@ -79,6 +89,7 @@
       text = text.replace(JR.AI_LABEL_TEXT, "").trim();
       responseDiv.textContent = text;
     }
+    JR.wireCopyButtons(responseDiv);  // rebuildCodeBlocks
   };
 
   /**
@@ -297,11 +308,13 @@
         detachedHlId = crypto.randomUUID();
         var sourceArticle = detachedSpans[0].closest(S.aiTurn);
         var contentContainer = sourceArticle ? sourceArticle.parentElement : document.body;
+        var detachColor = getAutoColor(detachedSpans);
         for (var k = 0; k < detachedSpans.length; k++) {
           detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
           detachedSpans[k].classList.add("jr-source-highlight-done");
+          if (detachColor) detachedSpans[k].classList.add("jr-highlight-color-" + detachColor);
         }
-        st.completedHighlights.set(detachedHlId, {
+        var detachEntry = {
           spans: detachedSpans.slice(),
           responseHTML: null,
           text: text,
@@ -310,7 +323,9 @@
           question: question || null,
           contentContainer: contentContainer,
           parentId: parentId || null,
-        });
+        };
+        if (detachColor) detachEntry.color = detachColor;
+        st.completedHighlights.set(detachedHlId, detachEntry);
 
         // Keep observer running — streaming continues in background
         if (unlockScroll) unlockScroll();
@@ -369,10 +384,11 @@
               responseHTML: memEntry.responseHTML,
             }];
           }
-          memEntry.versions.push({ question: question, responseHTML: responseHTML });
+          memEntry.versions.push({ question: question, responseHTML: responseHTML, responseIndex: rNum });
           memEntry.activeVersion = memEntry.versions.length - 1;
           memEntry.question = question;
           memEntry.responseHTML = responseHTML;
+          memEntry.responseIndex = rNum;
         }
 
         // Rebuild popup UI if it's open for this highlight
@@ -385,26 +401,30 @@
 
         st.activeHighlightId = hlId;
         JR.syncHighlightActive(hlId);
+        JR.updateNavWidget();
         st.cancelResponseWatch = null;
         return;
       }
 
       // --- Normal (non-edit) capture ---
+      // Always capture responseHTML from the ORIGINAL turn, not from the popup div.
+      // The popup div may have been modified by rebuildCodeBlocks (replaces <pre> with
+      // custom .jr-code-block that has dead event listeners when deserialized from storage).
       var responseHTML = null;
+      var markdown2 = responseTurn.querySelector(S.responseContent);
+      if (markdown2) responseHTML = markdown2.innerHTML;
       if (detached) {
-        var markdown2 = responseTurn.querySelector(S.responseContent);
-        if (markdown2) responseHTML = markdown2.innerHTML;
         cleanup();
       } else {
         JR.repositionPopup();
         JR.showResponseInPopup(popup, responseTurn);
         cleanup();
         JR.repositionPopup();
-        var responseDiv = popup.querySelector(".jr-popup-response");
-        if (responseDiv) responseHTML = responseDiv.innerHTML;
       }
 
       var hlId2;
+      var qNum2 = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
+      var rNum2 = JR.getTurnNumber(responseTurn);
 
       if (detached) {
         hlId2 = detachedHlId;
@@ -413,22 +433,10 @@
 
         if (st.activePopup && st.activeSourceHighlights.length > 0 &&
             st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id") === hlId2) {
-          var loadingEl = st.activePopup.querySelector(".jr-popup-loading");
-          if (loadingEl) loadingEl.remove();
-          var respDiv = st.activePopup.querySelector(".jr-popup-response");
-          if (!respDiv) {
-            respDiv = document.createElement("div");
-            respDiv.className = "jr-popup-response";
-            st.activePopup.appendChild(respDiv);
-          }
-          if (responseHTML) {
-            respDiv.innerHTML = responseHTML;
-          } else {
-            respDiv.textContent = "No response content found.";
-          }
-          JR.repositionPopup();
+          if (entry) entry.responseIndex = rNum2;
           st.activeHighlightId = hlId2;
           JR.syncHighlightActive(hlId2);
+          JR.rebuildPopupAfterEdit(st.activePopup, hlId2);
         }
       } else {
         hlId2 = crypto.randomUUID();
@@ -438,23 +446,54 @@
             spans[k].setAttribute("data-jr-highlight-id", hlId2);
             spans[k].classList.add("jr-source-highlight-done");
           }
-          st.completedHighlights.set(hlId2, {
+          var autoColor = getAutoColor(spans);
+          var entryObj = {
             spans: spans.slice(),
             responseHTML: responseHTML,
             text: text,
             sentence: sentence,
             blockTypes: blockTypes,
             question: question || null,
+            color: autoColor || null,
             contentContainer: contentContainer,
             parentId: parentId || null,
-          });
+            responseIndex: rNum2,
+          };
+          if (autoColor) {
+            for (var ac = 0; ac < spans.length; ac++) {
+              spans[ac].classList.add("jr-highlight-color-" + autoColor);
+            }
+          }
+          st.completedHighlights.set(hlId2, entryObj);
         }
         st.activeHighlightId = hlId2;
         JR.syncHighlightActive(hlId2);
+
+        // Rebuild popup into completed view (editable question, version nav)
+        if (popup && popup.isConnected) {
+          JR.rebuildPopupAfterEdit(popup, hlId2);
+        }
       }
 
-      var qNum2 = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
-      var rNum2 = JR.getTurnNumber(responseTurn);
+      var autoColor2 = null;
+      if (!detached && spans.length > 0) {
+        var e2 = st.completedHighlights.get(hlId2);
+        if (e2) autoColor2 = e2.color || null;
+      } else if (detached && detachedHlId) {
+        var de = st.completedHighlights.get(detachedHlId);
+        if (de && !de.color) {
+          autoColor2 = getAutoColor(spans);
+          if (autoColor2) {
+            de.color = autoColor2;
+            for (var dac = 0; dac < spans.length; dac++) {
+              spans[dac].classList.add("jr-highlight-color-" + autoColor2);
+            }
+          }
+        } else if (de) {
+          autoColor2 = de.color;
+        }
+      }
+
       var sourceArticle = spans.length > 0
         ? spans[0].closest(S.aiTurn)
         : null;
@@ -472,8 +511,10 @@
         sourceTurnIndex: sourceTurnIdx,
         questionIndex: qNum2,
         responseIndex: rNum2,
+        color: autoColor2,
       });
 
+      JR.updateNavWidget();
       st.cancelResponseWatch = null;
     }
 
@@ -499,6 +540,10 @@
         }
       }
     }
+
+    var lastContentSnapshot = "";
+    var lastContentChangeTime = Date.now();
+    var STALE_THRESHOLD = 10000; // 10 seconds of no content change → force capture
 
     function poll() {
       if (cancelled) return;
@@ -532,6 +577,20 @@
         // processing the final tokens after the stop button disappears.
         setTimeout(captureResponse, 300);
         return;
+      }
+
+      // Stale-content safeguard: if response exists but isGenerating() stays
+      // true while content hasn't changed for STALE_THRESHOLD, force capture.
+      if (responseTurn && JR.isGenerating()) {
+        var currentContent = responseTurn.textContent || "";
+        if (currentContent !== lastContentSnapshot) {
+          lastContentSnapshot = currentContent;
+          lastContentChangeTime = Date.now();
+        } else if (Date.now() - lastContentChangeTime >= STALE_THRESHOLD) {
+          console.warn("[JR] Response stale for " + STALE_THRESHOLD + "ms — force capturing");
+          setTimeout(captureResponse, 300);
+          return;
+        }
       }
 
       if (Date.now() - startTime >= timeoutMs) {

@@ -571,6 +571,257 @@
     st.resizeHandler = null;
   };
 
+  // --- Highlight Navigation (Step 7d) ---
+
+  // Up chevron (caret-up)
+  var NAV_UP_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,165.66a8,8,0,0,1-11.32,0L128,91.31,53.66,165.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0l80,80A8,8,0,0,1,213.66,165.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216.49,168.49a12,12,0,0,1-17,0L128,97,56.49,168.49a12,12,0,0,1-17-17l80-80a12,12,0,0,1,17,0l80,80A12,12,0,0,1,216.49,168.49Z"/></svg>';
+  // Down chevron (caret-down)
+  var NAV_DOWN_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216.49,104.49l-80,80a12,12,0,0,1-17,0l-80-80a12,12,0,0,1,17-17L128,159,199.51,87.51a12,12,0,0,1,17,17Z"/></svg>';
+
+  var navNavigating = false; // suppress updateNavWidget during navigation
+
+  /**
+   * Get all level-1 (non-chained) highlight IDs, ordered by DOM position.
+   */
+  JR.getLevel1HighlightIds = function () {
+    var items = [];
+    st.completedHighlights.forEach(function (entry, id) {
+      if (!entry.parentId && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected) {
+        items.push({ id: id, span: entry.spans[0] });
+      }
+    });
+    items.sort(function (a, b) {
+      var pos = a.span.compareDocumentPosition(b.span);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+    return items.map(function (item) { return item.id; });
+  };
+
+  /**
+   * Find the L1 ancestor index for the current activeHighlightId.
+   */
+  function findCurrentL1Index(ids) {
+    if (!st.activeHighlightId) return -1;
+    var idx = ids.indexOf(st.activeHighlightId);
+    if (idx !== -1) return idx;
+    // Walk up chained parents to find the root L1
+    var entry = st.completedHighlights.get(st.activeHighlightId);
+    if (entry && entry.parentId) {
+      var parentId = entry.parentId;
+      var parentEntry = st.completedHighlights.get(parentId);
+      while (parentEntry && parentEntry.parentId) {
+        parentId = parentEntry.parentId;
+        parentEntry = st.completedHighlights.get(parentId);
+      }
+      return ids.indexOf(parentId);
+    }
+    return -1;
+  }
+
+  function buildNavWidget() {
+    var widget = document.createElement("div");
+    widget.className = "jr-nav-widget";
+
+    var upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "jr-nav-up";
+    upBtn.innerHTML = NAV_UP_SVG;
+
+    var indicator = document.createElement("span");
+    indicator.className = "jr-nav-indicator";
+
+    var downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "jr-nav-down";
+    downBtn.innerHTML = NAV_DOWN_SVG;
+
+    widget.appendChild(upBtn);
+    widget.appendChild(indicator);
+    widget.appendChild(downBtn);
+
+    upBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      JR.navigateHighlight(-1);
+    });
+
+    downBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      JR.navigateHighlight(1);
+    });
+
+    widget.addEventListener("mousedown", function (e) {
+      e.stopPropagation();
+    });
+
+    return widget;
+  }
+
+  /**
+   * Determine user's scroll position relative to highlights.
+   * If any highlight is visible on screen → "between".
+   * If none visible and all below viewport → "above".
+   * If none visible and all above viewport → "below".
+   */
+  function getVisibleBounds(el) {
+    var top = 0;
+    var bottom = window.innerHeight;
+    var parent = el.parentElement;
+    while (parent) {
+      var ov = getComputedStyle(parent).overflowY;
+      if (ov === "auto" || ov === "hidden" || ov === "scroll") {
+        var pr = parent.getBoundingClientRect();
+        if (pr.top > top) top = pr.top;
+        if (pr.bottom < bottom) bottom = pr.bottom;
+      }
+      parent = parent.parentElement;
+    }
+    return { top: top, bottom: bottom };
+  }
+
+  function getScrollPosition(ids) {
+    // Find the visible bounds (viewport clipped by scroll containers)
+    var firstEntry = st.completedHighlights.get(ids[0]);
+    if (!firstEntry || !firstEntry.spans || !firstEntry.spans[0].isConnected) return "between";
+    var bounds = getVisibleBounds(firstEntry.spans[0]);
+
+    for (var i = 0; i < ids.length; i++) {
+      var entry = st.completedHighlights.get(ids[i]);
+      if (!entry || !entry.spans || !entry.spans[0].isConnected) continue;
+      var r = entry.spans[0].getBoundingClientRect();
+      if (r.height === 0 && r.width === 0) continue;
+      if (r.bottom > bounds.top && r.top < bounds.bottom) return "between";
+    }
+    // No highlight visible — check first highlight position vs visible area
+    var firstRect = firstEntry.spans[0].getBoundingClientRect();
+    if (firstRect.top >= bounds.bottom) return "above";
+    return "below";
+  }
+
+  /**
+   * Create, update, or hide the floating highlight navigation widget.
+   * Only tracks level-1 (non-chained) highlights.
+   */
+  JR.updateNavWidget = function () {
+    if (navNavigating) return;
+
+    var ids = JR.getLevel1HighlightIds();
+
+    if (ids.length < 1) {
+      if (st.navWidget) {
+        if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
+        st.navWidget.remove();
+        st.navWidget = null;
+      }
+      return;
+    }
+
+    if (!st.navWidget) {
+      st.navWidget = buildNavWidget();
+      document.body.appendChild(st.navWidget);
+      // Listen for scroll to update disabled state dynamically
+      var scrollEl = document.querySelector('[class*="react-scroll-to-bottom"]') ||
+                     document.querySelector('[data-testid="conversation-turn-2"]');
+      var scrollParent = scrollEl ? JR.getScrollParent(scrollEl) : window;
+      var scrollHandler = function () {
+        if (!st.navWidget) return;
+        JR.updateNavDisabled();
+      };
+      (scrollParent === window ? window : scrollParent)
+        .addEventListener("scroll", scrollHandler, { passive: true });
+      st.navWidget._jrScrollCleanup = function () {
+        (scrollParent === window ? window : scrollParent)
+          .removeEventListener("scroll", scrollHandler);
+      };
+    }
+
+    st.navWidget._jrIds = ids;
+
+    var currentIdx = findCurrentL1Index(ids);
+
+    var indicator = st.navWidget.querySelector(".jr-nav-indicator");
+    if (currentIdx >= 0) {
+      indicator.textContent = (currentIdx + 1) + " / " + ids.length;
+    } else {
+      indicator.textContent = "" + ids.length;
+    }
+
+    JR.updateNavDisabled();
+  };
+
+  /**
+   * Update just the disabled state of nav arrows (called on scroll + updateNavWidget).
+   */
+  JR.updateNavDisabled = function () {
+    if (!st.navWidget || !st.navWidget._jrIds) return;
+    var ids = st.navWidget._jrIds;
+    var upBtn = st.navWidget.querySelector(".jr-nav-up");
+    var downBtn = st.navWidget.querySelector(".jr-nav-down");
+    if (st.confirmingDelete) {
+      upBtn.disabled = true;
+      downBtn.disabled = true;
+      return;
+    }
+    var currentIdx = findCurrentL1Index(ids);
+    if (currentIdx === -1) {
+      var pos = getScrollPosition(ids);
+      upBtn.disabled = (pos === "above");
+      downBtn.disabled = (pos === "below");
+    } else {
+      upBtn.disabled = (currentIdx === 0);
+      downBtn.disabled = (currentIdx === ids.length - 1);
+    }
+  };
+
+  /**
+   * Navigate to the previous or next level-1 highlight.
+   * @param {number} direction  -1 for previous (up), +1 for next (down)
+   */
+  JR.navigateHighlight = function (direction) {
+    if (st.confirmingDelete) return;
+    if (!st.navWidget || !st.navWidget._jrIds) return;
+    var ids = st.navWidget._jrIds;
+    if (ids.length === 0) return;
+
+    var currentIdx = findCurrentL1Index(ids);
+
+    var nextIdx;
+    if (currentIdx === -1) {
+      var pos = getScrollPosition(ids);
+      if (pos === "below") {
+        if (direction > 0) return; // down disabled
+        nextIdx = ids.length - 1;
+      } else if (pos === "above") {
+        if (direction < 0) return; // up disabled
+        nextIdx = 0;
+      } else {
+        // Between — up goes to first, down goes to last
+        nextIdx = direction > 0 ? ids.length - 1 : 0;
+      }
+    } else {
+      nextIdx = currentIdx + direction;
+    }
+    if (nextIdx < 0 || nextIdx >= ids.length) return;
+
+    var targetId = ids[nextIdx];
+    var targetEntry = st.completedHighlights.get(targetId);
+    if (!targetEntry) return;
+
+    // Suppress intermediate updateNavWidget calls during navigation
+    navNavigating = true;
+    JR.removeAllPopups();
+    navNavigating = false;
+
+    if (targetEntry.spans && targetEntry.spans.length > 0) {
+      targetEntry.spans[0].scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    setTimeout(function () {
+      JR.createPopup({ completedId: targetId });
+    }, 350);
+  };
+
   /**
    * Close all open popups (active + entire stack).
    */
@@ -631,5 +882,6 @@
     if (st.hoverToolbar && st.hoverToolbarHlId !== st.activeHighlightId) {
       JR.hideToolbar();
     }
+    JR.updateNavWidget();
   };
 })();

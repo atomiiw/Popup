@@ -22,9 +22,11 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - Handle edge cases: input not found, send button not found
 
 ## Step 2b: Response Length Toggle — DONE
-- Send arrow icon with hover dropdown: **Brief** and **Elaborate** options appear below when hovering the send icon
-- **Brief** appends a one-time instruction for 2-3 sentences; **Elaborate** appends an instruction to respond at natural length
-- Dropdown uses invisible padding bridge so mouse can travel from icon to menu without closing
+- Send arrow icon: clicking sends with the last-used mode (defaults to Normal)
+- A "switch" button appears below the send icon showing the other mode (e.g. "Brief" if current is Normal)
+- Clicking the switch button switches mode and sends immediately
+- **Brief** appends a one-time instruction for 2-3 sentences; **Normal** tells ChatGPT to ignore prior brevity instructions
+- Last-used mode persists across popups within the session via `st.responseMode`
 - Same interface used for both initial question input and edited question re-send
 
 ## Step 3: Response Capture & Hide Q&A — DONE
@@ -168,7 +170,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - Works for all 5 highlight colors + default blue, in both light and dark mode
 - Works for both level-1 highlights in the chat and chained highlights inside popup responses
 
-### Step 7d: Highlight Navigation Arrows
+### Step 7d: Highlight Navigation Arrows — DONE
 - Provide navigation arrows (or a small floating control) to jump between highlights on the page
 - Level-1 navigation: arrows cycle through all level-1 highlights in the conversation, scrolling the chat to bring each one into view
 - Level-2 navigation: when a level-1 popup is open, arrows cycle through all chained highlights within that popup's response, scrolling the response area as needed

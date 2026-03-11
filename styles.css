@@ -1,66 +1,71 @@
 /* Jump Return — Popup styles */
 
+/* Icons: bold always, #e5e5e5 when disabled, enlarged on hover */
+.jr-icon-bold { display: inline; }
+.jr-icon-reg { display: none; }
+
 :root {
   --jr-bg: #ffffff;
-  --jr-border: #e0e0e0;
-  --jr-text: #1a1a1a;
-  --jr-text-muted: #6b7280;
-  --jr-accent: #2563eb;
-  --jr-accent-hover: #1d4ed8;
+  --jr-border: #e5e5e5;
+  --jr-text: #191414;
+  --jr-text-muted: #919797;
+  --jr-accent: #191414;
+  --jr-accent-hover: #191414;
   --jr-highlight-bg: #f3f4f6;
   --jr-highlight-border: #d1d5db;
-  --jr-radius: 12px;
-  --jr-mark-bg: rgba(37, 99, 235, 0.12);
-  --jr-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  --jr-radius: 4px;
+  --jr-mark-bg: #4100F5;
+  --jr-shadow: none;
+  --jr-popup-accent: #191414;
   --jr-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --jr-color-blue: rgba(37, 99, 235, 0.15);
-  --jr-color-yellow: rgba(234, 179, 8, 0.15);
-  --jr-color-green: rgba(34, 197, 94, 0.15);
-  --jr-color-pink: rgba(236, 72, 153, 0.15);
-  --jr-color-purple: rgba(168, 85, 247, 0.15);
-  --jr-mark-bg-hover: rgba(37, 99, 235, 0.22);
-  --jr-mark-bg-active: rgba(37, 99, 235, 0.22);
-  --jr-color-blue-hover: rgba(37, 99, 235, 0.28);
-  --jr-color-blue-active: rgba(37, 99, 235, 0.28);
-  --jr-color-yellow-hover: rgba(234, 179, 8, 0.28);
-  --jr-color-yellow-active: rgba(234, 179, 8, 0.28);
-  --jr-color-green-hover: rgba(34, 197, 94, 0.28);
-  --jr-color-green-active: rgba(34, 197, 94, 0.28);
-  --jr-color-pink-hover: rgba(236, 72, 153, 0.28);
-  --jr-color-pink-active: rgba(236, 72, 153, 0.28);
-  --jr-color-purple-hover: rgba(168, 85, 247, 0.28);
-  --jr-color-purple-active: rgba(168, 85, 247, 0.28);
+  --jr-color-blue: #4100F5;
+  --jr-color-yellow: #CDF564;
+  --jr-color-green: #9BF0E1;
+  --jr-color-pink: #F037A5;
+  --jr-color-purple: #FF4632;
+  --jr-mark-bg-hover: #3600CC;
+  --jr-mark-bg-active: #3600CC;
+  --jr-color-blue-hover: #3600CC;
+  --jr-color-blue-active: #3600CC;
+  --jr-color-yellow-hover: #b8e050;
+  --jr-color-yellow-active: #b8e050;
+  --jr-color-green-hover: #7ae0ce;
+  --jr-color-green-active: #7ae0ce;
+  --jr-color-pink-hover: #d42a8e;
+  --jr-color-pink-active: #d42a8e;
+  --jr-color-purple-hover: #e63020;
+  --jr-color-purple-active: #e63020;
 }
 
 html.dark,
 html[class*="dark"] {
   --jr-bg: #1e1e2e;
-  --jr-border: #3a3a4a;
+  --jr-border: #e5e5e5;
   --jr-text: #e4e4e7;
   --jr-text-muted: #9ca3af;
-  --jr-accent: #3b82f6;
-  --jr-accent-hover: #2563eb;
+  --jr-accent: #e4e4e7;
+  --jr-accent-hover: #ffffff;
   --jr-highlight-bg: #2a2a3c;
   --jr-highlight-border: #4a4a5a;
-  --jr-mark-bg: rgba(59, 130, 246, 0.2);
-  --jr-shadow: 0 4px 24px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.2);
-  --jr-color-blue: rgba(37, 99, 235, 0.25);
-  --jr-color-yellow: rgba(234, 179, 8, 0.25);
-  --jr-color-green: rgba(34, 197, 94, 0.25);
-  --jr-color-pink: rgba(236, 72, 153, 0.25);
-  --jr-color-purple: rgba(168, 85, 247, 0.25);
-  --jr-mark-bg-hover: rgba(59, 130, 246, 0.32);
-  --jr-mark-bg-active: rgba(59, 130, 246, 0.32);
-  --jr-color-blue-hover: rgba(37, 99, 235, 0.38);
-  --jr-color-blue-active: rgba(37, 99, 235, 0.38);
-  --jr-color-yellow-hover: rgba(234, 179, 8, 0.38);
-  --jr-color-yellow-active: rgba(234, 179, 8, 0.38);
-  --jr-color-green-hover: rgba(34, 197, 94, 0.38);
-  --jr-color-green-active: rgba(34, 197, 94, 0.38);
-  --jr-color-pink-hover: rgba(236, 72, 153, 0.38);
-  --jr-color-pink-active: rgba(236, 72, 153, 0.38);
-  --jr-color-purple-hover: rgba(168, 85, 247, 0.38);
-  --jr-color-purple-active: rgba(168, 85, 247, 0.38);
+  --jr-mark-bg: #4100F5;
+  --jr-shadow: none;
+  --jr-color-blue: #4100F5;
+  --jr-color-yellow: #CDF564;
+  --jr-color-green: #9BF0E1;
+  --jr-color-pink: #F037A5;
+  --jr-color-purple: #FF4632;
+  --jr-mark-bg-hover: #3600CC;
+  --jr-mark-bg-active: #3600CC;
+  --jr-color-blue-hover: #3600CC;
+  --jr-color-blue-active: #3600CC;
+  --jr-color-yellow-hover: #b8e050;
+  --jr-color-yellow-active: #b8e050;
+  --jr-color-green-hover: #7ae0ce;
+  --jr-color-green-active: #7ae0ce;
+  --jr-color-pink-hover: #d42a8e;
+  --jr-color-pink-active: #d42a8e;
+  --jr-color-purple-hover: #e63020;
+  --jr-color-purple-active: #e63020;
 }
 
 /* Popup container */
@@ -68,16 +73,32 @@ html[class*="dark"] {
   position: absolute;
   z-index: 50;
   width: 360px;
-  background: var(--jr-bg);
-  border: 1px solid var(--jr-border);
+  background: none;
+  border: none;
   border-radius: var(--jr-radius);
-  box-shadow: var(--jr-shadow);
   font-family: var(--jr-font);
   color: var(--jr-text);
-  padding: 14px;
+  padding: 0;
   box-sizing: border-box;
   overflow: visible;
   animation: jr-fade-in 0.15s ease-out;
+}
+
+.jr-popup-upper {
+  background: var(--jr-bg);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  border: 1px solid var(--jr-border);
+  padding: 14px;
+}
+
+.jr-popup-lower {
+  background: var(--jr-bg);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  border: 1px solid var(--jr-border);
+  padding: 14px;
+  margin-top: 6px;
 }
 
 /* Arrow pointing from popup to source highlight */
@@ -85,7 +106,8 @@ html[class*="dark"] {
   position: absolute;
   pointer-events: none;
   width: 18px;
-  height: 9px;
+  height: 11px;
+  z-index: 1;
 }
 
 .jr-popup-arrow::before,
@@ -114,7 +136,7 @@ html[class*="dark"] {
   left: 1px;
   border-left-width: 8px;
   border-right-width: 8px;
-  border-bottom: 8px solid var(--jr-bg);
+  border-bottom: 10px solid var(--jr-bg);
 }
 
 /* Down arrow — popup is above the highlight */
@@ -132,7 +154,7 @@ html[class*="dark"] {
   left: 1px;
   border-left-width: 8px;
   border-right-width: 8px;
-  border-top: 8px solid var(--jr-bg);
+  border-top: 10px solid var(--jr-bg);
 }
 
 @keyframes jr-fade-in {
@@ -148,15 +170,40 @@ html[class*="dark"] {
 
 /* Highlighted text blockquote */
 .jr-popup-highlight {
-  margin: 0 0 12px 0;
-  padding: 8px 12px;
-  border-left: 3px solid var(--jr-highlight-border);
-  background: var(--jr-highlight-bg);
-  border-radius: 0 6px 6px 0;
+  margin: 0 0 10px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--jr-text-muted);
+  color: var(--jr-text);
   word-break: break-word;
+  position: relative;
+}
+
+.jr-popup-highlight-inner {
+  background: #e5e5e5;
+  border-radius: 4px;
+  padding: 30px 10px 10px 10px;
+  position: relative;
+  color: var(--jr-text);
+}
+
+.jr-popup-highlight-inner::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M232.49,160.49l-48,48a12,12,0,0,1-17-17L195,164H128A108.12,108.12,0,0,1,20,56a12,12,0,0,1,24,0,84.09,84.09,0,0,0,84,84h67l-27.52-27.51a12,12,0,0,1,17-17l48,48A12,12,0,0,1,232.49,160.49Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M232.49,160.49l-48,48a12,12,0,0,1-17-17L195,164H128A108.12,108.12,0,0,1,20,56a12,12,0,0,1,24,0,84.09,84.09,0,0,0,84,84h67l-27.52-27.51a12,12,0,0,1,17-17l48,48A12,12,0,0,1,232.49,160.49Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  background-color: #191414;
 }
 
 /* Bullet list for multi-block context (selections across list items) */
@@ -228,8 +275,9 @@ ol.jr-popup-context-list .jr-depth-2 {
 /* Inline highlight mark for exact selection within the context */
 .jr-popup-mark {
   background: var(--jr-mark-bg);
-  border-radius: 2px;
-  padding: 1px 0;
+  border-radius: 0;
+  padding: 2px 0;
+  color: #fff;
 }
 
 /* Citation pill — boxed inline reference mirroring ChatGPT's citation style */
@@ -247,6 +295,9 @@ ol.jr-popup-context-list .jr-depth-2 {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  margin: 10px 0 0 0;
+  padding: 0;
+  background: none;
 }
 
 /* Text input (textarea) */
@@ -355,7 +406,9 @@ ol.jr-popup-context-list .jr-depth-2 {
 /* Source text shadow highlight — persistent highlight on the original text */
 .jr-source-highlight {
   background: var(--jr-mark-bg);
-  border-radius: 2px;
+  border-radius: 0;
+  padding: 2px 0;
+  color: #fff;
   user-select: text;
   cursor: pointer;
 }
@@ -364,6 +417,13 @@ ol.jr-popup-context-list .jr-depth-2 {
 .jr-source-highlight-done {
   cursor: pointer;
   transition: background 0.12s ease;
+  position: relative;
+}
+
+/* Nested highlights — ensure inner highlight is clickable on top of outer */
+.jr-source-highlight-done .jr-source-highlight-done {
+  position: relative;
+  z-index: 1;
 }
 
 /* Hover state — darken all spans of a highlight on mouse hover (Step 7b) */
@@ -423,48 +483,86 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 /* Loading indicator inside popup */
 .jr-popup-loading {
-  padding: 12px 0 4px 0;
+  margin-top: 6px;
+  padding: 14px;
   text-align: center;
   font-size: 13px;
   color: var(--jr-text-muted);
+  background: var(--jr-bg);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  border: 1px solid var(--jr-border);
 }
 
 /* Follow-up question shown between context and response */
 .jr-popup-question {
-  margin-top: 10px;
-  padding: 0;
+  margin: 0;
+  padding: 6px 0 0 0;
   font-size: 16px;
   font-weight: 400;
   color: var(--jr-text);
   line-height: 1.6;
   word-break: break-word;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
+  background: none;
+}
+
+
+.jr-popup-question-chevron {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: inherit;
+  line-height: 1.6;
+}
+
+.jr-popup-question-chevron svg {
+  width: 14px;
+  height: 14px;
 }
 
 .jr-popup-question-text {
   flex: 1;
   min-width: 0;
   word-break: break-word;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+  transition: border-color 0.15s ease;
+  outline: none;
 }
 
-/* Editable question text — subtle caret/outline when contenteditable */
-.jr-popup-question-text[contenteditable="true"] {
-  outline: none;
-  border-bottom: 1px solid var(--jr-border);
-  padding-bottom: 2px;
+/* Hover underline on any editable question text */
+.jr-popup-question-text:hover {
+  border-bottom-color: #9ea0a7;
   cursor: text;
 }
 
-.jr-popup-question-text[contenteditable="true"]:focus {
-  border-bottom-color: var(--jr-accent);
+/* Focus underline (clicked into / typing) */
+.jr-popup-question-text:focus {
+  border-bottom-color: #191414;
+  cursor: text;
+}
+
+/* Active editing underline (completed question in edit mode) */
+.jr-popup-question--editing .jr-popup-question-text,
+.jr-popup-question--editing .jr-popup-question-text:hover {
+  outline: none;
+  border-bottom-color: #191414;
+  cursor: text;
+}
+
+.jr-popup-question-controls {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 /* Placeholder for empty contenteditable */
 .jr-popup-question-text[data-placeholder]:empty::before {
   content: attr(data-placeholder);
-  color: var(--jr-text-muted);
+  color: #9ea0a7;
   pointer-events: none;
 }
 
@@ -478,28 +576,24 @@ ol.jr-popup-context-list .jr-depth-2 {
   background: none;
   cursor: pointer;
   color: var(--jr-text-muted);
-  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease;
   margin-top: 2px;
 }
 
 .jr-popup-edit-btn:hover {
   color: var(--jr-text);
-  background: var(--jr-highlight-bg);
 }
 
-/* Pencil active/pressed state — editing is on: blue, no background */
+/* Pencil active/pressed state */
 .jr-popup-edit-btn--active {
-  color: var(--jr-accent);
-  background: none;
+  color: var(--jr-text);
 }
 
 .jr-popup-edit-btn--active:hover {
-  color: var(--jr-accent-hover);
-  background: var(--jr-highlight-bg);
+  color: var(--jr-text);
 }
 
 .jr-popup-edit-btn svg {
@@ -514,7 +608,7 @@ ol.jr-popup-context-list .jr-depth-2 {
   margin-top: 2px;
 }
 
-/* Send icon for edited question */
+/* Send icon */
 .jr-popup-edit-send {
   width: 24px;
   height: 24px;
@@ -522,22 +616,25 @@ ol.jr-popup-context-list .jr-depth-2 {
   border: none;
   background: none;
   cursor: pointer;
-  color: var(--jr-accent);
-  border-radius: 4px;
+  color: #191414;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  transition: color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
 .jr-popup-edit-send:hover:not(:disabled) {
-  background: var(--jr-highlight-bg);
+  transform: scale(1.25);
 }
 
 .jr-popup-edit-send:disabled {
-  color: var(--jr-text-muted);
-  opacity: 0.35;
+  color: #9ea0a7;
+  opacity: 1;
   cursor: default;
+}
+
+.jr-popup-edit-send:disabled:hover {
+  color: #9ea0a7;
 }
 
 .jr-popup-edit-send svg {
@@ -545,50 +642,75 @@ ol.jr-popup-context-list .jr-depth-2 {
   height: 14px;
 }
 
-/* Dropdown beneath the send icon — Brief / Elaborate */
-.jr-edit-send-dropdown {
+/* Switch mode button above the send icon — hidden until hover */
+.jr-send-switch-btn {
   display: none;
   position: absolute;
-  top: 100%;
-  right: 0;
-  padding-top: 4px;
-  z-index: 2;
-}
-
-.jr-edit-send-dropdown-menu {
-  background: var(--jr-bg);
-  border: 1px solid var(--jr-border);
-  border-radius: 8px;
-  box-shadow: var(--jr-shadow);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Show dropdown on hover when send is enabled */
-.jr-edit-send-wrapper:hover .jr-edit-send-dropdown:not(.jr-disabled) {
-  display: block;
-}
-
-.jr-edit-send-dropdown-item {
-  padding: 5px 10px;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
   font-family: var(--jr-font);
-  font-size: 12px;
-  color: var(--jr-text);
+  font-size: 13px;
+  color: var(--jr-text-muted);
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: background 0.1s ease;
+  white-space: nowrap;
+  transition: color 0.15s ease, font-weight 0.15s ease;
+  z-index: 2;
+  align-items: center;
+  flex-direction: row;
+  gap: 4px;
 }
 
-.jr-edit-send-dropdown-item:hover {
-  background: var(--jr-highlight-bg);
+/* Enlarged invisible hit area — bridges gap to send button */
+.jr-send-switch-btn::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  bottom: -8px;
+  left: -8px;
+}
+
+.jr-send-switch-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+/* Show on hover over send wrapper (when not disabled) */
+.jr-edit-send-wrapper:hover .jr-send-switch-btn:not(.jr-disabled) {
+  display: flex;
+}
+
+.jr-switch-inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.15s ease;
+}
+
+.jr-send-switch-btn:hover {
+  color: var(--jr-text);
+}
+
+.jr-send-switch-btn:hover .jr-switch-inner {
+  transform: scale(1.1);
 }
 
 /* Version navigation bar */
 .jr-popup-version-nav {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  background: none;
 }
 
 .jr-popup-version-prev,
@@ -596,26 +718,31 @@ ol.jr-popup-context-list .jr-depth-2 {
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid var(--jr-border);
-  border-radius: 4px;
-  background: var(--jr-bg);
-  color: var(--jr-text);
+  border: none;
+  background: none;
+  color: #191414;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  transition: background 0.15s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.jr-popup-version-prev svg,
+.jr-popup-version-next svg {
+  width: 14px;
+  height: 14px;
 }
 
 .jr-popup-version-prev:hover:not(:disabled),
 .jr-popup-version-next:hover:not(:disabled) {
-  background: var(--jr-highlight-bg);
+  transform: scale(1.25);
 }
 
 .jr-popup-version-prev:disabled,
 .jr-popup-version-next:disabled {
-  opacity: 0.3;
+  color: #9ea0a7;
+  opacity: 1;
   cursor: default;
 }
 
@@ -628,16 +755,46 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 /* AI response displayed inside popup */
 .jr-popup-response {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--jr-border);
+  margin-top: 6px;
+  padding: 14px;
+  border-top: none;
+  background: var(--jr-bg);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  border: 1px solid var(--jr-border);
   max-height: 350px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: none;
   font-size: 16px;
   line-height: 1.6;
   word-break: break-word;
   user-select: text;
+  color: var(--jr-text);
+}
+
+.jr-popup-response::before,
+.jr-popup-response::after {
+  content: "";
+  display: block;
+  position: sticky;
+  left: 0;
+  right: 0;
+  height: 1px;
+  margin: -1px -14px 0 -14px;
+  background: var(--jr-bg);
+  z-index: 1;
+}
+
+.jr-popup-response::before {
+  top: -1px;
+  box-shadow: 0 -50px 0 50px var(--jr-bg);
+}
+
+.jr-popup-response::after {
+  bottom: -1px;
+  box-shadow: 0 50px 0 50px var(--jr-bg);
+  margin-top: -1px;
 }
 
 /* --- Markdown formatting inside popup response (Step 5b) --- */
@@ -676,33 +833,81 @@ ol.jr-popup-context-list .jr-depth-2 {
   margin: 1em 0;
 }
 
-.jr-popup-response pre {
-  background: var(--jr-highlight-bg);
-  border: 1px solid var(--jr-border);
-  border-radius: 6px;
-  padding: 12px;
-  overflow-x: auto;
-  font-size: 13px;
-  line-height: 1.5;
+/* Code blocks — uses ChatGPT's own --token-* variables so it matches the site theme */
+.jr-popup-response .jr-code-block {
   margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--token-sidebar-surface-secondary, #f5f5f5);
+  border: 0.5px solid var(--token-border-medium, #e3e3e3);
 }
 
-.jr-popup-response pre:last-child {
+.jr-popup-response .jr-code-block:last-child {
   margin-bottom: 0;
 }
 
-.jr-popup-response code {
-  background: var(--jr-highlight-bg);
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 0.9em;
+.jr-popup-response .jr-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  background: var(--token-sidebar-surface-primary, #ececec);
+  color: var(--token-text-secondary, #666);
+  font-size: 12px;
+  font-family: var(--jr-font);
+  border-bottom: 0.5px solid var(--token-border-medium, #e3e3e3);
 }
 
-.jr-popup-response pre code {
+.jr-popup-response .jr-code-lang {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jr-popup-response .jr-code-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.jr-popup-response .jr-code-header button {
   background: none;
-  border-radius: 0;
+  border: none;
+  color: var(--token-text-secondary, #666);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.jr-popup-response .jr-code-header button:hover {
+  color: var(--token-text-primary, #191414);
+}
+
+.jr-popup-response .jr-code-block pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: var(--token-sidebar-surface-secondary, #f5f5f5);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.jr-popup-response .jr-code-block pre code {
+  background: none;
   padding: 0;
   font-size: inherit;
+  white-space: pre;
+  color: var(--token-text-primary, #191414);
+}
+
+/* Inline code (not inside code blocks) */
+.jr-popup-response code {
+  font-size: 0.9em;
 }
 
 .jr-popup-response blockquote {
@@ -770,43 +975,53 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 .jr-source-highlight.jr-highlight-color-blue {
   background: var(--jr-color-blue);
+  color: #fff;
 }
 
 .jr-source-highlight.jr-highlight-color-yellow {
   background: var(--jr-color-yellow);
+  color: #000;
 }
 
 .jr-source-highlight.jr-highlight-color-green {
   background: var(--jr-color-green);
+  color: #000;
 }
 
 .jr-source-highlight.jr-highlight-color-pink {
   background: var(--jr-color-pink);
+  color: #fff;
 }
 
 .jr-source-highlight.jr-highlight-color-purple {
   background: var(--jr-color-purple);
+  color: #fff;
 }
 
 /* Also apply color to the inline mark in the popup blockquote */
 .jr-popup-mark.jr-highlight-color-blue {
   background: var(--jr-color-blue);
+  color: #fff;
 }
 
 .jr-popup-mark.jr-highlight-color-yellow {
   background: var(--jr-color-yellow);
+  color: #000;
 }
 
 .jr-popup-mark.jr-highlight-color-green {
   background: var(--jr-color-green);
+  color: #000;
 }
 
 .jr-popup-mark.jr-highlight-color-pink {
   background: var(--jr-color-pink);
+  color: #fff;
 }
 
 .jr-popup-mark.jr-highlight-color-purple {
   background: var(--jr-color-purple);
+  color: #fff;
 }
 
 /* --- Floating toolbar near highlight (Step 7a) --- */
@@ -818,10 +1033,11 @@ ol.jr-popup-context-list .jr-depth-2 {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: var(--jr-bg);
+  cursor: pointer;
+  background: #ffffff;
   border: 1px solid var(--jr-border);
-  border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
   animation: jr-fade-in 0.15s ease-out;
   transition: opacity 0.12s ease-in;
 }
@@ -833,27 +1049,57 @@ ol.jr-popup-context-list .jr-depth-2 {
 .jr-toolbar-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 3px;
   cursor: pointer;
-  border: 2px solid transparent;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  border: none;
   flex-shrink: 0;
+  position: relative;
+  background: transparent !important;
 }
 
-.jr-toolbar-swatch--active {
-  border-color: var(--jr-text);
+/* Background indicator — same color as swatch, taller than square */
+.jr-toolbar-swatch::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease;
+  opacity: 0;
 }
 
-.jr-toolbar-swatch:hover:not(.jr-toolbar-swatch--active) {
-  border-color: var(--jr-text-muted);
+/* Color square — sits on top */
+.jr-toolbar-swatch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  transition: top 0.1s ease, bottom 0.1s ease;
 }
 
-.jr-toolbar-swatch--blue { background: var(--jr-color-blue); }
-.jr-toolbar-swatch--yellow { background: var(--jr-color-yellow); }
-.jr-toolbar-swatch--green { background: var(--jr-color-green); }
-.jr-toolbar-swatch--pink { background: var(--jr-color-pink); }
-.jr-toolbar-swatch--purple { background: var(--jr-color-purple); }
+.jr-toolbar-swatch--active::before {
+  opacity: 1;
+}
+
+/* Hover: slightly taller, not as tall as active */
+.jr-toolbar-swatch:hover:not(.jr-toolbar-swatch--active)::after {
+  top: -2px;
+  bottom: -2px;
+}
+
+
+.jr-toolbar-swatch--blue::after { background: #4100F5; }
+.jr-toolbar-swatch--blue::before { background: #4100F5; }
+.jr-toolbar-swatch--yellow::after { background: #CDF564; }
+.jr-toolbar-swatch--yellow::before { background: #CDF564; }
+.jr-toolbar-swatch--green::after { background: #9BF0E1; }
+.jr-toolbar-swatch--green::before { background: #9BF0E1; }
+.jr-toolbar-swatch--pink::after { background: #F037A5; }
+.jr-toolbar-swatch--pink::before { background: #F037A5; }
+.jr-toolbar-swatch--purple::after { background: #FF4632; }
+.jr-toolbar-swatch--purple::before { background: #FF4632; }
 
 .jr-toolbar-delete {
   margin-left: auto;
@@ -861,17 +1107,16 @@ ol.jr-popup-context-list .jr-depth-2 {
   border: none;
   background: none;
   cursor: pointer;
-  color: var(--jr-text-muted);
-  border-radius: 4px;
+  color: #191414;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 
 .jr-toolbar-delete:hover {
   color: #ef4444;
-  background: var(--jr-highlight-bg);
+  transform: scale(1.25);
 }
 
 .jr-toolbar-delete svg {
@@ -879,51 +1124,133 @@ ol.jr-popup-context-list .jr-depth-2 {
   height: 16px;
 }
 
-/* Confirmation overlay inside popup */
+/* Confirmation — toolbar-sized inline bar */
 .jr-popup-confirm {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 20px 14px;
-  text-align: center;
-  gap: 14px;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--jr-bg);
+  border: 1px solid var(--jr-border);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .jr-popup-confirm-text {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--jr-text);
-  line-height: 1.5;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .jr-popup-confirm-buttons {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
 }
 
-.jr-popup-confirm-btn {
-  padding: 6px 16px;
-  border: 1px solid var(--jr-border);
-  border-radius: 6px;
-  background: var(--jr-bg);
-  color: var(--jr-text);
-  font-family: var(--jr-font);
-  font-size: 13px;
+.jr-popup-confirm-icon-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--jr-text-muted);
   cursor: pointer;
-  transition: background 0.15s ease;
+  border-radius: 50%;
+  padding: 0;
+  transition: transform 0.12s ease, color 0.12s ease;
 }
 
-.jr-popup-confirm-btn:hover {
-  background: var(--jr-highlight-bg);
+.jr-popup-confirm-icon-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
-.jr-popup-confirm-btn--danger {
-  background: #ef4444;
-  color: #ffffff;
-  border-color: #ef4444;
+.jr-popup-confirm-icon-btn:hover {
+  color: var(--jr-text);
+  transform: scale(1.2);
 }
 
-.jr-popup-confirm-btn--danger:hover {
-  background: #dc2626;
-  border-color: #dc2626;
+.jr-popup-confirm-icon-btn:active {
+  transform: scale(1.35);
+}
+
+.jr-popup-confirm-icon-btn--danger {
+  color: #ef4444;
+}
+
+.jr-popup-confirm-icon-btn--danger:hover {
+  color: #dc2626;
+  transform: scale(1.2);
+}
+
+.jr-popup-confirm-icon-btn--danger:active {
+  transform: scale(1.35);
+}
+
+/* --- Highlight navigation widget (Step 7d) --- */
+
+.jr-nav-widget {
+  position: fixed;
+  top: 50%;
+  right: 80px;
+  transform: translateY(-50%);
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  font-family: var(--jr-font);
+  animation: jr-fade-in 0.15s ease-out;
+}
+
+.jr-nav-up,
+.jr-nav-down {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #191414;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.jr-nav-up svg,
+.jr-nav-down svg {
+  width: 20px;
+  height: 20px;
+}
+
+.jr-nav-up:hover:not(:disabled),
+.jr-nav-down:hover:not(:disabled) {
+  transform: scale(1.3);
+}
+
+.jr-nav-up:disabled,
+.jr-nav-down:disabled {
+  color: #c0c0c0;
+  cursor: default;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.jr-nav-indicator {
+  font-size: 13px;
+  color: var(--jr-text-muted);
+  text-align: center;
+  user-select: none;
+  white-space: nowrap;
 }

@@ -91,7 +91,7 @@
   };
 
   JR.getModeLabel = function (mode) {
-    return mode === "regular" ? "Regular" : "Brief";
+    return mode === "regular" ? "Elaborate" : "Brief";
   };
 
   JR.truncateText = function (text, max) {

@@ -54,6 +54,31 @@
 
       if (textNodes.length === 0) return wrappers;
 
+      // If the range spans both inside and outside an existing completed
+      // highlight, skip text nodes inside it so the new highlight wraps
+      // around the existing one and both remain independently visible.
+      var hasInsideDone = false;
+      var hasOutsideDone = false;
+      for (var ci = 0; ci < textNodes.length; ci++) {
+        if (textNodes[ci].parentElement && textNodes[ci].parentElement.closest(".jr-source-highlight-done")) {
+          hasInsideDone = true;
+        } else {
+          hasOutsideDone = true;
+        }
+        if (hasInsideDone && hasOutsideDone) break;
+      }
+      var filteredWrapping = hasInsideDone && hasOutsideDone;
+      if (filteredWrapping) {
+        var filtered = [];
+        for (var fi = 0; fi < textNodes.length; fi++) {
+          if (!textNodes[fi].parentElement || !textNodes[fi].parentElement.closest(".jr-source-highlight-done")) {
+            filtered.push(textNodes[fi]);
+          }
+        }
+        textNodes = filtered;
+        if (textNodes.length === 0) return wrappers;
+      }
+
       var firstTextNode = textNodes[0];
       var lastTextNode = textNodes[textNodes.length - 1];
       var firstOffset = (firstTextNode === startNode)
@@ -97,6 +122,10 @@
         }
         wrappers.unshift(spanEl);
       }
+      // Flag so pickNonConflictingColor knows wrapping occurred
+      if (filteredWrapping && wrappers.length > 0) {
+        wrappers[0]._jrWrapping = true;
+      }
     } catch (e) {
       console.warn("[Jump Return] highlightRange failed:", e);
       for (var j = 0; j < wrappers.length; j++) {
@@ -109,6 +138,104 @@
       return [];
     }
     return wrappers;
+  };
+
+  /**
+   * If highlight spans overlap an existing completed highlight (either nested
+   * inside or wrapping around), return a color that won't conflict.
+   * Returns null when no conflict is detected (caller uses default blue).
+   */
+  JR.pickNonConflictingColor = function (spans) {
+    if (spans.length === 0) return null;
+    var colors = JR.HIGHLIGHT_COLORS;
+    var conflictColor = null;
+
+    // Helper: extract color from a done highlight element
+    function colorFromDone(el) {
+      var hlId = el.getAttribute("data-jr-highlight-id");
+      if (!hlId) return "blue";
+      var entry = st.completedHighlights.get(hlId);
+      return (entry && entry.color) || "blue";
+    }
+
+    // Build a Set of new span elements so the broad scan can skip them
+    var spanSet = new Set();
+    for (var si2 = 0; si2 < spans.length; si2++) spanSet.add(spans[si2]);
+
+    // Case 1: new highlight is INSIDE an existing one — walk up from each span
+    for (var i = 0; i < spans.length && !conflictColor; i++) {
+      var ancestor = spans[i].parentElement;
+      while (ancestor) {
+        if (ancestor.classList && ancestor.classList.contains("jr-source-highlight-done")) {
+          conflictColor = colorFromDone(ancestor);
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+    }
+
+    // Cases 2 & 3 only apply when highlightRange's filter detected wrapping
+    var wrapping = spans.length > 0 && spans[0]._jrWrapping;
+
+    // Case 2: new highlight wraps around an existing one — check siblings
+    if (!conflictColor && wrapping) {
+      for (var si = 0; si < spans.length && !conflictColor; si++) {
+        // Walk forward
+        var sib = spans[si].nextElementSibling;
+        while (sib) {
+          if (sib.classList.contains("jr-source-highlight-done")) {
+            conflictColor = colorFromDone(sib);
+            break;
+          }
+          if (sib.classList.contains("jr-source-highlight")) break;
+          sib = sib.nextElementSibling;
+        }
+        if (conflictColor) break;
+        // Walk backward
+        var prev = spans[si].previousElementSibling;
+        while (prev) {
+          if (prev.classList.contains("jr-source-highlight-done")) {
+            conflictColor = colorFromDone(prev);
+            break;
+          }
+          if (prev.classList.contains("jr-source-highlight")) break;
+          prev = prev.previousElementSibling;
+        }
+      }
+    }
+
+    // Case 3 (fallback): broad scan — when spans are at different DOM depths
+    // (e.g. text inside <strong> or <a>), sibling walks miss highlights in
+    // adjacent branches. Walk up to the nearest block ancestor and search
+    // for done highlights positioned between the first and last new span.
+    if (!conflictColor && wrapping && spans.length >= 2) {
+      var firstSpan = spans[0];
+      var lastSpan = spans[spans.length - 1];
+      var block = firstSpan.parentElement;
+      while (block && !JR.BLOCK_TAGS.has(block.tagName)) {
+        block = block.parentElement;
+      }
+      if (!block) block = firstSpan.parentElement;
+      var doneEls = block.querySelectorAll(".jr-source-highlight-done");
+      for (var di = 0; di < doneEls.length; di++) {
+        if (spanSet.has(doneEls[di])) continue;
+        // Check that the done el is between first and last new span
+        var pos1 = firstSpan.compareDocumentPosition(doneEls[di]);
+        var pos2 = lastSpan.compareDocumentPosition(doneEls[di]);
+        var afterFirst = !!(pos1 & Node.DOCUMENT_POSITION_FOLLOWING);
+        var beforeLast = !!(pos2 & Node.DOCUMENT_POSITION_PRECEDING);
+        if (afterFirst && beforeLast) {
+          conflictColor = colorFromDone(doneEls[di]);
+          break;
+        }
+      }
+    }
+
+    if (!conflictColor) return null;
+    for (var c = 0; c < colors.length; c++) {
+      if (colors[c] !== conflictColor) return colors[c];
+    }
+    return colors[1];
   };
 
   /**
@@ -213,6 +340,7 @@
       color: hl.color || null,
       contentContainer: contentContainer,
       parentId: hl.parentId || null,
+      responseIndex: hl.responseIndex || -1,
     };
     // Preserve version data from storage
     if (hl.versions) {
@@ -298,6 +426,13 @@
 
       if (allTurnIndices.length === 0 && restorable.length === 0) return;
 
+      // Restore shorter (inner) highlights first so that when longer
+      // (outer) highlights restore, the filter in highlightRange can
+      // detect the inner and wrap around it instead of covering it.
+      restorable.sort(function (a, b) {
+        return (a.text || "").length - (b.text || "").length;
+      });
+
       var attempts = 0;
       var maxAttempts = 30;
       var remaining = restorable.slice();
@@ -340,11 +475,17 @@
           }
 
           var contentContainer = sourceArticle.parentElement;
-          if (!JR.restoreHighlightInElement(markdown, hl, contentContainer)) continue;
+          if (!JR.restoreHighlightInElement(markdown, hl, contentContainer)) {
+            // Retry on next attempt — DOM may not be settled yet
+            stillRemaining.push(hl);
+            continue;
+          }
         }
 
         remaining = stillRemaining;
         attempts++;
+
+        JR.updateNavWidget();
 
         if ((remaining.length > 0 || turnsRemaining.length > 0) && attempts < maxAttempts) {
           st.restoreTimer = setTimeout(tryRestore, 500);

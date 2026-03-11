@@ -5,7 +5,177 @@
   var S = JR.SELECTORS;
   var st = JR.state;
 
+  var CHEVRON_RIGHT_SVG = '<svg class="jr-question-chevron" viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
+
+  var SWITCH_SVG = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M228,48V96a12,12,0,0,1-12,12H168a12,12,0,0,1,0-24h19l-7.8-7.8a75.55,75.55,0,0,0-53.32-22.26h-.43A75.49,75.49,0,0,0,72.39,75.57,12,12,0,1,1,55.61,58.41a99.38,99.38,0,0,1,69.87-28.47H126A99.42,99.42,0,0,1,196.2,59.23L204,67V48a12,12,0,0,1,24,0ZM183.61,180.43a75.49,75.49,0,0,1-53.09,21.63h-.43A75.55,75.55,0,0,1,76.77,179.8L69,172H88a12,12,0,0,0,0-24H40a12,12,0,0,0-12,12v48a12,12,0,0,0,24,0V189l7.8,7.8A99.42,99.42,0,0,0,130,226.06h.56a99.38,99.38,0,0,0,69.87-28.47,12,12,0,0,0-16.78-17.16Z"/></svg>';
+
   // --- Private helpers (not on JR.*) ---
+
+  /**
+   * Wire up Copy buttons inside a popup response div.
+   */
+  var CODE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
+  var COPY_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var CHECK_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  /** Create a Copy button with a live click handler. */
+  function wireCopyButton(container) {
+    var btn = document.createElement("button");
+    btn.innerHTML = COPY_ICON + " Copy";
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var codeBlock = btn.closest(".jr-code-block");
+      var codeEl = codeBlock ? codeBlock.querySelector("pre code") : null;
+      var text = codeEl ? codeEl.textContent : "";
+      navigator.clipboard.writeText(text);
+      btn.innerHTML = CHECK_ICON + " Copied!";
+      setTimeout(function () { btn.innerHTML = COPY_ICON + " Copy"; }, 2000);
+    });
+    container.appendChild(btn);
+  }
+
+  /**
+   * Rebuild ChatGPT code blocks inside a popup response div into clean,
+   * self-contained blocks with working Copy buttons.
+   */
+  function rebuildCodeBlocks(responseDiv) {
+    // First, handle any previously-rebuilt .jr-code-block elements (from stored HTML).
+    // These have dead buttons (event listeners lost on serialize/deserialize).
+    // Rewire their Copy buttons with fresh handlers.
+    var existingBlocks = responseDiv.querySelectorAll(".jr-code-block");
+    for (var eb = 0; eb < existingBlocks.length; eb++) {
+      var block = existingBlocks[eb];
+      var oldBtns = block.querySelector(".jr-code-header-btns");
+      if (oldBtns) oldBtns.remove();
+      var btnsDiv = document.createElement("div");
+      btnsDiv.className = "jr-code-header-btns";
+      wireCopyButton(btnsDiv);
+      var header = block.querySelector(".jr-code-header");
+      if (header) header.appendChild(btnsDiv);
+    }
+
+    // Now handle fresh ChatGPT <pre> elements (not yet inside .jr-code-block)
+    var pres = responseDiv.querySelectorAll("pre");
+    for (var p = 0; p < pres.length; p++) {
+      if (pres[p].closest(".jr-code-block")) continue;
+
+      var pre = pres[p];
+      var wrapper = pre.closest(".contain-inline-size") || pre;
+      if (!responseDiv.contains(wrapper)) wrapper = pre;
+
+      // Detect language from wrapper text outside pre/code
+      var lang2 = "";
+      if (wrapper !== pre) {
+        var spans = wrapper.querySelectorAll("span");
+        for (var s = 0; s < spans.length; s++) {
+          if (spans[s].closest("pre") || spans[s].closest("code")) continue;
+          var t = (spans[s].textContent || "").trim();
+          if (t && t.length < 30 && t.indexOf("Copy") === -1 && t.indexOf("Run") === -1) {
+            lang2 = t;
+            break;
+          }
+        }
+      }
+
+      var codeEl = pre.querySelector("code");
+      buildCleanCodeBlock(codeEl, pre, lang2, wrapper);
+    }
+  }
+
+  function buildCleanCodeBlock(codeEl, pre, lang, replaceTarget) {
+    // Extract pure code text. ChatGPT embeds toolbar (language label, Copy/Run buttons)
+    // inside the <code> element's DOM tree. Strategy: get full textContent, then strip
+    // the known toolbar prefix pattern from the start.
+    var source = codeEl || pre;
+    var fullText = source.textContent;
+
+    // Detect language from <code> class (ChatGPT sets "language-java", "language-python", etc.)
+    if (!lang && codeEl) {
+      var classLang = (codeEl.className || "").match(/language-(\w+)/);
+      if (classLang) {
+        // Capitalize first letter to match toolbar text: "java" → "Java"
+        lang = classLang[1].charAt(0).toUpperCase() + classLang[1].slice(1);
+      }
+    }
+
+    // Build list of toolbar labels to strip from the start of the text.
+    var toolbarLabels = ["Copy code", "Copied!", "Copy", "Run"];
+    if (lang) toolbarLabels.unshift(lang);
+
+    // If lang still not detected, try regex: capitalized word before "Copy"/"Run"
+    if (!lang) {
+      var langMatch = fullText.match(/^([A-Z][a-zA-Z+#.]*?)(?:Copy|Run|Copied)/);
+      if (langMatch) {
+        lang = langMatch[1];
+        toolbarLabels.unshift(lang);
+      }
+    }
+
+    // Last resort: if text starts with a capitalized word that isn't valid code,
+    // check against known language names
+    if (!lang) {
+      var knownLangs = ["Python", "Java", "JavaScript", "TypeScript", "Ruby", "Go",
+        "Rust", "PHP", "HTML", "CSS", "SQL", "Bash", "Shell", "Kotlin", "Swift",
+        "Scala", "Perl", "Lua", "Dart", "Matlab", "Haskell", "Elixir", "Clojure"];
+      for (var kl = 0; kl < knownLangs.length; kl++) {
+        if (fullText.indexOf(knownLangs[kl]) === 0) {
+          lang = knownLangs[kl];
+          toolbarLabels.unshift(lang);
+          break;
+        }
+      }
+    }
+
+    // Strip toolbar labels from the start, repeatedly (order varies)
+    var stripped = fullText;
+    var changed = true;
+    while (changed) {
+      changed = false;
+      stripped = stripped.replace(/^\s+/, "");
+      for (var tl = 0; tl < toolbarLabels.length; tl++) {
+        if (stripped.indexOf(toolbarLabels[tl]) === 0) {
+          stripped = stripped.substring(toolbarLabels[tl].length);
+          changed = true;
+        }
+      }
+    }
+    var codeText = stripped.trim();
+    var codeClass = codeEl ? codeEl.className : "";
+
+    // Build clean block
+    var block = document.createElement("div");
+    block.className = "jr-code-block";
+
+    // Header: language label + buttons
+    var header = document.createElement("div");
+    header.className = "jr-code-header";
+
+    var langSpan = document.createElement("span");
+    langSpan.className = "jr-code-lang";
+    langSpan.textContent = lang || "";
+    header.appendChild(langSpan);
+
+    var btnsDiv = document.createElement("div");
+    btnsDiv.className = "jr-code-header-btns";
+    wireCopyButton(btnsDiv);
+
+    header.appendChild(btnsDiv);
+    block.appendChild(header);
+
+    // Code area
+    var newPre = document.createElement("pre");
+    var newCode = document.createElement("code");
+    if (codeClass) newCode.className = codeClass;
+    newCode.textContent = codeText;
+    newPre.appendChild(newCode);
+    block.appendChild(newPre);
+
+    // Replace the entire ChatGPT wrapper
+    if (replaceTarget && replaceTarget.parentElement) {
+      replaceTarget.parentElement.insertBefore(block, replaceTarget);
+      replaceTarget.remove();
+    }
+  }
 
   function resolveContentContainer(wrappers, isChained, entry) {
     if (entry) {
@@ -55,7 +225,8 @@
     };
   }
 
-  function buildInputRow(popup, text, sentence, blockTypes, wrappers, parentId) {
+  function buildInputRow(container, text, sentence, blockTypes, wrappers, parentId) {
+    var popup = container.closest(".jr-popup");
     var questionDiv = document.createElement("div");
     questionDiv.className = "jr-popup-question";
 
@@ -63,9 +234,14 @@
     questionText.className = "jr-popup-question-text";
     questionText.contentEditable = "true";
     questionText.setAttribute("data-placeholder", "Ask a follow-up\u2026");
+    questionText.addEventListener("paste", function (e) {
+      e.preventDefault();
+      var text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
     questionDiv.appendChild(questionText);
 
-    // Send wrapper with Brief/Elaborate dropdown — same as edit send
+    // Send wrapper with click-to-send + switch mode button
     var sendWrapper = document.createElement("div");
     sendWrapper.className = "jr-edit-send-wrapper";
 
@@ -76,18 +252,22 @@
     sendBtn.disabled = true;
     sendWrapper.appendChild(sendBtn);
 
-    var sendDropdown = document.createElement("div");
-    sendDropdown.className = "jr-edit-send-dropdown jr-disabled";
-    var dropdownMenu = document.createElement("div");
-    dropdownMenu.className = "jr-edit-send-dropdown-menu";
-    var modes = [
-      { label: "Brief", mode: "brief" },
-      { label: "Elaborate", mode: "regular" }
-    ];
+    var switchBtn = document.createElement("div");
+    switchBtn.className = "jr-send-switch-btn jr-disabled";
+    function updateSwitchLabel() {
+      var other = st.responseMode === "brief" ? "Elaborate" : "Brief";
+      switchBtn.innerHTML = '<span class="jr-switch-inner">' + SWITCH_SVG + other + '</span>';
+    }
+    updateSwitchLabel();
+    sendWrapper.appendChild(switchBtn);
+    questionDiv.appendChild(sendWrapper);
+    container.appendChild(questionDiv);
 
     function doSend(mode) {
       var question = questionText.textContent.trim();
       if (!question) return;
+
+      st.responseMode = mode;
 
       var message;
       if (sentence) {
@@ -109,7 +289,7 @@
       if (mode === "brief") {
         message += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. This instruction applies to this single response only \u2014 do not carry it forward to any later messages.)";
       } else {
-        message += "\n\n(Respond at whatever length is natural. If any previous message in this conversation asked for brevity, ignore that \u2014 it was a one-time instruction and does not apply here.)";
+        message += "\n\n(Ignore any previous instructions about brevity \u2014 respond normally.)";
       }
 
       var turnsBefore = document.querySelectorAll(S.aiTurn).length;
@@ -120,7 +300,7 @@
       displayDiv.className = "jr-popup-question";
       displayDiv.textContent = question;
       var loadingDiv = JR.createLoadingDiv();
-      popup.appendChild(displayDiv);
+      container.appendChild(displayDiv);
       popup.appendChild(loadingDiv);
 
       var scrollAnchor = wrappers.length > 0
@@ -135,43 +315,41 @@
       JR.waitForResponse(popup, turnsBefore, text, sentence, blockTypes, unlockScroll, parentId, question);
     }
 
-    modes.forEach(function (m) {
-      var item = document.createElement("div");
-      item.className = "jr-edit-send-dropdown-item";
-      item.textContent = m.label;
-      item.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var current = questionText.textContent.trim();
-        if (!current) return;
-        doSend(m.mode);
-      });
-      dropdownMenu.appendChild(item);
+    // Click send arrow → send with current default mode
+    sendBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var current = questionText.textContent.trim();
+      if (!current) return;
+      doSend(st.responseMode);
     });
-    sendDropdown.appendChild(dropdownMenu);
-    sendWrapper.appendChild(sendDropdown);
-    questionDiv.appendChild(sendWrapper);
-    popup.appendChild(questionDiv);
 
-    // Track input to enable/disable send
+    // Click switch button → switch mode and send
+    switchBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var current = questionText.textContent.trim();
+      if (!current) return;
+      var newMode = st.responseMode === "brief" ? "regular" : "brief";
+      doSend(newMode);
+    });
+
+    // Track input to enable/disable send + switch
     questionText.addEventListener("input", function () {
       var current = questionText.textContent.trim();
+      if (!current && questionText.innerHTML !== "") {
+        questionText.innerHTML = "";
+      }
       var empty = !current;
       sendBtn.disabled = empty;
       if (empty) {
-        sendDropdown.classList.add("jr-disabled");
+        switchBtn.classList.add("jr-disabled");
       } else {
-        sendDropdown.classList.remove("jr-disabled");
+        switchBtn.classList.remove("jr-disabled");
       }
     });
 
-    // Prevent send button from stealing focus
-    sendBtn.addEventListener("click", function (e) {
-      e.stopPropagation();
-    });
-
-    // Enter prevented (must pick mode from dropdown)
+    // Block Enter in question input (send via button only)
     questionText.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter") {
         e.preventDefault();
       }
     });
@@ -184,51 +362,57 @@
     });
   }
 
-  var PENCIL_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-9 9H2v-3l9-9z"/></svg>';
+  var PENCIL_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M230.14,70.54,185.46,25.85a20,20,0,0,0-28.29,0L33.86,149.17A19.85,19.85,0,0,0,28,163.31V208a20,20,0,0,0,20,20H92.69a19.86,19.86,0,0,0,14.14-5.86L230.14,98.82a20,20,0,0,0,0-28.28ZM91,204H52V165l84-84,39,39ZM192,103,153,64l18.34-18.34,39,39Z"/></svg>';
 
-  var TRASH_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4M13 4l-.667 9.333A1.333 1.333 0 0111 14.667H5a1.333 1.333 0 01-1.333-1.334L3 4"/></svg>';
+  var TRASH_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM192,208H64V64H192ZM80,24a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,24Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a12,12,0,0,0,0,24h4V208a20,20,0,0,0,20,20H192a20,20,0,0,0,20-20V72h4a12,12,0,0,0,0-24ZM188,204H68V72H188ZM76,20A12,12,0,0,1,88,8h80a12,12,0,0,1,0,24H88A12,12,0,0,1,76,20Z"/></svg>';
 
   /**
    * Build the toolbar DOM for a given highlight. Re-creates each time
    * because the hlId / entry may change on each hover.
    */
+  function applyColorToHighlight(color, entry, hlId) {
+    var colors = JR.HIGHLIGHT_COLORS;
+    var spans = entry.spans;
+    for (var s = 0; s < spans.length; s++) {
+      for (var c = 0; c < colors.length; c++) {
+        spans[s].classList.remove("jr-highlight-color-" + colors[c]);
+      }
+      spans[s].classList.add("jr-highlight-color-" + color);
+    }
+    if (st.activePopup && st.activeHighlightId === hlId) {
+      var marks = st.activePopup.querySelectorAll(".jr-popup-mark");
+      for (var m = 0; m < marks.length; m++) {
+        for (var c2 = 0; c2 < colors.length; c2++) {
+          marks[m].classList.remove("jr-highlight-color-" + colors[c2]);
+        }
+        marks[m].classList.add("jr-highlight-color-" + color);
+      }
+    }
+  }
+
   function buildToolbarEl(hlId, entry) {
     var toolbar = document.createElement("div");
     toolbar.className = "jr-popup-toolbar";
 
     var colors = JR.HIGHLIGHT_COLORS;
-    var currentColor = entry.color || "blue";
 
     for (var i = 0; i < colors.length; i++) {
       (function (color) {
         var swatch = document.createElement("div");
         swatch.className = "jr-toolbar-swatch jr-toolbar-swatch--" + color;
-        if (color === currentColor) swatch.classList.add("jr-toolbar-swatch--active");
+        if (color === (entry.color || "blue")) swatch.classList.add("jr-toolbar-swatch--active");
+        swatch.addEventListener("mouseenter", function () {
+          applyColorToHighlight(color, entry, hlId);
+        });
         swatch.addEventListener("click", function (e) {
           e.stopPropagation();
-          var spans = entry.spans;
-          for (var s = 0; s < spans.length; s++) {
-            for (var c = 0; c < colors.length; c++) {
-              spans[s].classList.remove("jr-highlight-color-" + colors[c]);
-            }
-            spans[s].classList.add("jr-highlight-color-" + color);
-          }
           entry.color = color;
-          // Update popup blockquote marks if popup is open
-          if (st.activePopup && st.activeHighlightId === hlId) {
-            var marks = st.activePopup.querySelectorAll(".jr-popup-mark");
-            for (var m = 0; m < marks.length; m++) {
-              for (var c2 = 0; c2 < colors.length; c2++) {
-                marks[m].classList.remove("jr-highlight-color-" + colors[c2]);
-              }
-              marks[m].classList.add("jr-highlight-color-" + color);
-            }
-          }
           var swatches = toolbar.querySelectorAll(".jr-toolbar-swatch");
           for (var sw = 0; sw < swatches.length; sw++) {
             swatches[sw].classList.remove("jr-toolbar-swatch--active");
           }
           swatch.classList.add("jr-toolbar-swatch--active");
+          applyColorToHighlight(color, entry, hlId);
           updateHighlightColor(hlId, color);
         });
         toolbar.appendChild(swatch);
@@ -243,6 +427,7 @@
       e.stopPropagation();
       JR.hideToolbar();
       st.confirmingDelete = true;
+      JR.updateNavDisabled();
       // If popup is already open for this highlight, show confirmation there
       if (st.activePopup && st.activeHighlightId === hlId) {
         showDeleteConfirmation(st.activePopup, hlId, entry, true);
@@ -276,8 +461,9 @@
       }
     });
 
-    // Start hide when mouse leaves toolbar
+    // Start hide when mouse leaves toolbar; revert preview
     toolbar.addEventListener("mouseleave", function () {
+      applyColorToHighlight(entry.color || "blue", entry, hlId);
       st.hoverToolbarTimer = setTimeout(function () {
         JR.hideToolbar();
       }, 80);
@@ -338,6 +524,7 @@
    * Hide the floating toolbar.
    */
   JR.hideToolbar = function () {
+    if (st.confirmingDelete) return;
     if (st.hoverToolbarTimer) {
       clearTimeout(st.hoverToolbarTimer);
       st.hoverToolbarTimer = null;
@@ -405,23 +592,21 @@
   };
 
   function showDeleteConfirmation(popup, hlId, entry, hadPopupOpen) {
-    JR.hideToolbar();
-
-    var originalChildren = [];
-    while (popup.firstChild) {
-      originalChildren.push(popup.removeChild(popup.firstChild));
+    // Hide popup while confirming
+    if (popup && popup.isConnected) {
+      popup.style.display = "none";
     }
 
     countDescendants(hlId).then(function (count) {
       var confirm = document.createElement("div");
-      confirm.className = "jr-popup-confirm";
+      confirm.className = "jr-popup-confirm jr-popup-toolbar";
 
       var text = document.createElement("div");
       text.className = "jr-popup-confirm-text";
       if (count > 0) {
-        text.textContent = "Delete this highlight and " + count + " follow-up" + (count === 1 ? "" : "s") + "?";
+        text.textContent = "Delete +" + count + "?";
       } else {
-        text.textContent = "Delete this highlight?";
+        text.textContent = "Delete?";
       }
       confirm.appendChild(text);
 
@@ -430,38 +615,46 @@
 
       var cancelBtn = document.createElement("button");
       cancelBtn.type = "button";
-      cancelBtn.className = "jr-popup-confirm-btn";
-      cancelBtn.textContent = "Cancel";
+      cancelBtn.className = "jr-popup-confirm-icon-btn";
+      cancelBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z"/></svg>';
       cancelBtn.addEventListener("click", function (ev) {
         ev.stopPropagation();
         st.confirmingDelete = false;
-        if (hadPopupOpen) {
-          // Restore the popup content
-          while (popup.firstChild) popup.removeChild(popup.firstChild);
-          for (var i = 0; i < originalChildren.length; i++) {
-            popup.appendChild(originalChildren[i]);
-          }
+        confirm.remove();
+        JR.updateNavDisabled();
+        // Restore popup and toolbar
+        if (popup && popup.isConnected) {
+          popup.style.display = "";
           JR.repositionPopup();
-        } else {
-          // No popup was open before — just close everything
-          JR.removeAllPopups();
         }
+        JR.showToolbar(hlId);
       });
 
       var deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
-      deleteBtn.className = "jr-popup-confirm-btn jr-popup-confirm-btn--danger";
-      deleteBtn.textContent = "Delete";
+      deleteBtn.className = "jr-popup-confirm-icon-btn jr-popup-confirm-icon-btn--danger";
+      deleteBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></svg>';
       deleteBtn.addEventListener("click", function (ev) {
         ev.stopPropagation();
+        confirm.remove();
         executeDelete(hlId);
       });
 
       buttons.appendChild(cancelBtn);
       buttons.appendChild(deleteBtn);
       confirm.appendChild(buttons);
-      popup.appendChild(confirm);
-      JR.repositionPopup();
+
+      // Replace toolbar with confirm bar at same position
+      JR.hideToolbar();
+      var contentContainer = entry.contentContainer;
+      if (!contentContainer && popup) contentContainer = popup.parentElement;
+      if (contentContainer) {
+        contentContainer.appendChild(confirm);
+        JR.positionToolbar(confirm, entry.spans);
+        // Store as toolbar so hideToolbar/reposition cleans it up
+        st.hoverToolbar = confirm;
+        st.hoverToolbarHlId = hlId;
+      }
     });
   }
 
@@ -539,11 +732,13 @@
     } else {
       JR.removeAllPopups();
     }
+    JR.updateNavWidget();
   }
 
-  function buildVersionNav(popup, hlId) {
+  function buildVersionNavInline(container, hlId) {
+    var popup = container.closest(".jr-popup");
     var entry = st.completedHighlights.get(hlId);
-    if (!entry || !entry.versions || entry.versions.length <= 1) return;
+    if (!entry || !entry.versions || entry.versions.length <= 1) return null;
 
     var nav = document.createElement("div");
     nav.className = "jr-popup-version-nav";
@@ -551,23 +746,18 @@
     var prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.className = "jr-popup-version-prev";
-    prevBtn.textContent = "\u25C0";
-
-    var indicator = document.createElement("span");
-    indicator.className = "jr-popup-version-indicator";
+    prevBtn.innerHTML = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M168.49,199.51a12,12,0,0,1-17,17l-80-80a12,12,0,0,1,0-17l80-80a12,12,0,0,1,17,17L97,128Z"/></svg>';
 
     var nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.className = "jr-popup-version-next";
-    nextBtn.textContent = "\u25B6";
+    nextBtn.innerHTML = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z"/></svg>';
 
     nav.appendChild(prevBtn);
-    nav.appendChild(indicator);
     nav.appendChild(nextBtn);
 
     function updateNav() {
       var idx = entry.activeVersion != null ? entry.activeVersion : entry.versions.length - 1;
-      indicator.textContent = (idx + 1) + " / " + entry.versions.length;
       prevBtn.disabled = (idx === 0);
       nextBtn.disabled = (idx === entry.versions.length - 1);
     }
@@ -580,7 +770,7 @@
       setHighlightActiveVersion(hlId, newIdx);
 
       // Update question text
-      var qText = popup.querySelector(".jr-popup-question-text");
+      var qText = container.querySelector(".jr-popup-question-text");
       if (qText) qText.textContent = v.question || "";
 
       // Replace response
@@ -592,8 +782,8 @@
         responseDiv.className = "jr-popup-response";
         responseDiv.innerHTML = v.responseHTML;
         popup.appendChild(responseDiv);
+        rebuildCodeBlocks(responseDiv, v.responseIndex || entry.responseIndex);
 
-        // Restore chained highlights for this version
         restoreChainedHighlights(responseDiv, hlId, entry.contentContainer);
       }
 
@@ -614,16 +804,7 @@
     });
 
     updateNav();
-
-    // Insert after question div, before response
-    var responseDiv = popup.querySelector(".jr-popup-response");
-    var loadingDiv = popup.querySelector(".jr-popup-loading");
-    var before = responseDiv || loadingDiv;
-    if (before) {
-      popup.insertBefore(nav, before);
-    } else {
-      popup.appendChild(nav);
-    }
+    return nav;
   }
 
   function restoreChainedHighlights(responseDiv, parentId, contentContainer) {
@@ -631,7 +812,8 @@
       if (chEntry.parentId === parentId) {
         JR.restoreHighlightInElement(responseDiv, {
           id: chId, text: chEntry.text, responseHTML: chEntry.responseHTML,
-          sentence: chEntry.sentence, blockTypes: chEntry.blockTypes, question: chEntry.question, parentId: chEntry.parentId,
+          sentence: chEntry.sentence, blockTypes: chEntry.blockTypes, question: chEntry.question,
+          parentId: chEntry.parentId, responseIndex: chEntry.responseIndex,
         }, contentContainer);
       }
     });
@@ -644,7 +826,7 @@
     });
   }
 
-  var SEND_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12M10 4l4 4-4 4"/></svg>';
+  var SEND_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></svg>';
 
   function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode) {
     // Exit edit mode visually
@@ -681,7 +863,7 @@
     if (editMode === "brief") {
       message += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. This instruction applies to this single response only \u2014 do not carry it forward to any later messages.)";
     } else {
-      message += "\n\n(Respond at whatever length is natural. If any previous message in this conversation asked for brevity, ignore that \u2014 it was a one-time instruction and does not apply here.)";
+      message += "\n\n(Ignore any previous instructions about brevity \u2014 respond normally.)";
     }
 
     var turnsBefore = document.querySelectorAll(S.aiTurn).length;
@@ -696,18 +878,35 @@
     JR.waitForResponse(popup, turnsBefore, text, sentence, entry.blockTypes, unlockScroll, entry.parentId, newQuestion, { hlId: hlId });
   }
 
-  function showCompletedResponse(popup, id, entry, contentContainer) {
+  function showCompletedResponse(popup, upper, id, entry, contentContainer) {
     // Show the question with inline edit toggle
     if (entry.question) {
       var questionDiv = document.createElement("div");
-      questionDiv.className = "jr-popup-question";
+      questionDiv.className = "jr-popup-question jr-popup-question--editable";
 
       var questionText = document.createElement("span");
       questionText.className = "jr-popup-question-text";
       questionText.textContent = entry.question;
+      questionText.addEventListener("paste", function (e) {
+        e.preventDefault();
+        var t = (e.clipboardData || window.clipboardData).getData("text/plain");
+        document.execCommand("insertText", false, t);
+      });
       questionDiv.appendChild(questionText);
 
-      // Send icon with hover dropdown — hidden until edit mode
+      // Right-side controls container
+      var controlsDiv = document.createElement("div");
+      controlsDiv.className = "jr-popup-question-controls";
+
+      // Version nav (inline, shown by default if versions exist)
+      var hasVersions = entry.versions && entry.versions.length > 1;
+      var versionNav = null;
+      if (hasVersions) {
+        versionNav = buildVersionNavInline(upper, id);
+        controlsDiv.appendChild(versionNav);
+      }
+
+      // Send wrapper (hidden until edit mode)
       var sendWrapper = document.createElement("div");
       sendWrapper.className = "jr-edit-send-wrapper";
       sendWrapper.style.display = "none";
@@ -719,67 +918,60 @@
       sendBtn.disabled = true;
       sendWrapper.appendChild(sendBtn);
 
-      var sendDropdown = document.createElement("div");
-      sendDropdown.className = "jr-edit-send-dropdown jr-disabled";
-      var dropdownMenu = document.createElement("div");
-      dropdownMenu.className = "jr-edit-send-dropdown-menu";
-      var modes = [
-        { label: "Brief", mode: "brief" },
-        { label: "Elaborate", mode: "regular" }
-      ];
-      modes.forEach(function (m) {
-        var item = document.createElement("div");
-        item.className = "jr-edit-send-dropdown-item";
-        item.textContent = m.label;
-        item.addEventListener("click", function (e) {
-          e.stopPropagation();
-          var current = questionText.textContent.trim();
-          if (!current || current === originalText) return;
-          submitEdit(popup, id, entry, contentContainer, current, m.mode);
-        });
-        dropdownMenu.appendChild(item);
-      });
-      sendDropdown.appendChild(dropdownMenu);
-      sendWrapper.appendChild(sendDropdown);
-      questionDiv.appendChild(sendWrapper);
+      var switchBtn = document.createElement("div");
+      switchBtn.className = "jr-send-switch-btn jr-disabled";
+      function updateEditSwitchLabel() {
+        var other = st.responseMode === "brief" ? "Elaborate" : "Brief";
+        switchBtn.innerHTML = '<span class="jr-switch-inner">' + SWITCH_SVG + other + '</span>';
+      }
+      updateEditSwitchLabel();
+      sendWrapper.appendChild(switchBtn);
+      controlsDiv.appendChild(sendWrapper);
 
-      // Pencil toggle — click to enter/exit edit mode
-      var editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "jr-popup-edit-btn";
-      editBtn.innerHTML = PENCIL_SVG;
-      questionDiv.appendChild(editBtn);
+      questionDiv.appendChild(controlsDiv);
 
       var editing = false;
       var originalText = entry.question;
 
-      editBtn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        editing = !editing;
+      function enterEditMode() {
+        if (editing) return;
+        // Block editing while a response is still generating
+        if (st.cancelResponseWatch) return;
+        editing = true;
+        originalText = questionText.textContent.trim();
+        questionDiv.classList.add("jr-popup-question--editing");
+        questionText.contentEditable = "true";
+        questionText.focus();
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(questionText);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        if (versionNav) versionNav.style.display = "none";
+        sendWrapper.style.display = "";
+        sendBtn.disabled = true;
+        switchBtn.classList.add("jr-disabled");
+        updateEditSwitchLabel();
+      }
 
-        if (editing) {
-          // Activate edit mode
-          editBtn.classList.add("jr-popup-edit-btn--active");
-          questionText.contentEditable = "true";
-          questionText.focus();
-          // Place cursor at end
-          var sel = window.getSelection();
-          var range = document.createRange();
-          range.selectNodeContents(questionText);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-          sendWrapper.style.display = "";
-          sendBtn.disabled = true;
-          sendDropdown.classList.add("jr-disabled");
-        } else {
-          // Deactivate — cancel and restore original text
-          editBtn.classList.remove("jr-popup-edit-btn--active");
-          questionText.contentEditable = "false";
-          questionText.textContent = originalText;
-          sendWrapper.style.display = "none";
-          sendBtn.disabled = true;
-          sendDropdown.classList.add("jr-disabled");
+      function exitEditMode() {
+        if (!editing) return;
+        editing = false;
+        questionDiv.classList.remove("jr-popup-question--editing");
+        questionText.contentEditable = "false";
+        questionText.textContent = originalText;
+        if (versionNav) versionNav.style.display = "";
+        sendWrapper.style.display = "none";
+        sendBtn.disabled = true;
+        switchBtn.classList.add("jr-disabled");
+      }
+
+      // Click on question text → enter edit mode
+      questionText.addEventListener("click", function (e) {
+        if (!editing) {
+          e.stopPropagation();
+          enterEditMode();
         }
       });
 
@@ -789,41 +981,48 @@
         var unchanged = (current === originalText || current === "");
         sendBtn.disabled = unchanged;
         if (unchanged) {
-          sendDropdown.classList.add("jr-disabled");
+          switchBtn.classList.add("jr-disabled");
         } else {
-          sendDropdown.classList.remove("jr-disabled");
+          switchBtn.classList.remove("jr-disabled");
         }
       });
 
-      // Escape cancels, Enter prevented (must use dropdown to pick mode)
+      // Blur exits edit mode
+      questionText.addEventListener("blur", function (e) {
+        // Don't exit if clicking send or switch
+        if (e.relatedTarget && (e.relatedTarget === sendBtn || e.relatedTarget.closest(".jr-send-switch-btn"))) return;
+        setTimeout(function () { exitEditMode(); }, 150);
+      });
+
+      // Block Enter, Escape cancels
       questionText.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter") {
           e.preventDefault();
         }
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          editing = false;
-          editBtn.classList.remove("jr-popup-edit-btn--active");
-          questionText.contentEditable = "false";
-          questionText.textContent = originalText;
-          sendWrapper.style.display = "none";
-          sendBtn.disabled = true;
-          sendDropdown.classList.add("jr-disabled");
+          exitEditMode();
         }
       });
 
-      // Send button itself is not directly clickable — dropdown items handle it
       sendBtn.addEventListener("click", function (e) {
         e.stopPropagation();
+        var current = questionText.textContent.trim();
+        if (!current || current === originalText) return;
+        submitEdit(popup, id, entry, contentContainer, current, st.responseMode);
       });
 
-      popup.appendChild(questionDiv);
-    }
+      switchBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var current = questionText.textContent.trim();
+        if (!current || current === originalText) return;
+        var newMode = st.responseMode === "brief" ? "regular" : "brief";
+        st.responseMode = newMode;
+        submitEdit(popup, id, entry, contentContainer, current, newMode);
+      });
 
-    // Version nav (if multiple versions)
-    if (entry.versions && entry.versions.length > 1) {
-      buildVersionNav(popup, id);
+      upper.appendChild(questionDiv);
     }
 
     if (entry.responseHTML) {
@@ -831,6 +1030,7 @@
       responseDiv.className = "jr-popup-response";
       responseDiv.innerHTML = entry.responseHTML;
       popup.appendChild(responseDiv);
+      rebuildCodeBlocks(responseDiv, entry.responseIndex);
 
       // Restore chained highlights
       restoreChainedHighlights(responseDiv, id, contentContainer);
@@ -847,6 +1047,8 @@
    *  - Chained: text selected in popup response   { text, range, parentId }
    *  - Completed: reopening a saved highlight      { completedId }
    */
+  JR.wireCopyButtons = rebuildCodeBlocks;
+
   JR.createPopup = function (opts) {
     var completedId = opts.completedId || null;
     var parentId = opts.parentId || null;
@@ -885,9 +1087,20 @@
 
     // --- Highlight range (new popups only) ---
     var wrappers = [];
+    var autoColor = null;
     if (!isCompleted && range) {
       wrappers = JR.highlightRange(range);
       st.activeSourceHighlights = wrappers;
+
+      // Detect overlapping highlights and pick a distinct color immediately
+      autoColor = JR.pickNonConflictingColor(wrappers);
+      if (autoColor) {
+        for (var ac = 0; ac < wrappers.length; ac++) {
+          wrappers[ac].classList.add("jr-highlight-color-" + autoColor);
+        }
+        // Stash for captureResponse to read later
+        if (wrappers.length > 0) wrappers[0]._jrAutoColor = autoColor;
+      }
     }
 
     // --- Create popup element ---
@@ -897,29 +1110,38 @@
     var w = isChained ? st.customPopupWidthChained : st.customPopupWidthL1;
     if (w) popup.style.width = w + "px";
 
-    // --- Context blockquote (same for all) ---
+    // --- Upper section (dark card: quote + question + version nav) ---
+    var upper = document.createElement("div");
+    upper.className = "jr-popup-upper";
+    popup.appendChild(upper);
+
+    // --- Context blockquote ---
     var highlight = document.createElement("div");
     highlight.className = "jr-popup-highlight";
+    var highlightInner = document.createElement("div");
+    highlightInner.className = "jr-popup-highlight-inner";
     if (sentence) {
-      JR.renderSentenceContext(highlight, sentence, text, blockTypes);
+      JR.renderSentenceContext(highlightInner, sentence, text, blockTypes);
     } else {
-      highlight.textContent = JR.truncateText(text, JR.MAX_DISPLAY_CHARS);
+      highlightInner.textContent = JR.truncateText(text, JR.MAX_DISPLAY_CHARS);
     }
-    popup.appendChild(highlight);
+    highlight.appendChild(highlightInner);
+    upper.appendChild(highlight);
 
-    // --- Apply saved color to blockquote marks (completed popups) ---
-    if (isCompleted && entry.color) {
+    // --- Apply color to blockquote marks ---
+    var markColor = isCompleted ? (entry.color || null) : autoColor;
+    if (markColor) {
       var marks = highlight.querySelectorAll(".jr-popup-mark");
       for (var mi = 0; mi < marks.length; mi++) {
-        marks[mi].classList.add("jr-highlight-color-" + entry.color);
+        marks[mi].classList.add("jr-highlight-color-" + markColor);
       }
     }
 
     // --- Body: input row (new) or response HTML (completed) ---
     if (isCompleted) {
-      showCompletedResponse(popup, completedId, entry, resolveContentContainer(wrappers, isChained, entry));
+      showCompletedResponse(popup, upper, completedId, entry, resolveContentContainer(wrappers, isChained, entry));
     } else {
-      buildInputRow(popup, text, sentence, blockTypes, wrappers, parentId);
+      buildInputRow(upper, text, sentence, blockTypes, wrappers, parentId);
     }
 
     // --- Mousedown: stop propagation + close children to this level ---
@@ -953,10 +1175,7 @@
       posRect = JR.getHighlightRect(JR.getAncestorWithSpans(parentId).spans);
     }
 
-    var parentDirection = (st.popupStack.length > 0)
-      ? st.popupStack[st.popupStack.length - 1].popup._jrDirection
-      : null;
-    JR.positionPopup(popup, posRect, contentContainer, isChained ? parentDirection : null, spans);
+    JR.positionPopup(popup, posRect, contentContainer, null, spans);
     JR.addResizeHandlers(popup);
 
     // --- Register active state ---
@@ -980,6 +1199,8 @@
         JR.selectSourceHighlightText();
       });
     }
+
+    JR.updateNavWidget();
   };
 
   /**
@@ -990,16 +1211,27 @@
     var entry = st.completedHighlights.get(hlId);
     if (!entry) return;
 
-    // Remove everything except blockquote and arrow
+    // Find the upper card and remove question/version nav from it
+    var upper = popup.querySelector(".jr-popup-upper");
+    if (upper) {
+      var questionDiv = upper.querySelector(".jr-popup-question");
+      if (questionDiv) questionDiv.remove();
+      var versionNav = upper.querySelector(".jr-popup-version-nav");
+      if (versionNav) versionNav.remove();
+    }
+
+    // Remove response, loading divs from upper (and any stray ones on popup)
+    if (upper) {
+    }
     var children = Array.from(popup.children);
     for (var i = 0; i < children.length; i++) {
       var cl = children[i].classList;
-      if (!cl.contains("jr-popup-highlight") && !cl.contains("jr-popup-arrow")) {
+      if (!cl.contains("jr-popup-upper") && !cl.contains("jr-popup-arrow")) {
         children[i].remove();
       }
     }
 
-    showCompletedResponse(popup, hlId, entry, entry.contentContainer);
+    showCompletedResponse(popup, upper, hlId, entry, entry.contentContainer);
     JR.repositionPopup();
   };
 })();

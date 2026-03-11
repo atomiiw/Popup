@@ -225,6 +225,25 @@ This covers ChatGPT's dark mode toggle. Other sites may need additional selector
 - `display: flex`, `flex-direction: column`, `align-items: center`, `gap: 14px`, `padding: 20px 14px`
 - `.jr-popup-confirm-btn` — standard button with border, `.jr-popup-confirm-btn--danger` — red background
 
+### Highlight Navigation Widget (Step 7d)
+
+#### `.jr-nav-widget`
+- `position: fixed`, `top: 50%`, `right: 80px`, `transform: translateY(-50%)`, `z-index: 999999`
+- Vertical layout: `flex-direction: column`, `align-items: center`, `gap: 0`
+- No background, no border, no box shadow — transparent floating arrows
+- `animation: jr-fade-in 0.15s ease-out`
+- Contains up/down buttons and a position indicator
+
+#### `.jr-nav-up`, `.jr-nav-down`
+- `36px × 36px`, no border/background, `color: #191414`, cursor pointer
+- SVG chevrons at `20px × 20px`
+- Hover (non-disabled): `transform: scale(1.3)`
+- `:disabled`: `color: #c0c0c0`, default cursor
+
+#### `.jr-nav-indicator`
+- `font-size: 13px`, `color: var(--jr-text-muted)`, centered, `white-space: nowrap`
+- Shows "2 / 5" when a highlight is focused, or just "5" when no highlight is active
+
 ## Naming Convention
 All classes follow the pattern: `.jr-<component>-<element>`
 - `.jr-popup` — the container

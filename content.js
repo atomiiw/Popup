@@ -3,6 +3,10 @@
   "use strict";
 
   var st = JR.state;
+  var mouseIsDown = false;
+
+  document.addEventListener("mousedown", function () { mouseIsDown = true; }, true);
+  document.addEventListener("mouseup", function () { mouseIsDown = false; }, true);
 
   // --- Selection listener ---
 
@@ -107,6 +111,7 @@
   }
 
   document.addEventListener("mouseover", function (e) {
+    if (mouseIsDown) return;
     var span = e.target.closest(".jr-source-highlight-done");
     if (!span) return;
     var hlId = span.getAttribute("data-jr-highlight-id");
@@ -155,6 +160,11 @@
 
     JR.removeAllPopups();
     JR.hideToolbar();
+    if (st.navWidget) {
+      if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
+      st.navWidget.remove();
+      st.navWidget = null;
+    }
     if (st.restoreTimer) {
       clearTimeout(st.restoreTimer);
       st.restoreTimer = null;
