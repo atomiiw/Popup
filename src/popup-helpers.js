@@ -4,6 +4,16 @@
 
   var st = JR.state;
 
+  /** Flash the delete confirmation bar to draw attention back to it. */
+  JR.shineDeleteConfirm = function () {
+    if (!st.hoverToolbar || !st.hoverToolbar.classList.contains("jr-popup-confirm")) return;
+    var el = st.hoverToolbar;
+    el.classList.remove("jr-confirm-shine");
+    // Force reflow so re-adding the class restarts the animation
+    void el.offsetWidth;
+    el.classList.add("jr-confirm-shine");
+  };
+
   JR.createLoadingDiv = function () {
     var div = document.createElement("div");
     div.className = "jr-popup-loading";
@@ -444,29 +454,51 @@
       var startWidth = popup.offsetWidth;
       var startLeft = parseFloat(popup.style.left) || 0;
 
+      // Compute the arrow's X position (relative to container) as the resize limit.
+      // Left edge can't go right of arrow; right edge can't go left of arrow.
+      var arrowX = null;
+      if (st.activeSourceHighlights.length > 0 && popup.parentElement) {
+        var hRect = JR.getHighlightRect(st.activeSourceHighlights);
+        var cRect = popup.parentElement.getBoundingClientRect();
+        arrowX = hRect.left + hRect.width / 2 - cRect.left;
+      }
+
       function onMove(ev) {
         var dx = ev.clientX - startX;
-        var newWidth, newLeft;
+        var newLeft, newRight;
         if (edge === "right") {
-          newWidth = startWidth + dx;
           newLeft = startLeft;
+          newRight = startLeft + startWidth + dx;
         } else {
-          newWidth = startWidth - dx;
           newLeft = startLeft + dx;
+          newRight = startLeft + startWidth;
         }
+
+        // Clamp so the arrow never moves.
+        // Arrow offset in popup = arrowX - newLeft - 9.
+        // updateArrow clamps to [12, popupW - 30].
+        // So: newLeft ≤ arrowX - 21  AND  newRight ≥ arrowX + 21.
+        if (arrowX !== null) {
+          if (newLeft > arrowX - 21) newLeft = arrowX - 21;
+          if (newRight < arrowX + 21) newRight = arrowX + 21;
+        }
+
         var maxWidth = window.innerWidth - 32;
+        var newWidth = newRight - newLeft;
         newWidth = Math.max(MIN_WIDTH, Math.min(newWidth, maxWidth));
+        // Re-derive left from the clamped width depending on which edge is being dragged
         if (edge === "left") {
-          newLeft = startLeft + (startWidth - newWidth);
+          newLeft = newRight - newWidth;
         }
+
         popup.style.width = newWidth + "px";
         popup.style.left = newLeft + "px";
         if (st.activeSourceHighlights.length > 0 && popup.parentElement) {
           var dir = popup._jrLockedDirection || popup._jrDirection;
           var adjR = JR.getAdjacentLineRect(st.activeSourceHighlights, dir);
-          var hRect = adjR || JR.getHighlightRect(st.activeSourceHighlights);
-          var cRect = popup.parentElement.getBoundingClientRect();
-          JR.updateArrow(popup, hRect, cRect, newLeft);
+          var hRect2 = adjR || JR.getHighlightRect(st.activeSourceHighlights);
+          var cRect2 = popup.parentElement.getBoundingClientRect();
+          JR.updateArrow(popup, hRect2, cRect2, newLeft);
         }
       }
 
@@ -552,6 +584,9 @@
           entry.spans[j].classList.add("jr-source-highlight-active");
         }
       }
+      if (JR.showActiveUnderline) JR.showActiveUnderline(hlId);
+    } else {
+      if (JR.removeActiveUnderline) JR.removeActiveUnderline();
     }
   };
 
@@ -779,7 +814,7 @@
    * @param {number} direction  -1 for previous (up), +1 for next (down)
    */
   JR.navigateHighlight = function (direction) {
-    if (st.confirmingDelete) return;
+    if (st.confirmingDelete) { JR.shineDeleteConfirm(); return; }
     if (!st.navWidget || !st.navWidget._jrIds) return;
     var ids = st.navWidget._jrIds;
     if (ids.length === 0) return;
@@ -814,12 +849,10 @@
     navNavigating = false;
 
     if (targetEntry.spans && targetEntry.spans.length > 0) {
-      targetEntry.spans[0].scrollIntoView({ behavior: "smooth", block: "center" });
+      targetEntry.spans[0].scrollIntoView({ block: "center" });
     }
 
-    setTimeout(function () {
-      JR.createPopup({ completedId: targetId });
-    }, 350);
+    JR.createPopup({ completedId: targetId });
   };
 
   /**
@@ -833,10 +866,17 @@
 
   JR.removePopup = function () {
     var isCompleted = false;
+    var isTemp = false;
     if (st.activeSourceHighlights.length > 0) {
       var hlId = st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id");
       if (hlId && st.completedHighlights.has(hlId)) {
-        isCompleted = true;
+        var hlEntry = st.completedHighlights.get(hlId);
+        if (hlEntry && hlEntry._jrTemp) {
+          isTemp = true;
+          st.completedHighlights.delete(hlId);
+        } else {
+          isCompleted = true;
+        }
       }
     }
 
@@ -878,9 +918,10 @@
       st.resizeHandler = prev.resizeHandler;
     }
     JR.syncHighlightActive(st.activeHighlightId);
-    // Hide toolbar if it belongs to a different highlight than what's now active
-    if (st.hoverToolbar && st.hoverToolbarHlId !== st.activeHighlightId) {
-      JR.hideToolbar();
+    // Hide toolbar when popup closes; re-show if popping back to a parent popup
+    JR.hideToolbar();
+    if (st.activeHighlightId) {
+      JR.showToolbar(st.activeHighlightId);
     }
     JR.updateNavWidget();
   };

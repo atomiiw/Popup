@@ -11,7 +11,7 @@
   // --- Selection listener ---
 
   function handleSelectionChange() {
-    if (st.confirmingDelete) return;
+    if (st.confirmingDelete) { JR.shineDeleteConfirm(); return; }
     JR.removeAllPopups();
     var result = JR.getSelectedTextInAIResponse();
     if (!result) return;
@@ -19,6 +19,7 @@
   }
 
   document.addEventListener("mouseup", function (e) {
+    if (st.navWidget && st.navWidget.contains(e.target)) return;
     if (st.activePopup && st.activePopup.contains(e.target)) return;
     if (st.hoverToolbar && st.hoverToolbar.contains(e.target)) return;
     if (st.activePopup) {
@@ -37,7 +38,10 @@
 
   document.addEventListener("mousedown", function (e) {
     if (!st.activePopup && st.popupStack.length === 0) return;
-    if (st.confirmingDelete) return;
+    if (st.confirmingDelete) {
+      if (!st.hoverToolbar || !st.hoverToolbar.contains(e.target)) JR.shineDeleteConfirm();
+      return;
+    }
     if (st.hoverToolbar && st.hoverToolbar.contains(e.target)) return;
     var hlSpan = e.target.closest(".jr-source-highlight");
     if (hlSpan) {
@@ -52,7 +56,7 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && st.activePopup) {
-      if (st.confirmingDelete) return;
+      if (st.confirmingDelete) { JR.shineDeleteConfirm(); return; }
       JR.removePopup();
     }
   });
@@ -60,6 +64,10 @@
   // Click on active source highlight → select text for copy;
   // click on completed highlight → open popup
   document.addEventListener("click", function (e) {
+    if (st.confirmingDelete) {
+      if (!st.hoverToolbar || !st.hoverToolbar.contains(e.target)) JR.shineDeleteConfirm();
+      return;
+    }
     if (st.activePopup) {
       var hlSpan = e.target.closest(".jr-source-highlight");
       if (hlSpan && st.activeSourceHighlights.indexOf(hlSpan) !== -1) {
@@ -84,72 +92,128 @@
     JR.createPopup({ completedId: hlId });
   });
 
-  // --- Hover toolbar on completed highlights ---
+  // --- Underline on highlights (hover + active) ---
 
+  var hoverUnderlines = [];
   var hoveredHlId = null;
+  var activeUnderlines = [];
 
-  function setHighlightHover(hlId) {
-    if (hoveredHlId === hlId) return;
-    clearHighlightHover();
-    hoveredHlId = hlId;
-    var entry = st.completedHighlights.get(hlId);
-    if (!entry || !entry.spans) return;
-    for (var i = 0; i < entry.spans.length; i++) {
-      entry.spans[i].classList.add("jr-source-highlight-hover");
-    }
+  function removeElems(arr) {
+    for (var i = 0; i < arr.length; i++) arr[i].remove();
+    arr.length = 0;
   }
 
-  function clearHighlightHover() {
-    if (!hoveredHlId) return;
-    var entry = st.completedHighlights.get(hoveredHlId);
-    if (entry && entry.spans) {
-      for (var i = 0; i < entry.spans.length; i++) {
-        entry.spans[i].classList.remove("jr-source-highlight-hover");
+  /**
+   * Create underline elements for a highlight entry.
+   * Works for page-level and popup-level highlights.
+   */
+  JR.createUnderlines = function (entry) {
+    var elems = [];
+    if (!entry || !entry.spans || entry.spans.length === 0) return elems;
+
+    var allRects = [];
+    for (var i = 0; i < entry.spans.length; i++) {
+      var rects = entry.spans[i].getClientRects();
+      for (var r = 0; r < rects.length; r++) allRects.push(rects[r]);
+    }
+    if (allRects.length === 0) return elems;
+
+    // Group rects by line (same approximate bottom)
+    var lines = [];
+    for (var ri = 0; ri < allRects.length; ri++) {
+      var rect = allRects[ri];
+      if (rect.width === 0 && rect.height === 0) continue;
+      var found = false;
+      for (var li = 0; li < lines.length; li++) {
+        if (Math.abs(lines[li].bottom - rect.bottom) < 4) {
+          lines[li].left = Math.min(lines[li].left, rect.left);
+          lines[li].right = Math.max(lines[li].right, rect.right);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        lines.push({ left: rect.left, right: rect.right, bottom: rect.bottom });
       }
     }
-    hoveredHlId = null;
-  }
 
+    // Find the nearest positioned ancestor for underline placement
+    var posParent = null;
+    var el = entry.spans[0].parentElement;
+    while (el) {
+      var pos = getComputedStyle(el).position;
+      if (pos === "relative" || pos === "absolute" || pos === "fixed") {
+        posParent = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+    if (!posParent) {
+      posParent = entry.contentContainer;
+      if (!posParent || !posParent.isConnected) {
+        var article = entry.spans[0].closest("article");
+        posParent = article ? article.parentElement : document.body;
+      }
+    }
+    var pRect = posParent.getBoundingClientRect();
+
+    for (var ui = 0; ui < lines.length; ui++) {
+      var line = lines[ui];
+      var underline = document.createElement("div");
+      underline.className = "jr-highlight-underline";
+      underline.style.left = (line.left - pRect.left) + "px";
+      underline.style.top = (line.bottom - pRect.top + 1) + "px";
+      underline.style.width = (line.right - line.left) + "px";
+      posParent.appendChild(underline);
+      elems.push(underline);
+    }
+    return elems;
+  };
+
+  // Hover underline — works on any highlight except the currently active one
   document.addEventListener("mouseover", function (e) {
     if (mouseIsDown) return;
     var span = e.target.closest(".jr-source-highlight-done");
-    if (!span) return;
-    var hlId = span.getAttribute("data-jr-highlight-id");
-    if (!hlId || !st.completedHighlights.has(hlId)) return;
-    // Don't activate hover on other highlights while a popup is open
-    // (allow the active highlight itself and children inside the active popup)
-    if (st.activeHighlightId && hlId !== st.activeHighlightId) {
-      if (!span.closest(".jr-popup")) return;
-    }
-    setHighlightHover(hlId);
-    // Already showing toolbar for this highlight
-    if (st.hoverToolbarHlId === hlId) {
-      if (st.hoverToolbarTimer) {
-        clearTimeout(st.hoverToolbarTimer);
-        st.hoverToolbarTimer = null;
-      }
+    if (!span) {
+      removeElems(hoverUnderlines);
+      hoveredHlId = null;
       return;
     }
-    JR.showToolbar(hlId);
+    var hlId = span.getAttribute("data-jr-highlight-id");
+    if (!hlId || !st.completedHighlights.has(hlId)) return;
+    // Active highlight already has its own underline
+    if (hlId === st.activeHighlightId) return;
+    if (hoveredHlId === hlId) return;
+    removeElems(hoverUnderlines);
+    hoveredHlId = hlId;
+    hoverUnderlines = JR.createUnderlines(st.completedHighlights.get(hlId));
   });
 
   document.addEventListener("mouseout", function (e) {
     var span = e.target.closest(".jr-source-highlight-done");
     if (!span) return;
-    var hlId = span.getAttribute("data-jr-highlight-id");
-    if (!hlId || !st.completedHighlights.has(hlId)) return;
-    // Check if mouse moved to another span of the same highlight
     var related = e.relatedTarget;
     if (related) {
       var relatedSpan = related.closest && related.closest(".jr-source-highlight-done");
-      if (relatedSpan && relatedSpan.getAttribute("data-jr-highlight-id") === hlId) return;
+      if (relatedSpan && relatedSpan.getAttribute("data-jr-highlight-id") === hoveredHlId) return;
     }
-    clearHighlightHover();
-    if (hlId !== st.hoverToolbarHlId) return;
-    st.hoverToolbarTimer = setTimeout(function () {
-      JR.hideToolbar();
-    }, 80);
+    removeElems(hoverUnderlines);
+    hoveredHlId = null;
   });
+
+  // Active underline — shown while popup is open
+  JR.showActiveUnderline = function (hlId) {
+    removeElems(activeUnderlines);
+    var entry = st.completedHighlights.get(hlId);
+    if (entry) activeUnderlines = JR.createUnderlines(entry);
+    // Clear any hover underline
+    removeElems(hoverUnderlines);
+    hoveredHlId = null;
+  };
+
+  JR.removeActiveUnderline = function () {
+    removeElems(activeUnderlines);
+  };
 
   // --- SPA navigation ---
 

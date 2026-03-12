@@ -6,13 +6,12 @@
   var st = JR.state;
 
   /**
-   * Read the auto-assigned color stashed on spans by createPopup,
-   * or re-detect if not available.
+   * Read the auto-assigned color stashed on spans by createPopup.
+   * Color is final from cursor time — no re-detection at capture time.
    */
   function getAutoColor(spans) {
     if (spans.length === 0) return null;
-    if (spans[0]._jrAutoColor) return spans[0]._jrAutoColor;
-    return JR.pickNonConflictingColor(spans);
+    return spans[0]._jrAutoColor || null;
   }
 
   // --- Chat injection ---

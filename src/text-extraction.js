@@ -422,41 +422,61 @@
   }
 
   JR.findTextRange = function (root, searchText) {
-    // Collect text nodes, skipping ChatGPT code block toolbar nodes
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    var nodes = [];
-    var fullText = "";
-    var node;
-    while ((node = walker.nextNode())) {
-      if (isToolbarTextNode(node)) continue;
-      nodes.push({ node: node, start: fullText.length });
-      fullText += node.textContent;
+    // Collect text nodes by simple concatenation (no block-boundary markers).
+    function collectTextNodes(walkerRoot, skipFn) {
+      var w = document.createTreeWalker(walkerRoot, NodeFilter.SHOW_TEXT, null);
+      var nodes = [];
+      var fullText = "";
+      var n2;
+      while ((n2 = w.nextNode())) {
+        if (isToolbarTextNode(n2)) continue;
+        if (skipFn && skipFn(n2)) continue;
+        nodes.push({ node: n2, start: fullText.length });
+        fullText += n2.textContent;
+      }
+      return { nodes: nodes, fullText: fullText };
     }
+
+    var map = collectTextNodes(root, null);
+    var nodes = map.nodes;
+    var fullText = map.fullText;
 
     if (nodes.length === 0) return null;
 
     var idx = fullText.indexOf(searchText);
 
-    // If not found, toolbar text inside <code> may be inflating the text.
-    // Try a second pass: for each <code> element inside the root, check if
-    // its textContent includes toolbar labels at the start and account for them.
-    if (idx === -1) {
-      // Rebuild nodes + fullText, this time also skipping suspected toolbar
-      // spans inside <code> (short capitalized words followed by known labels)
-      var walker2 = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-      nodes = [];
-      fullText = "";
-      var skipNodes = new Set();
+    // Fallback: selection.toString() inserts \n at block boundaries differently
+    // than DOM text nodes. Strip all \n from both strings and search with a
+    // position map back to the original fullText offsets.
+    var newlineMatched = false;
+    if (idx === -1 && searchText.indexOf("\n") !== -1) {
+      var strippedFull = "";
+      var posMap = []; // posMap[strippedIndex] = originalIndex
+      for (var p = 0; p < fullText.length; p++) {
+        if (fullText[p] !== "\n") {
+          posMap.push(p);
+          strippedFull += fullText[p];
+        }
+      }
+      var strippedSearch = searchText.replace(/\n/g, "");
+      var sIdx = strippedFull.indexOf(strippedSearch);
+      if (sIdx !== -1) {
+        idx = posMap[sIdx];
+        var origEnd = posMap[sIdx + strippedSearch.length - 1] + 1;
+        newlineMatched = true;
+        // Use origEnd directly instead of idx + searchText.length
+      }
+    }
 
-      // Identify toolbar text nodes inside code elements
+    // If not found, toolbar text inside <code> may be inflating the text.
+    if (idx === -1) {
+      var skipNodes = new Set();
       var codeEls = root.querySelectorAll("code");
       for (var ci = 0; ci < codeEls.length; ci++) {
         var codeFullText = codeEls[ci].textContent;
-        // Check if code starts with toolbar prefix pattern: "PythonCopyRun..." or "JavaScriptCopy..."
         var tbMatch = codeFullText.match(/^([A-Z][a-zA-Z+#.]*?)?(Copy code|Copied!|Copy|Run)+/);
         if (!tbMatch) continue;
         var tbLen = tbMatch[0].length;
-        // Walk child text nodes and mark the ones that make up the toolbar prefix
         var consumed = 0;
         var codeWalker = document.createTreeWalker(codeEls[ci], NodeFilter.SHOW_TEXT, null);
         var tn;
@@ -465,24 +485,19 @@
           if (consumed + tnLen <= tbLen) {
             skipNodes.add(tn);
           }
-          // If this node partially overlaps the toolbar prefix, we can't skip it cleanly
-          // (partial skip not supported — just skip whole nodes that fit within toolbar)
           consumed += tnLen;
         }
       }
 
-      while ((node = walker2.nextNode())) {
-        if (isToolbarTextNode(node)) continue;
-        if (skipNodes.has(node)) continue;
-        nodes.push({ node: node, start: fullText.length });
-        fullText += node.textContent;
-      }
+      var map2 = collectTextNodes(root, function (n3) { return skipNodes.has(n3); });
+      nodes = map2.nodes;
+      fullText = map2.fullText;
 
       idx = fullText.indexOf(searchText);
       if (idx === -1) return null;
     }
 
-    var endIdx = idx + searchText.length;
+    var endIdx = newlineMatched ? origEnd : idx + searchText.length;
     var startNode = null, startOffset = 0;
     var endNode = null, endOffset = 0;
 

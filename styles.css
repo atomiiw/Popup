@@ -84,6 +84,10 @@ html[class*="dark"] {
   animation: jr-fade-in 0.15s ease-out;
 }
 
+.jr-popup-disabled {
+  pointer-events: none;
+}
+
 .jr-popup-upper {
   background: var(--jr-bg);
   border-radius: var(--jr-radius);
@@ -407,10 +411,16 @@ ol.jr-popup-context-list .jr-depth-2 {
 .jr-source-highlight {
   background: var(--jr-mark-bg);
   border-radius: 0;
-  padding: 2px 0;
   color: #fff;
   user-select: text;
   cursor: pointer;
+  line-height: inherit;
+  padding: 0;
+  margin: 0;
+  border: none;
+  display: inline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Completed highlight — stays visible after popup dismiss, clickable to re-open */
@@ -426,55 +436,16 @@ ol.jr-popup-context-list .jr-depth-2 {
   z-index: 1;
 }
 
-/* Hover state — darken all spans of a highlight on mouse hover (Step 7b) */
-.jr-source-highlight-done.jr-source-highlight-hover {
-  background: var(--jr-mark-bg-hover);
+/* Hover underline — single continuous line positioned under the full highlight */
+.jr-highlight-underline {
+  position: absolute;
+  height: 2px;
+  background: currentColor;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.4;
 }
 
-.jr-source-highlight-done.jr-highlight-color-blue.jr-source-highlight-hover {
-  background: var(--jr-color-blue-hover);
-}
-
-.jr-source-highlight-done.jr-highlight-color-yellow.jr-source-highlight-hover {
-  background: var(--jr-color-yellow-hover);
-}
-
-.jr-source-highlight-done.jr-highlight-color-green.jr-source-highlight-hover {
-  background: var(--jr-color-green-hover);
-}
-
-.jr-source-highlight-done.jr-highlight-color-pink.jr-source-highlight-hover {
-  background: var(--jr-color-pink-hover);
-}
-
-.jr-source-highlight-done.jr-highlight-color-purple.jr-source-highlight-hover {
-  background: var(--jr-color-purple-hover);
-}
-
-/* Active state — highlight whose popup is currently open (Step 7b) */
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active {
-  background: var(--jr-mark-bg-active);
-}
-
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-blue {
-  background: var(--jr-color-blue-active);
-}
-
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-yellow {
-  background: var(--jr-color-yellow-active);
-}
-
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-green {
-  background: var(--jr-color-green-active);
-}
-
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-pink {
-  background: var(--jr-color-pink-active);
-}
-
-.jr-source-highlight.jr-source-highlight-done.jr-source-highlight-active.jr-highlight-color-purple {
-  background: var(--jr-color-purple-active);
-}
 
 /* Hidden turn — hides injected Q&A from main chat */
 .jr-hidden {
@@ -1128,16 +1099,17 @@ ol.jr-popup-context-list .jr-depth-2 {
 .jr-popup-confirm {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
   padding: 4px 8px;
   background: var(--jr-bg);
   border: 1px solid var(--jr-border);
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  animation: none;
 }
 
 .jr-popup-confirm-text {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--jr-text);
   line-height: 1;
@@ -1152,8 +1124,7 @@ ol.jr-popup-context-list .jr-depth-2 {
 }
 
 .jr-popup-confirm-icon-btn {
-  width: 24px;
-  height: 24px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1161,8 +1132,6 @@ ol.jr-popup-context-list .jr-depth-2 {
   background: none;
   color: var(--jr-text-muted);
   cursor: pointer;
-  border-radius: 50%;
-  padding: 0;
   transition: transform 0.12s ease, color 0.12s ease;
 }
 
@@ -1191,6 +1160,17 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 .jr-popup-confirm-icon-btn--danger:active {
   transform: scale(1.35);
+}
+
+/* Shine/flash animation when user clicks outside the delete confirmation */
+@keyframes jr-confirm-shine {
+  0% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06); }
+  50% { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08); }
+  100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06); }
+}
+
+.jr-popup-confirm.jr-confirm-shine {
+  animation: jr-confirm-shine 0.4s ease;
 }
 
 /* --- Highlight navigation widget (Step 7d) --- */

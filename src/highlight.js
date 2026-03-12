@@ -48,6 +48,15 @@
       var node;
       while ((node = walker.nextNode())) {
         if (range.intersectsNode(node)) {
+          // Skip whitespace-only text nodes between block elements
+          // (they're layout-invisible; wrapping them in spans disrupts spacing)
+          if (/^\s*$/.test(node.nodeValue)) {
+            var parentEl = node.parentElement;
+            if (parentEl) {
+              var pd = getComputedStyle(parentEl).display;
+              if (pd !== "inline" && pd !== "inline-block") continue;
+            }
+          }
           textNodes.push(node);
         }
       }
@@ -68,10 +77,17 @@
         if (hasInsideDone && hasOutsideDone) break;
       }
       var filteredWrapping = hasInsideDone && hasOutsideDone;
+      var wrappedDoneColors = new Set();
       if (filteredWrapping) {
         var filtered = [];
         for (var fi = 0; fi < textNodes.length; fi++) {
-          if (!textNodes[fi].parentElement || !textNodes[fi].parentElement.closest(".jr-source-highlight-done")) {
+          var doneAncestor = textNodes[fi].parentElement && textNodes[fi].parentElement.closest(".jr-source-highlight-done");
+          if (doneAncestor) {
+            // Capture the color of the done highlight being wrapped around
+            var doneHlId = doneAncestor.getAttribute("data-jr-highlight-id");
+            var doneEntry = doneHlId && st.completedHighlights.get(doneHlId);
+            wrappedDoneColors.add((doneEntry && doneEntry.color) || "blue");
+          } else {
             filtered.push(textNodes[fi]);
           }
         }
@@ -122,9 +138,10 @@
         }
         wrappers.unshift(spanEl);
       }
-      // Flag so pickNonConflictingColor knows wrapping occurred
+      // Stash wrapping info so pickNonConflictingColor can use it
       if (filteredWrapping && wrappers.length > 0) {
         wrappers[0]._jrWrapping = true;
+        wrappers[0]._jrWrappedColors = wrappedDoneColors;
       }
     } catch (e) {
       console.warn("[Jump Return] highlightRange failed:", e);
@@ -148,92 +165,33 @@
   JR.pickNonConflictingColor = function (spans) {
     if (spans.length === 0) return null;
     var colors = JR.HIGHLIGHT_COLORS;
-    var conflictColor = null;
-
-    // Helper: extract color from a done highlight element
-    function colorFromDone(el) {
-      var hlId = el.getAttribute("data-jr-highlight-id");
-      if (!hlId) return "blue";
-      var entry = st.completedHighlights.get(hlId);
-      return (entry && entry.color) || "blue";
-    }
-
-    // Build a Set of new span elements so the broad scan can skip them
-    var spanSet = new Set();
-    for (var si2 = 0; si2 < spans.length; si2++) spanSet.add(spans[si2]);
+    var conflictColors = new Set();
 
     // Case 1: new highlight is INSIDE an existing one — walk up from each span
-    for (var i = 0; i < spans.length && !conflictColor; i++) {
+    for (var i = 0; i < spans.length; i++) {
       var ancestor = spans[i].parentElement;
       while (ancestor) {
         if (ancestor.classList && ancestor.classList.contains("jr-source-highlight-done")) {
-          conflictColor = colorFromDone(ancestor);
+          var hlId = ancestor.getAttribute("data-jr-highlight-id");
+          var entry = hlId && st.completedHighlights.get(hlId);
+          conflictColors.add((entry && entry.color) || "blue");
           break;
         }
         ancestor = ancestor.parentElement;
       }
     }
 
-    // Cases 2 & 3 only apply when highlightRange's filter detected wrapping
-    var wrapping = spans.length > 0 && spans[0]._jrWrapping;
-
-    // Case 2: new highlight wraps around an existing one — check siblings
-    if (!conflictColor && wrapping) {
-      for (var si = 0; si < spans.length && !conflictColor; si++) {
-        // Walk forward
-        var sib = spans[si].nextElementSibling;
-        while (sib) {
-          if (sib.classList.contains("jr-source-highlight-done")) {
-            conflictColor = colorFromDone(sib);
-            break;
-          }
-          if (sib.classList.contains("jr-source-highlight")) break;
-          sib = sib.nextElementSibling;
-        }
-        if (conflictColor) break;
-        // Walk backward
-        var prev = spans[si].previousElementSibling;
-        while (prev) {
-          if (prev.classList.contains("jr-source-highlight-done")) {
-            conflictColor = colorFromDone(prev);
-            break;
-          }
-          if (prev.classList.contains("jr-source-highlight")) break;
-          prev = prev.previousElementSibling;
-        }
-      }
+    // Case 2: new highlight WRAPS around existing ones — use colors captured
+    // directly during highlightRange's filter phase (most reliable source)
+    if (spans[0]._jrWrappedColors) {
+      spans[0]._jrWrappedColors.forEach(function (c) {
+        conflictColors.add(c);
+      });
     }
 
-    // Case 3 (fallback): broad scan — when spans are at different DOM depths
-    // (e.g. text inside <strong> or <a>), sibling walks miss highlights in
-    // adjacent branches. Walk up to the nearest block ancestor and search
-    // for done highlights positioned between the first and last new span.
-    if (!conflictColor && wrapping && spans.length >= 2) {
-      var firstSpan = spans[0];
-      var lastSpan = spans[spans.length - 1];
-      var block = firstSpan.parentElement;
-      while (block && !JR.BLOCK_TAGS.has(block.tagName)) {
-        block = block.parentElement;
-      }
-      if (!block) block = firstSpan.parentElement;
-      var doneEls = block.querySelectorAll(".jr-source-highlight-done");
-      for (var di = 0; di < doneEls.length; di++) {
-        if (spanSet.has(doneEls[di])) continue;
-        // Check that the done el is between first and last new span
-        var pos1 = firstSpan.compareDocumentPosition(doneEls[di]);
-        var pos2 = lastSpan.compareDocumentPosition(doneEls[di]);
-        var afterFirst = !!(pos1 & Node.DOCUMENT_POSITION_FOLLOWING);
-        var beforeLast = !!(pos2 & Node.DOCUMENT_POSITION_PRECEDING);
-        if (afterFirst && beforeLast) {
-          conflictColor = colorFromDone(doneEls[di]);
-          break;
-        }
-      }
-    }
-
-    if (!conflictColor) return null;
+    if (conflictColors.size === 0) return null;
     for (var c = 0; c < colors.length; c++) {
-      if (colors[c] !== conflictColor) return colors[c];
+      if (!conflictColors.has(colors[c])) return colors[c];
     }
     return colors[1];
   };
@@ -320,9 +278,15 @@
    */
   JR.restoreHighlightInElement = function (root, hl, contentContainer) {
     var range = JR.findTextRange(root, hl.text);
-    if (!range) return false;
+    if (!range) {
+      console.warn("[JR restore] findTextRange failed for:", hl.text.slice(0, 60), "id:", hl.id);
+      return false;
+    }
     var wrappers = JR.highlightRange(range);
-    if (wrappers.length === 0) return false;
+    if (wrappers.length === 0) {
+      console.warn("[JR restore] highlightRange returned 0 wrappers for:", hl.text.slice(0, 60), "id:", hl.id);
+      return false;
+    }
     for (var k = 0; k < wrappers.length; k++) {
       wrappers[k].setAttribute("data-jr-highlight-id", hl.id);
       wrappers[k].classList.add("jr-source-highlight-done");
@@ -489,6 +453,9 @@
 
         if ((remaining.length > 0 || turnsRemaining.length > 0) && attempts < maxAttempts) {
           st.restoreTimer = setTimeout(tryRestore, 500);
+        } else if (remaining.length > 0) {
+          console.warn("[JR restore] gave up on " + remaining.length + " highlights after " + maxAttempts + " attempts:",
+            remaining.map(function (h) { return h.text.slice(0, 40) + "…"; }));
         }
       }
 
