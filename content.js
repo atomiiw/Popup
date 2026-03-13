@@ -40,6 +40,7 @@
   document.addEventListener("mousedown", function (e) {
     // Ignore clicks on the "Ask ChatGPT" dismiss button — don't close our popup
     if (e.target.closest(".jr-popup-disable-btn")) return;
+    if (JR._clearSearchActive) JR._clearSearchActive();
     if (!st.activePopup && st.popupStack.length === 0) return;
     if (st.confirmingDelete) {
       // Click outside popup cancels delete confirmation
@@ -61,7 +62,9 @@
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && st.activePopup) {
+    if (e.key === "Escape") {
+      if (JR._clearSearchActive) JR._clearSearchActive();
+      if (!st.activePopup) return;
       if (st.confirmingDelete) return;
       JR.removePopup();
     }
@@ -322,71 +325,89 @@
     var l1Items = JR.getLevel1HighlightIds();
     if (l1Items.length === 0) return;
 
-    function getDescendantIds(parentId) {
-      var children = [];
-      st.completedHighlights.forEach(function (entry, id) {
-        if (entry.parentId === parentId && entry.responseHTML) children.push(id);
-      });
-      var result = [];
-      for (var ci = 0; ci < children.length; ci++) {
-        result.push(children[ci]);
-        var gc = getDescendantIds(children[ci]);
-        for (var gi = 0; gi < gc.length; gi++) result.push(gc[gi]);
+    // Load ALL highlights from storage so we can build containers for
+    // nested popups even if they haven't been opened yet.
+    getHighlights().then(function (allStored) {
+      // Build a map of stored highlights by id for quick lookup
+      var storedMap = {};
+      for (var si = 0; si < allStored.length; si++) {
+        var sh = allStored[si];
+        if (sh.responseHTML) storedMap[sh.id] = sh;
       }
-      return result;
-    }
 
-    var cc = null;
-
-    // Create one container per version.  If no versions array, create one
-    // container for the single question+response.
-    function makeContainers(hlId, insertAfter) {
-      var entry = st.completedHighlights.get(hlId);
-      if (!entry || !entry.responseHTML) return insertAfter;
-
-      var versions = entry.versions && entry.versions.length > 0
-        ? entry.versions
-        : [{ question: entry.question, responseHTML: entry.responseHTML }];
-
-      var last = insertAfter;
-      for (var vi = 0; vi < versions.length; vi++) {
-        var v = versions[vi];
-        var container = document.createElement("div");
-        container.className = "jr-search-popup";
-        container.setAttribute("hidden", "until-found");
-        container.setAttribute("data-jr-search-hl-id", hlId);
-        container.setAttribute("data-jr-search-version", String(vi));
-
-        if (v.question) {
-          var qEl = document.createElement("p");
-          qEl.textContent = v.question;
-          container.appendChild(qEl);
+      function getDescendantIds(parentId) {
+        var children = [];
+        // Check in-memory first
+        st.completedHighlights.forEach(function (entry, id) {
+          if (entry.parentId === parentId && entry.responseHTML) children.push(id);
+        });
+        // Also check storage for children not yet loaded into memory
+        for (var key in storedMap) {
+          if (storedMap[key].parentId === parentId && children.indexOf(key) === -1) {
+            children.push(key);
+          }
         }
-        if (v.responseHTML) {
-          var rEl = document.createElement("div");
-          rEl.innerHTML = v.responseHTML;
-          container.appendChild(rEl);
+        var result = [];
+        for (var ci = 0; ci < children.length; ci++) {
+          result.push(children[ci]);
+          var gc = getDescendantIds(children[ci]);
+          for (var gi = 0; gi < gc.length; gi++) result.push(gc[gi]);
         }
-
-        last.parentNode.insertBefore(container, last.nextSibling);
-        if (!cc) cc = last.parentNode;
-        last = container;
+        return result;
       }
-      return last;
-    }
 
-    for (var i = 0; i < l1Items.length; i++) {
-      var l1Id = l1Items[i];
-      var l1Entry = st.completedHighlights.get(l1Id);
-      if (!l1Entry || !l1Entry.spans || l1Entry.spans.length === 0) continue;
-      var anchor = l1Entry.spans[0].closest("article") || l1Entry.spans[0].parentElement;
-      if (!anchor || !anchor.parentNode) continue;
-      var last = makeContainers(l1Id, anchor);
-      var desc = getDescendantIds(l1Id);
-      for (var di = 0; di < desc.length; di++) last = makeContainers(desc[di], last);
-    }
+      var cc = null;
 
-    if (!cc) return;
+      // Create one container per version.  If no versions array, create one
+      // container for the single question+response.
+      function makeContainers(hlId, insertAfter) {
+        // Prefer in-memory entry, fall back to stored
+        var entry = st.completedHighlights.get(hlId) || storedMap[hlId];
+        if (!entry || !entry.responseHTML) return insertAfter;
+
+        var versions = entry.versions && entry.versions.length > 0
+          ? entry.versions
+          : [{ question: entry.question, responseHTML: entry.responseHTML }];
+
+        var last = insertAfter;
+        for (var vi = 0; vi < versions.length; vi++) {
+          var v = versions[vi];
+          var container = document.createElement("div");
+          container.className = "jr-search-popup";
+          container.setAttribute("hidden", "until-found");
+          container.setAttribute("data-jr-search-hl-id", hlId);
+          container.setAttribute("data-jr-search-version", String(vi));
+
+          if (v.question) {
+            var qEl = document.createElement("p");
+            qEl.textContent = v.question;
+            container.appendChild(qEl);
+          }
+          if (v.responseHTML) {
+            var rEl = document.createElement("div");
+            rEl.innerHTML = v.responseHTML;
+            container.appendChild(rEl);
+          }
+
+          last.parentNode.insertBefore(container, last.nextSibling);
+          if (!cc) cc = last.parentNode;
+          last = container;
+        }
+        return last;
+      }
+
+      for (var i = 0; i < l1Items.length; i++) {
+        var l1Id = l1Items[i];
+        var l1Entry = st.completedHighlights.get(l1Id);
+        if (!l1Entry || !l1Entry.spans || l1Entry.spans.length === 0) continue;
+        var anchor = l1Entry.spans[0].closest("article") || l1Entry.spans[0].parentElement;
+        if (!anchor || !anchor.parentNode) continue;
+        var last = makeContainers(l1Id, anchor);
+        var desc = getDescendantIds(l1Id);
+        for (var di = 0; di < desc.length; di++) last = makeContainers(desc[di], last);
+      }
+
+      if (!cc) return;
 
     // Detect when Chrome reveals a container (removes hidden attr)
     searchObserver = new MutationObserver(function (mutations) {
@@ -407,10 +428,10 @@
       }
       if (!revealedHlId) return;
 
-      openHighlightChain(revealedHlId, revealedVersion);
+      searchActive = true;
+      openHighlightForSearch(revealedHlId, revealedVersion);
 
-      // Re-hide after a delay so Chrome finishes processing this match
-      // before the container becomes findable again for the next Cmd+G
+      // Re-hide after a delay so Chrome can process subsequent Cmd+G matches
       setTimeout(function () {
         var revealed = document.querySelectorAll(".jr-search-popup:not([hidden])");
         for (var ri = 0; ri < revealed.length; ri++) {
@@ -424,6 +445,7 @@
       subtree: true,
       attributeFilter: ["hidden"],
     });
+    }); // end getHighlights().then
   };
 
   /**
@@ -582,6 +604,114 @@
     responseDiv.scrollTop = offset - responseDiv.clientHeight / 2;
   }
 
+  /**
+   * Open the right popup chain for a Cmd+F match.
+   * Uses storage to build the chain when nested highlights aren't in memory yet.
+   */
+  function openHighlightForSearch(hlId, versionIdx) {
+    // Try in-memory chain first
+    var chain = buildChain(hlId);
+    if (chain.length > 1 || st.completedHighlights.has(hlId)) {
+      doOpenChain(chain, hlId, versionIdx);
+      return;
+    }
+
+    // Nested highlight not in memory — look up parent chain from storage
+    getHighlights().then(function (allStored) {
+      var byId = {};
+      for (var i = 0; i < allStored.length; i++) byId[allStored[i].id] = allStored[i];
+      var storageChain = [hlId];
+      var cur = byId[hlId];
+      while (cur && cur.parentId) {
+        storageChain.unshift(cur.parentId);
+        cur = byId[cur.parentId];
+      }
+      doOpenChain(storageChain, hlId, versionIdx);
+    });
+  }
+
+  function doOpenChain(chain, hlId, versionIdx) {
+    var l1Id = chain[0];
+    var l1Entry = st.completedHighlights.get(l1Id);
+    if (!l1Entry) return;
+
+    if (chain.length === 1) {
+      JR.scrollToAndOpenPopup(l1Id);
+      scrollPopupToCenter();
+      removeVisibleSearchContainers();
+      return;
+    }
+
+    // Nested: open full chain
+    JR.removeAllPopups();
+    switchVersionInMemory(hlId, versionIdx);
+    JR.createPopup({ completedId: l1Id });
+    if (!st.activePopup) return;
+
+    var remainingChain = chain.slice(1);
+    setTimeout(function () {
+      for (var i = 0; i < remainingChain.length; i++) {
+        scrollResponseToChild(remainingChain[i]);
+        JR.pushPopupState();
+        JR.createPopup({ completedId: remainingChain[i] });
+      }
+      scrollPopupToCenter();
+      removeVisibleSearchContainers();
+    }, 150);
+  }
+
+  /**
+   * Remove search containers whose content is now visible in an open popup,
+   * preventing Chrome from double-counting matches.
+   */
+  function removeVisibleSearchContainers() {
+    // Collect all hlIds that have visible popup responses right now
+    var visibleIds = new Set();
+    if (st.activeHighlightId) visibleIds.add(st.activeHighlightId);
+    for (var si = 0; si < st.popupStack.length; si++) {
+      if (st.popupStack[si].highlightId) visibleIds.add(st.popupStack[si].highlightId);
+    }
+    if (visibleIds.size === 0) return;
+
+    var containers = document.querySelectorAll(".jr-search-popup");
+    for (var ci = 0; ci < containers.length; ci++) {
+      var c = containers[ci];
+      var cHlId = c.getAttribute("data-jr-search-hl-id");
+      if (!cHlId || !visibleIds.has(cHlId)) continue;
+      // Only remove the container for the version currently displayed in the popup
+      var entry = st.completedHighlights.get(cHlId);
+      if (!entry) continue;
+      var activeV = entry.activeVersion != null ? entry.activeVersion : 0;
+      if (entry.versions && entry.versions.length > 1) {
+        var vStr = c.getAttribute("data-jr-search-version");
+        if (vStr != null && parseInt(vStr, 10) !== activeV) continue;
+      }
+      c.remove();
+    }
+  }
+
+  // ── Debounced search container rebuild ──
+  // Called when popups open/close so containers stay in sync.
+  // Debounced to avoid N rebuilds when removeAllPopups peels N layers.
+  // Suppressed while a Cmd+F search is actively navigating (searchActive flag)
+  // to avoid changing Chrome's match count mid-search.
+  var searchRebuildTimer = null;
+  var searchActive = false;
+  JR._clearSearchActive = function () {
+    if (!searchActive) return;
+    searchActive = false;
+    // Rebuild containers now that search is done
+    JR.scheduleSearchRebuild();
+  };
+  JR.scheduleSearchRebuild = function () {
+    if (searchActive) return; // don't rebuild while user is navigating Cmd+F results
+    if (searchRebuildTimer) clearTimeout(searchRebuildTimer);
+    searchRebuildTimer = setTimeout(function () {
+      searchRebuildTimer = null;
+      JR.buildSearchContainers();
+    }, 300);
+  };
+
   // --- SPA navigation ---
 
   function onNavigate() {
@@ -590,6 +720,7 @@
     st.lastKnownUrl = currentUrl;
 
     strippedTurns.clear();
+    searchActive = false;
     if (searchObserver) { searchObserver.disconnect(); searchObserver = null; }
     JR.removeAllPopups();
     JR.hideToolbar();

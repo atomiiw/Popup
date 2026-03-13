@@ -881,14 +881,21 @@
 
     // Suppress intermediate updateNavWidget calls during navigation
     navNavigating = true;
-    JR.removeAllPopups();
+    JR.scrollToAndOpenPopup(targetId);
     navNavigating = false;
+  };
 
-    if (targetEntry.spans && targetEntry.spans.length > 0) {
-      targetEntry.spans[0].scrollIntoView({ block: "center" });
+  /**
+   * Convenience: close all popups, scroll to a highlight, and open its popup.
+   */
+  JR.scrollToAndOpenPopup = function (hlId) {
+    JR.removeAllPopups();
+    var entry = st.completedHighlights.get(hlId);
+    if (!entry) return;
+    if (entry.spans && entry.spans.length > 0) {
+      entry.spans[0].scrollIntoView({ block: "center" });
     }
-
-    JR.createPopup({ completedId: targetId });
+    JR.createPopup({ completedId: hlId });
   };
 
   /**
@@ -961,5 +968,6 @@
       JR.showToolbar(st.activeHighlightId);
     }
     JR.updateNavWidget();
+    if (JR.scheduleSearchRebuild) JR.scheduleSearchRebuild();
   };
 })();

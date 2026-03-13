@@ -1224,6 +1224,7 @@
     }
 
     JR.updateNavWidget();
+    if (JR.scheduleSearchRebuild) JR.scheduleSearchRebuild();
   };
 
   /**
