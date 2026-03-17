@@ -681,10 +681,6 @@
   JR.initSearchBar = function () {
     if (searchBar && searchBar.isConnected) return;
 
-    // Need at least one turn to exist so search has something to work with
-    var firstTurn = document.querySelector(JR.SELECTORS.aiTurn);
-    if (!firstTurn) return;
-
     searchBar = document.createElement("div");
     searchBar.className = "jr-search-bar jr-search-bar--ready";
 

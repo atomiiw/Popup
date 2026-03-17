@@ -867,7 +867,7 @@
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
 
-  // Init the always-visible search bar (delay for DOM to be ready)
+  // Init the search bar (delay for DOM to be ready)
   setTimeout(JR.initSearchBar, 1500);
 
   // --- Expose console API to page's main world ---
