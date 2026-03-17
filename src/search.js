@@ -360,32 +360,56 @@
   }
 
   /**
-   * Apply search marks for the active match only (and optionally other
-   * visible matches in the same container). Only marks the current match
-   * to avoid offset-shift issues from multiple insertions.
+   * Apply search marks for ALL visible matches (like Chrome's native Cmd+F).
+   * Non-active matches get jr-search-mark, active gets jr-search-mark-active.
+   * Inserts marks from last offset to first within each container to avoid
+   * offset-shift issues.
    */
   function applyMarks() {
     clearMarks();
     if (matches.length === 0 || matchIndex < 0) return;
 
-    var m = matches[matchIndex];
-    var container = getContainerForMatch(m);
-    if (!container) return;
+    // Group matches by their DOM container
+    var groups = [];
+    var containerMap = new Map();
 
-    // Mark the active match
-    var mark = insertMark(container, m.offset, m.length, true);
-    if (mark) {
-      var markRect = mark.getBoundingClientRect();
-      var scrollParent = mark.closest(".jr-popup-response");
+    for (var i = 0; i < matches.length; i++) {
+      var m = matches[i];
+      var container = getContainerForMatch(m);
+      if (!container || !container.isConnected) continue;
+
+      if (!containerMap.has(container)) {
+        var group = { container: container, items: [] };
+        containerMap.set(container, group);
+        groups.push(group);
+      }
+      containerMap.get(container).items.push({ idx: i, offset: m.offset, length: m.length });
+    }
+
+    // Insert marks in each container, offset descending (last first)
+    for (var g = 0; g < groups.length; g++) {
+      var group = groups[g];
+      group.items.sort(function (a, b) { return b.offset - a.offset; });
+      for (var gi = 0; gi < group.items.length; gi++) {
+        var item = group.items[gi];
+        insertMark(group.container, item.offset, item.length, item.idx === matchIndex);
+      }
+    }
+
+    // Scroll to the active mark
+    var activeMark = document.querySelector(".jr-search-mark-active");
+    if (activeMark) {
+      var markRect = activeMark.getBoundingClientRect();
+      var scrollParent = activeMark.closest(".jr-popup-response");
       if (scrollParent) {
         var parentRect = scrollParent.getBoundingClientRect();
         if (markRect.top < parentRect.top || markRect.bottom > parentRect.bottom) {
-          mark.scrollIntoView({ block: "center" });
+          activeMark.scrollIntoView({ block: "center" });
         }
       } else {
         var margin = window.innerHeight * 0.15;
         if (markRect.top < margin || markRect.bottom > window.innerHeight - margin) {
-          mark.scrollIntoView({ block: "center" });
+          activeMark.scrollIntoView({ block: "center" });
         }
       }
     }
@@ -533,6 +557,7 @@
     } else {
       searchCount.textContent = (matchIndex + 1) + " / " + matches.length;
     }
+    updateNavButtons();
   }
 
   // --- Search execution ---
@@ -590,8 +615,67 @@
 
   // --- Search bar DOM ---
 
+  var prevBtn = null;
+  var nextBtn = null;
+  var outsideClickHandler = null;
+
+  /** Update prev/next button enabled state based on matches. */
+  function updateNavButtons() {
+    if (!prevBtn || !nextBtn) return;
+    var hasMatches = matches.length > 0;
+    if (hasMatches) {
+      prevBtn.classList.add("jr-search-prev--enabled");
+      nextBtn.classList.add("jr-search-next--enabled");
+    } else {
+      prevBtn.classList.remove("jr-search-prev--enabled");
+      nextBtn.classList.remove("jr-search-next--enabled");
+    }
+  }
+
+  /** Switch search bar to ready state. */
+  function enterReadyState() {
+    if (!searchBar) return;
+    searchBar.className = "jr-search-bar jr-search-bar--ready";
+    // Clear search state
+    if (searchInput) searchInput.value = "";
+    clearMarks();
+    restoreAllVersions();
+    matches = [];
+    matchIndex = -1;
+    if (searchCount) searchCount.textContent = "";
+    // Remove outside click listener
+    if (outsideClickHandler) {
+      document.removeEventListener("mousedown", outsideClickHandler, true);
+      outsideClickHandler = null;
+    }
+  }
+
+  /** Switch search bar to active/search state. */
+  function enterSearchState() {
+    if (!searchBar) return;
+    searchBar.className = "jr-search-bar jr-search-bar--active";
+    updateNavButtons();
+    // Focus input after class swap so it's visible
+    setTimeout(function () {
+      if (searchInput) searchInput.focus();
+    }, 0);
+    // Listen for clicks outside to return to ready state
+    if (outsideClickHandler) {
+      document.removeEventListener("mousedown", outsideClickHandler, true);
+    }
+    outsideClickHandler = function (e) {
+      if (searchBar && !searchBar.contains(e.target)) {
+        enterReadyState();
+      }
+    };
+    // Delay attaching so the current click doesn't trigger it
+    setTimeout(function () {
+      document.addEventListener("mousedown", outsideClickHandler, true);
+    }, 0);
+  }
+
   /**
-   * Inject the always-visible search bar into the conversation area.
+   * Inject the search bar into the page.
    * Called once on init / SPA navigate. Idempotent.
    */
   JR.initSearchBar = function () {
@@ -602,19 +686,31 @@
     if (!firstTurn) return;
 
     searchBar = document.createElement("div");
-    searchBar.className = "jr-search-bar";
+    searchBar.className = "jr-search-bar jr-search-bar--ready";
 
-    // Magnifying glass icon
+    // --- Ready-state overlay (icon + label, centered) ---
+    var readyGroup = document.createElement("div");
+    readyGroup.className = "jr-search-ready-group";
+
     var icon = document.createElement("span");
     icon.className = "jr-search-icon";
     icon.innerHTML = SEARCH_SVG;
-    searchBar.appendChild(icon);
+    readyGroup.appendChild(icon);
+
+    var label = document.createElement("span");
+    label.className = "jr-search-label";
+    label.textContent = "Search this page\u2026";
+    readyGroup.appendChild(label);
+
+    searchBar.appendChild(readyGroup);
+
+    // --- Search-state elements ---
 
     // Input
     searchInput = document.createElement("input");
     searchInput.type = "text";
     searchInput.className = "jr-search-input";
-    searchInput.placeholder = "Search\u2026";
+    searchInput.placeholder = "Search this page\u2026";
     searchBar.appendChild(searchInput);
 
     // Match counter
@@ -624,47 +720,43 @@
     searchBar.appendChild(searchCount);
 
     // Prev button (up caret)
-    var prevBtn = document.createElement("button");
+    prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.className = "jr-search-prev";
     prevBtn.innerHTML = UP_SVG;
     prevBtn.addEventListener("click", function (e) {
       e.stopPropagation();
-      searchPrev();
+      if (matches.length > 0) searchPrev();
     });
     searchBar.appendChild(prevBtn);
 
     // Next button (down caret)
-    var nextBtn = document.createElement("button");
+    nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.className = "jr-search-next";
     nextBtn.innerHTML = DOWN_SVG;
     nextBtn.addEventListener("click", function (e) {
       e.stopPropagation();
-      searchNext();
+      if (matches.length > 0) searchNext();
     });
     searchBar.appendChild(nextBtn);
 
-    // Clear button
-    var clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.className = "jr-search-clear";
-    clearBtn.innerHTML = CLEAR_SVG;
-    clearBtn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      searchInput.value = "";
-      clearMarks();
-      restoreAllVersions();
-      matches = [];
-      matchIndex = -1;
-      searchCount.textContent = "";
-    });
-    searchBar.appendChild(clearBtn);
+    // --- Events ---
 
-    // Events
+    // Click on ready state → enter search state
+    searchBar.addEventListener("click", function (e) {
+      if (searchBar.classList.contains("jr-search-bar--ready")) {
+        e.stopPropagation();
+        enterSearchState();
+      }
+    });
+
     searchInput.addEventListener("input", function () {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(performSearch, 300);
+      debounceTimer = setTimeout(function () {
+        performSearch();
+        updateNavButtons();
+      }, 300);
     });
 
     searchInput.addEventListener("keydown", function (e) {
@@ -687,13 +779,7 @@
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        searchInput.blur();
-        clearMarks();
-        restoreAllVersions();
-        searchInput.value = "";
-        matches = [];
-        matchIndex = -1;
-        searchCount.textContent = "";
+        enterReadyState();
       }
     });
 
@@ -732,12 +818,18 @@
   JR.hideSearchBar = function () {
     clearMarks();
     restoreAllVersions();
+    if (outsideClickHandler) {
+      document.removeEventListener("mousedown", outsideClickHandler, true);
+      outsideClickHandler = null;
+    }
     if (searchBar) {
       searchBar.remove();
       searchBar = null;
     }
     searchInput = null;
     searchCount = null;
+    prevBtn = null;
+    nextBtn = null;
     matches = [];
     matchIndex = -1;
     textCache = {};

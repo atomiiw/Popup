@@ -85,6 +85,7 @@
    * e.g. "conversation-turn-5" → 5
    */
   JR.getTurnNumber = function (article) {
+    if (!article) return -1;
     var testId = article.getAttribute("data-testid") || "";
     var match = testId.match(/conversation-turn-(\d+)/);
     return match ? parseInt(match[1], 10) : -1;

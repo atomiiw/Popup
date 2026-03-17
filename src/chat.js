@@ -38,6 +38,16 @@
     var scrollParent = JR.getScrollParent(scrollAnchor);
     var savedScrollTop = scrollParent ? scrollParent.scrollTop : 0;
 
+    // Make the injected text invisible while it's in the input — prevents the
+    // question from flashing briefly. We inject a <style> rule instead of
+    // inline style because ChatGPT renders text in child <p>/<span> elements
+    // that override the parent's inline color. A !important rule on the
+    // contenteditable catches all descendants. We avoid visibility:hidden on
+    // the form because that shifts layout and breaks popup positioning.
+    var hideStyle = document.createElement("style");
+    hideStyle.textContent = '#prompt-textarea, #prompt-textarea * { color: transparent !important; caret-color: transparent !important; }';
+    document.head.appendChild(hideStyle);
+
     chatInput.focus({ preventScroll: true });
 
     var dt = new DataTransfer();
@@ -61,12 +71,14 @@
         chatInput.blur();
         // One final restore after click
         if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+        hideStyle.remove();
         return;
       }
       attempts++;
       if (attempts < 20) {
         setTimeout(trySend, 150);
       } else {
+        hideStyle.remove();
         console.error(
           "[Jump Return] Send button not found or disabled after retries.",
           "Button found:", !!sendBtn,

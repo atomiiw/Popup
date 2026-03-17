@@ -272,8 +272,8 @@ Sorted list of colors used for icons and UI elements across all states.
 | **Version indicator text** | Muted | `var(--jr-text-muted)` / `#919797` | Version counter in popup |
 | **Popup background** | White | `var(--jr-bg)` / `#ffffff` | Upper card and response card |
 | **Popup border** | Light gray | `var(--jr-border)` / `#e5e5e5` | Popup border, separator lines |
-| **Search match** | Chrome yellow + black text | `#FFEA00` / `#000000` | Non-focused search match |
-| **Search match (focused)** | Black + chrome yellow text | `#000000` / `#FFEA00` | Active/focused search match |
+| **Search match** | Yellow + black text | `#fff500` / `#000000` | Non-focused search match |
+| **Search match (focused)** | Blue + white text | `#2a428c` / `#ffffff` | Active/focused search match |
 
 ### Highlight Colors (source text on page)
 

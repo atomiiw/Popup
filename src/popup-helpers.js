@@ -483,10 +483,10 @@
 
       var top;
       if (newDirection === "above") {
-        top = rect.top - containerRect.top - popupH - gap;
+        top = centerRect.top - containerRect.top - popupH - gap;
         popup._jrBottomAnchor = top + popupH;
       } else {
-        top = rect.bottom - containerRect.top + gap;
+        top = centerRect.bottom - containerRect.top + gap;
         popup._jrBottomAnchor = null;
       }
 
@@ -515,14 +515,14 @@
     var centerRect = adjRect || rect;
 
     var left = centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2;
-    var containerW = contentContainer.clientWidth;
-    left = Math.max(8, Math.min(left, containerW - popupW - 8));
     var top;
     if (direction === "above") {
       top = rect.top - containerRect.top - popupH - gap;
     } else {
       top = rect.bottom - containerRect.top + gap;
     }
+    var containerW = contentContainer.clientWidth;
+    left = Math.max(8, Math.min(left, containerW - popupW - 8));
     st.activePopup.style.left = left + "px";
     st.activePopup.style.top = top + "px";
     st.activePopup._jrDirection = direction;

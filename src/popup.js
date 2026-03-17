@@ -247,7 +247,7 @@
     var questionText = document.createElement("span");
     questionText.className = "jr-popup-question-text";
     questionText.contentEditable = "true";
-    questionText.setAttribute("data-placeholder", "Ask a follow-up\u2026");
+    questionText.setAttribute("data-placeholder", "Follow up\u2026");
     questionText.addEventListener("paste", function (e) {
       e.preventDefault();
       var text = (e.clipboardData || window.clipboardData).getData("text/plain");
@@ -270,7 +270,7 @@
     var switchBtn = document.createElement("div");
     switchBtn.className = "jr-send-switch-btn jr-disabled";
     function updateSwitchLabel() {
-      var other = st.responseMode === "brief" ? "Elaborate" : "Brief";
+      var other = st.responseMode === "brief" ? "Detailed" : "Concise";
       switchBtn.innerHTML = '<span class="jr-switch-inner">' + SWITCH_SVG + other + '</span>';
     }
     updateSwitchLabel();
@@ -937,7 +937,7 @@
       var switchBtn = document.createElement("div");
       switchBtn.className = "jr-send-switch-btn jr-disabled";
       function updateEditSwitchLabel() {
-        var other = st.responseMode === "brief" ? "Elaborate" : "Brief";
+        var other = st.responseMode === "brief" ? "Detailed" : "Concise";
         switchBtn.innerHTML = '<span class="jr-switch-inner">' + SWITCH_SVG + other + '</span>';
       }
       updateEditSwitchLabel();

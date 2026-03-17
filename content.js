@@ -169,14 +169,19 @@
       }
     }
 
-    // Find the nearest positioned ancestor for underline placement
+    // Find the nearest positioned ancestor for underline placement.
+    // Skip scroll containers (overflow-y: auto/scroll) — absolutely positioned
+    // children extend their scrollable overflow area, causing blank space.
     var posParent = null;
     var el = entry.spans[0].parentElement;
     while (el) {
-      var pos = getComputedStyle(el).position;
-      if (pos === "relative" || pos === "absolute" || pos === "fixed") {
-        posParent = el;
-        break;
+      var cs = getComputedStyle(el);
+      if (cs.position === "relative" || cs.position === "absolute" || cs.position === "fixed") {
+        var ov = cs.overflowY;
+        if (ov !== "auto" && ov !== "scroll") {
+          posParent = el;
+          break;
+        }
       }
       el = el.parentElement;
     }
@@ -188,6 +193,9 @@
       }
     }
     var pRect = posParent.getBoundingClientRect();
+    var pStyle = getComputedStyle(posParent);
+    var borderLeft = parseFloat(pStyle.borderLeftWidth) || 0;
+    var borderTop = parseFloat(pStyle.borderTopWidth) || 0;
     var scrollOffsetX = posParent.scrollLeft || 0;
     var scrollOffsetY = posParent.scrollTop || 0;
 
@@ -195,8 +203,8 @@
       var line = lines[ui];
       var underline = document.createElement("div");
       underline.className = "jr-highlight-underline";
-      underline.style.left = (line.left - pRect.left + scrollOffsetX) + "px";
-      underline.style.top = (line.bottom - pRect.top + scrollOffsetY + 1) + "px";
+      underline.style.left = (line.left - pRect.left - borderLeft + scrollOffsetX) + "px";
+      underline.style.top = (line.bottom - pRect.top - borderTop + scrollOffsetY + 1) + "px";
       underline.style.width = (line.right - line.left) + "px";
       posParent.appendChild(underline);
       elems.push(underline);
@@ -204,9 +212,14 @@
     return elems;
   };
 
-  // Hover underline — works on any highlight except the currently active one
+  // Hover underline — only when no popup is open
   document.addEventListener("mouseover", function (e) {
     if (mouseIsDown) return;
+    // No hover underlines while any popup is open
+    if (st.activePopup) {
+      if (hoveredHlId) { removeElems(hoverUnderlines); hoveredHlId = null; }
+      return;
+    }
     var span = e.target.closest(".jr-source-highlight-done");
     if (!span) {
       removeElems(hoverUnderlines);
@@ -215,8 +228,6 @@
     }
     var hlId = span.getAttribute("data-jr-highlight-id");
     if (!hlId || !st.completedHighlights.has(hlId)) return;
-    // Active highlight already has its own underline
-    if (hlId === st.activeHighlightId) return;
     if (hoveredHlId === hlId) return;
     removeElems(hoverUnderlines);
     hoveredHlId = hlId;

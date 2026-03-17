@@ -73,8 +73,9 @@ html[class*="dark"] {
   position: absolute;
   z-index: 1;
   width: 360px;
-  background: none;
-  border: none;
+  background: var(--jr-bg);
+  border: 1.5px solid #e5e5e5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   border-radius: var(--jr-radius);
   font-family: var(--jr-font);
   color: var(--jr-text);
@@ -131,11 +132,13 @@ html[class*="dark"] {
 
 
 .jr-popup-upper {
-  background: var(--jr-bg);
-  border: 1px solid var(--jr-border);
-  border-radius: var(--jr-radius);
-  box-shadow: var(--jr-shadow);
   padding: 14px;
+  border-radius: calc(var(--jr-radius) - 1px) calc(var(--jr-radius) - 1px) 0 0;
+}
+
+/* When upper is the only child (no response/loading below), round bottom corners too */
+.jr-popup-upper:last-child {
+  border-radius: calc(var(--jr-radius) - 1px);
 }
 
 /* Arrow pointing from popup to source highlight */
@@ -143,7 +146,7 @@ html[class*="dark"] {
   position: absolute;
   pointer-events: none;
   width: 18px;
-  height: 11px;
+  height: 9px;
   z-index: 1;
 }
 
@@ -161,37 +164,33 @@ html[class*="dark"] {
 /* Up arrow — popup is below the highlight */
 .jr-popup-arrow--up {
   top: -9px;
+  height: 10px;
 }
 
 .jr-popup-arrow--up::before {
   top: 0;
-  border-bottom: 9px solid var(--jr-border);
+  border-bottom: 9px solid #e5e5e5;
 }
 
 .jr-popup-arrow--up::after {
-  top: 1px;
-  left: 1px;
-  border-left-width: 8px;
-  border-right-width: 8px;
-  border-bottom: 10px solid var(--jr-bg);
+  top: 2px;
+  border-bottom: 9px solid var(--jr-bg);
 }
 
 /* Down arrow — popup is above the highlight */
 .jr-popup-arrow--down {
   bottom: -9px;
+  height: 10px;
 }
 
 .jr-popup-arrow--down::before {
   bottom: 0;
-  border-top: 9px solid var(--jr-border);
+  border-top: 9px solid #e5e5e5;
 }
 
 .jr-popup-arrow--down::after {
-  bottom: 1px;
-  left: 1px;
-  border-left-width: 8px;
-  border-right-width: 8px;
-  border-top: 10px solid var(--jr-bg);
+  bottom: 2px;
+  border-top: 9px solid var(--jr-bg);
 }
 
 
@@ -487,12 +486,9 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 /* Loading indicator — lower card with overlapping border */
 .jr-popup-loading {
-  margin-top: -1px;
   padding: 14px;
-  background: var(--jr-bg);
-  border: 1px solid var(--jr-border);
-  border-radius: var(--jr-radius);
-  box-shadow: var(--jr-shadow);
+  border-top: 1.5px solid #e5e5e5;
+  border-radius: 0 0 calc(var(--jr-radius) - 1px) calc(var(--jr-radius) - 1px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -797,14 +793,12 @@ ol.jr-popup-context-list .jr-depth-2 {
   text-align: center;
 }
 
-/* AI response — lower card with overlapping border */
+/* AI response — separated from upper by a line */
 .jr-popup-response {
-  margin-top: -1px;
+  position: relative;
   padding: 14px;
-  background: var(--jr-bg);
-  border: 1px solid var(--jr-border);
-  border-radius: var(--jr-radius);
-  box-shadow: var(--jr-shadow);
+  border-top: 1.5px solid #e5e5e5;
+  border-radius: 0 0 calc(var(--jr-radius) - 1px) calc(var(--jr-radius) - 1px);
   max-height: 350px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1285,6 +1279,7 @@ ol.jr-popup-context-list .jr-depth-2 {
 
 /* --- Search bar --- */
 
+/* --- Search bar: shared --- */
 .jr-search-bar {
   position: fixed;
   left: 50%;
@@ -1292,32 +1287,73 @@ ol.jr-popup-context-list .jr-depth-2 {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 14px 4px 10px;
-  background: transparent;
-  border: 1px solid var(--jr-border);
-  border-radius: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid #e5e5e5;
+  border-radius: var(--jr-radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   font-family: var(--jr-font);
   z-index: 2147483647;
-  pointer-events: none;
+  cursor: pointer;
 }
 
-.jr-search-bar > * {
-  pointer-events: auto;
+/* --- Ready state (default) --- */
+.jr-search-bar--ready {
+  gap: 2px;
+  padding: 4px 14px 4px 10px;
+  background: #e5e5e5;
+  justify-content: center;
+  box-shadow: none;
 }
 
-.jr-search-icon {
+.jr-search-ready-group .jr-search-icon {
   display: flex;
   align-items: center;
-  color: var(--jr-text-muted);
+  color: #919797;
   flex-shrink: 0;
-  margin-right: 8px;
 }
 
-.jr-search-icon svg {
+.jr-search-ready-group .jr-search-icon svg {
   width: 16px;
   height: 16px;
 }
+
+.jr-search-ready-group .jr-search-label {
+  font-size: 14px;
+  color: #919797;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* In ready state, search elements stay in layout but invisible (preserves box size) */
+.jr-search-bar--ready .jr-search-input,
+.jr-search-bar--ready .jr-search-count,
+.jr-search-bar--ready .jr-search-prev,
+.jr-search-bar--ready .jr-search-next {
+  visibility: hidden;
+}
+
+/* Ready-state label group centered via absolute overlay */
+.jr-search-ready-group {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.jr-search-bar--active .jr-search-ready-group {
+  display: none;
+}
+
+/* --- Search state --- */
+.jr-search-bar--active {
+  gap: 2px;
+  padding: 4px 14px 4px 10px;
+  background: var(--jr-bg);
+  cursor: default;
+}
+
+/* Ready group already hidden by .jr-search-bar--active .jr-search-ready-group */
 
 .jr-search-input {
   border: none;
@@ -1350,8 +1386,7 @@ ol.jr-popup-context-list .jr-depth-2 {
 }
 
 .jr-search-prev,
-.jr-search-next,
-.jr-search-clear {
+.jr-search-next {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1360,22 +1395,26 @@ ol.jr-popup-context-list .jr-depth-2 {
   border: none;
   background: transparent;
   color: var(--jr-text-muted);
-  cursor: pointer;
+  cursor: default;
   border-radius: 4px;
   padding: 0;
   flex-shrink: 0;
+  transition: transform 0.12s ease;
 }
 
-.jr-search-prev:hover,
-.jr-search-next:hover,
-.jr-search-clear:hover {
-  color: var(--jr-text);
-  background: var(--jr-highlight-bg);
+.jr-search-prev--enabled,
+.jr-search-next--enabled {
+  color: #191414;
+  cursor: pointer;
+}
+
+.jr-search-prev--enabled:hover,
+.jr-search-next--enabled:hover {
+  transform: scale(1.25);
 }
 
 .jr-search-prev svg,
-.jr-search-next svg,
-.jr-search-clear svg {
+.jr-search-next svg {
   width: 16px;
   height: 16px;
 }
@@ -1383,13 +1422,13 @@ ol.jr-popup-context-list .jr-depth-2 {
 /* --- Search match highlights --- */
 
 .jr-search-mark {
-  background: #FFEA00;
+  background: #fff500;
   color: #000000;
   border-radius: 0;
 }
 
 .jr-search-mark-active {
-  background: #000000;
-  color: #FFEA00;
+  background: #2a428c;
+  color: #ffffff;
   border-radius: 0;
 }
