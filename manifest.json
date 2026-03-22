@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Chat Inline Questions",
+  "name": "Popup - Ask inline follow-ups in ChatGPT",
   "version": "1.0.0",
-  "description": "Highlight any sentence in AI responses to ask follow-up questions inline",
+  "description": "ChatGPT in a popup. Highlight. Ask. Keep reading. Stay exactly where you left off.",
   "permissions": [
     "storage",
     "activeTab"

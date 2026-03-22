@@ -172,9 +172,14 @@
     // Find the nearest positioned ancestor for underline placement.
     // Skip scroll containers (overflow-y: auto/scroll) — absolutely positioned
     // children extend their scrollable overflow area, causing blank space.
+    // Also skip .jr-popup-response unconditionally — its overflow is toggled
+    // between auto and hidden by attachScrollTracking, so checking computed
+    // overflow at call time is unreliable and leads to stale underlines
+    // inside the response div that create a white gap when overflow resets.
     var posParent = null;
     var el = entry.spans[0].parentElement;
     while (el) {
+      if (el.classList.contains("jr-popup-response")) { el = el.parentElement; continue; }
       var cs = getComputedStyle(el);
       if (cs.position === "relative" || cs.position === "absolute" || cs.position === "fixed") {
         var ov = cs.overflowY;
@@ -212,14 +217,9 @@
     return elems;
   };
 
-  // Hover underline — only when no popup is open
+  // Hover underline — when no popup is open, or for children of the innermost open popup
   document.addEventListener("mouseover", function (e) {
     if (mouseIsDown) return;
-    // No hover underlines while any popup is open
-    if (st.activePopup) {
-      if (hoveredHlId) { removeElems(hoverUnderlines); hoveredHlId = null; }
-      return;
-    }
     var span = e.target.closest(".jr-source-highlight-done");
     if (!span) {
       removeElems(hoverUnderlines);
@@ -228,6 +228,17 @@
     }
     var hlId = span.getAttribute("data-jr-highlight-id");
     if (!hlId || !st.completedHighlights.has(hlId)) return;
+
+    // When a popup is open, only allow hover underline for children of the
+    // innermost open popup (i.e. highlights whose parentId === activeHighlightId)
+    if (st.activePopup) {
+      var hovEntry = st.completedHighlights.get(hlId);
+      if (!hovEntry || hovEntry.parentId !== st.activeHighlightId) {
+        if (hoveredHlId) { removeElems(hoverUnderlines); hoveredHlId = null; }
+        return;
+      }
+    }
+
     if (hoveredHlId === hlId) return;
     removeElems(hoverUnderlines);
     hoveredHlId = hlId;
@@ -262,11 +273,17 @@
     }
   }, true);
 
-  // Active underline — shown while popup is open
-  JR.showActiveUnderline = function (hlId) {
+  // Active underline — shown while popup is open (accepts single ID or array)
+  JR.showActiveUnderline = function (hlIds) {
     removeElems(activeUnderlines);
-    var entry = st.completedHighlights.get(hlId);
-    if (entry) activeUnderlines = JR.createUnderlines(entry);
+    if (!Array.isArray(hlIds)) hlIds = [hlIds];
+    for (var i = 0; i < hlIds.length; i++) {
+      var entry = st.completedHighlights.get(hlIds[i]);
+      if (entry) {
+        var elems = JR.createUnderlines(entry);
+        for (var j = 0; j < elems.length; j++) activeUnderlines.push(elems[j]);
+      }
+    }
     // Clear any hover underline
     removeElems(hoverUnderlines);
     hoveredHlId = null;
