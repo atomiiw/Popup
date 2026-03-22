@@ -1,4 +1,4 @@
-// chat.js — Chat injection, response capture, and scroll locking for Jump Return
+// chat.js — Chat injection, response capture, and scroll locking
 (function () {
   "use strict";
 
@@ -28,7 +28,7 @@
   JR.injectAndSend = function (message) {
     var chatInput = document.querySelector(S.chatInput);
     if (!chatInput) {
-      console.error("[Jump Return] Chat input not found");
+      console.error("[Popup] Chat input not found");
       return;
     }
 
@@ -80,7 +80,7 @@
       } else {
         hideStyle.remove();
         console.error(
-          "[Jump Return] Send button not found or disabled after retries.",
+          "[Popup] Send button not found or disabled after retries.",
           "Button found:", !!sendBtn,
           "Input text:", chatInput.textContent.slice(0, 50)
         );
@@ -675,6 +675,10 @@
           color: autoColor2,
         });
       }
+
+      // Register with persistent enforcer so React remounts can't unhide
+      JR.addHiddenTurnIndex(qNum2);
+      JR.addHiddenTurnIndex(rNum2);
 
       JR.updateNavWidget();
       st.cancelResponseWatch = null;

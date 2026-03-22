@@ -1,4 +1,4 @@
-// text-extraction.js — Text extraction & sentence detection for Jump Return
+// text-extraction.js — Text extraction & sentence detection
 (function () {
   "use strict";
 

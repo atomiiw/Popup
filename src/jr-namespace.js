@@ -1,4 +1,4 @@
-// jr-namespace.js — Shared namespace, constants, and mutable state for Jump Return
+// jr-namespace.js — Shared namespace, constants, and mutable state
 (function () {
   "use strict";
 
@@ -44,6 +44,7 @@
       navWidget: null,                  // floating highlight navigation widget element
       askBtnHidden: false,              // session flag — hides ChatGPT's native "Ask ChatGPT" button
       messageQueue: [],                  // queued messages waiting for generation to finish
+      hiddenTurnIndices: new Set(),       // turn indices that must stay hidden (enforced by observer)
     },
   };
 })();

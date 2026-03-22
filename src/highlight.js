@@ -1,4 +1,4 @@
-// highlight.js — Highlight creation, removal, and restoration for Jump Return
+// highlight.js — Highlight creation, removal, and restoration
 (function () {
   "use strict";
 
@@ -144,7 +144,7 @@
         wrappers[0]._jrWrappedColors = wrappedDoneColors;
       }
     } catch (e) {
-      console.warn("[Jump Return] highlightRange failed:", e);
+      console.warn("[Popup] highlightRange failed:", e);
       for (var j = 0; j < wrappers.length; j++) {
         try {
           var w = wrappers[j];
@@ -377,8 +377,8 @@
       var allTurnIndices = [];
       for (var hi = 0; hi < highlights.length; hi++) {
         var h = highlights[hi];
-        if (h.questionIndex > 0) allTurnIndices.push(h.questionIndex);
-        if (h.responseIndex > 0) allTurnIndices.push(h.responseIndex);
+        if (h.questionIndex > 0) { allTurnIndices.push(h.questionIndex); st.hiddenTurnIndices.add(h.questionIndex); }
+        if (h.responseIndex > 0) { allTurnIndices.push(h.responseIndex); st.hiddenTurnIndices.add(h.responseIndex); }
       }
 
       // Group items by quoteId, then build restorable list for level-1 highlights
@@ -515,5 +515,55 @@
 
       tryRestore();
     });
+  };
+
+  /**
+   * Enforce hidden state on all turns in hiddenTurnIndices.
+   * Called by MutationObserver when React remounts turn elements.
+   */
+  function enforceHiddenTurns() {
+    if (st.hiddenTurnIndices.size === 0) return;
+    st.hiddenTurnIndices.forEach(function (idx) {
+      var turn = document.querySelector(
+        '[data-testid="conversation-turn-' + idx + '"]'
+      );
+      if (turn && !turn.classList.contains("jr-hidden")) {
+        turn.classList.add("jr-hidden");
+      }
+    });
+  }
+
+  /**
+   * Start a MutationObserver that re-hides turns whenever React remounts them.
+   * Called once from content.js after initial restore.
+   */
+  JR.startHiddenTurnEnforcer = function () {
+    if (st._hiddenTurnObserver) return;
+    var debounceTimer = null;
+    st._hiddenTurnObserver = new MutationObserver(function () {
+      if (st.hiddenTurnIndices.size === 0) return;
+      if (debounceTimer) return;
+      debounceTimer = setTimeout(function () {
+        debounceTimer = null;
+        enforceHiddenTurns();
+      }, 100);
+    });
+    // Observe the conversation container for child additions (React remounts)
+    var target = document.querySelector('[role="presentation"]') || document.body;
+    st._hiddenTurnObserver.observe(target, { childList: true, subtree: true });
+  };
+
+  /**
+   * Add a turn index to the enforced hidden set (used by chat.js on capture).
+   */
+  JR.addHiddenTurnIndex = function (idx) {
+    if (idx > 0) st.hiddenTurnIndices.add(idx);
+  };
+
+  /**
+   * Clear enforced hidden turns (used on SPA navigation).
+   */
+  JR.clearHiddenTurnIndices = function () {
+    st.hiddenTurnIndices.clear();
   };
 })();

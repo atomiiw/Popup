@@ -27,4 +27,4 @@ Popup does not use any third-party services, analytics, tracking, or external AP
 
 ## Contact
 
-If you have questions about this privacy policy, open an issue at [github.com/atomiiw/Jump-Return](https://github.com/atomiiw/Jump-Return).
+If you have questions about this privacy policy, open an issue at [github.com/atomiiw/Jump-Return](https://github.com/atomiiw/Jump-Return) or contact the developer.

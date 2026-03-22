@@ -1,4 +1,4 @@
-// popup.js — Unified popup creation for Jump Return (any depth, any mode)
+// popup.js — Unified popup creation (any depth, any mode)
 (function () {
   "use strict";
 

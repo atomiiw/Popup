@@ -1,4 +1,4 @@
-// content.js — Event listeners, navigation handling, and initialization for Jump Return
+// content.js — Event listeners, navigation handling, and initialization for Popup
 (function () {
   "use strict";
 
@@ -767,6 +767,7 @@
     JR.removeAllPopups();
     JR.hideSearchBar();
     JR.hideToolbar();
+    JR.clearHiddenTurnIndices();
     st.messageQueue.length = 0;
     if (st.navWidget) {
       if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
@@ -883,6 +884,7 @@
 
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
+  JR.startHiddenTurnEnforcer();
 
   // Init the search bar (delay for DOM to be ready)
   setTimeout(JR.initSearchBar, 1500);
@@ -891,7 +893,9 @@
   // Content scripts run in an isolated world; the browser console
   // runs in the main world. Bridge via CustomEvents on document.
   document.addEventListener("jr-go", function (e) {
-    var itemId = e.detail || null;
+    var itemId = e.detail;
+    if (itemId === "__LIST__") itemId = undefined;
+    else if (!itemId) itemId = null;
     JR.go(itemId);
   });
   document.addEventListener("jr-open", function (e) {

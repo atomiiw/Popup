@@ -3,7 +3,11 @@
 (function () {
   window.JR = window.JR || {};
   window.JR.go = function (itemId) {
-    document.dispatchEvent(new CustomEvent("jr-go", { detail: itemId || null }));
+    if (arguments.length === 0) {
+      document.dispatchEvent(new CustomEvent("jr-go", { detail: "__LIST__" }));
+    } else {
+      document.dispatchEvent(new CustomEvent("jr-go", { detail: itemId || null }));
+    }
   };
   window.JR.open = function (quoteId, itemIndex) {
     document.dispatchEvent(new CustomEvent("jr-open", { detail: { quoteId: quoteId, itemIndex: itemIndex } }));

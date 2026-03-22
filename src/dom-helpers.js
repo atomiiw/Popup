@@ -1,4 +1,4 @@
-// dom-helpers.js — DOM query and utility functions for Jump Return
+// dom-helpers.js — DOM query and utility functions
 (function () {
   "use strict";
 

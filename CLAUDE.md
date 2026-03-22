@@ -1,4 +1,4 @@
-# Jump Return — Chrome Extension
+# Popup — Chrome Extension
 
 ## Overview
 A Chrome extension that lets users highlight any sentence in AI chat responses, ask follow-up questions in a floating popup, and chain deeper follow-ups — all while keeping the full conversation on the same thread so the AI retains context.

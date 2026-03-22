@@ -1,4 +1,4 @@
-// popup-helpers.js — Popup positioning, resizing, rendering helpers for Jump Return
+// popup-helpers.js — Popup positioning, resizing, rendering helpers
 (function () {
   "use strict";
 
