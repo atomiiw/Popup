@@ -70,6 +70,8 @@
   JR.findSendButton = function () {
     var btn = document.querySelector(S.sendButton);
     if (btn) return btn;
+    btn = document.querySelector('#composer-submit-button');
+    if (btn) return btn;
     btn = document.querySelector('button[aria-label="Send prompt"]');
     if (btn) return btn;
     btn = document.querySelector('form button[type="submit"]');
@@ -77,7 +79,8 @@
   };
 
   JR.injectAndSend = function (message) {
-    var chatInput = document.querySelector(S.chatInput);
+    // Prefer #prompt-textarea (ChatGPT's ProseMirror editor) over generic contenteditable
+    var chatInput = document.querySelector('#prompt-textarea') || document.querySelector(S.chatInput);
     if (!chatInput) {
       console.error("[Popup] Chat input not found");
       return;
@@ -102,13 +105,39 @@
 
     chatInput.focus({ preventScroll: true });
 
-    var dt = new DataTransfer();
-    dt.setData("text/plain", message);
-    chatInput.dispatchEvent(new ClipboardEvent("paste", {
-      clipboardData: dt,
-      bubbles: true,
-      cancelable: true,
-    }));
+    // Strategy 1: ProseMirror beforeinput event (modern ProseMirror input handling)
+    var inserted = false;
+    try {
+      chatInput.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: message,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+      var afterBeforeinput = chatInput.textContent || "";
+      if (afterBeforeinput.indexOf(message.slice(0, 30)) !== -1) {
+        inserted = true;
+      }
+    } catch (e) { /* ignore */ }
+
+    // Strategy 2: execCommand insertText
+    if (!inserted) {
+      try {
+        inserted = document.execCommand("insertText", false, message);
+      } catch (e) { /* ignore */ }
+    }
+
+    // Strategy 3: synthetic paste event (worked with older ChatGPT builds)
+    if (!inserted) {
+      var dt = new DataTransfer();
+      dt.setData("text/plain", message);
+      chatInput.dispatchEvent(new ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      }));
+    }
 
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
 
@@ -138,7 +167,6 @@
       if (attempts < 20) {
         setTimeout(trySend, 150);
       } else {
-        clearInterval(_logTimer);
         hideStyle.remove();
         console.error(
           "[Popup] Send button not found or disabled after retries.",

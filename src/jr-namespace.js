@@ -7,7 +7,7 @@
     SELECTORS: {
       aiTurn: '[data-testid^="conversation-turn-"]',
       aiLabel: "h4.sr-only",
-      chatInput: 'div[contenteditable="true"]',
+      chatInput: '#prompt-textarea',
       sendButton: 'button[data-testid="send-button"]',
       stopButton: 'button[data-testid="stop-button"]',
       responseContent: ".markdown",
