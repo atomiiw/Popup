@@ -870,6 +870,8 @@
     // Enter sends, Cmd/Ctrl+Enter inserts newline
     questionText.addEventListener("keydown", function (e) {
       if (e.key === "Enter") {
+        // Ignore Enter while an IME composition is active (e.g. Chinese/Japanese/Korean input)
+        if (e.isComposing || e.keyCode === 229) return;
         if (e.metaKey || e.ctrlKey) {
           document.execCommand("insertLineBreak");
           e.preventDefault();
@@ -1451,6 +1453,8 @@
       // Enter sends edit, Cmd/Ctrl+Enter inserts newline, Escape cancels
       questionText.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
+          // Ignore Enter while an IME composition is active (e.g. Chinese/Japanese/Korean input)
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.metaKey || e.ctrlKey) {
             document.execCommand("insertLineBreak");
             e.preventDefault();

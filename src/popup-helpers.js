@@ -425,6 +425,14 @@
     contentContainer.style.zIndex = "0";
     var gap = 8;
 
+    // Capture the container's natural scroll height BEFORE we append the popup.
+    // The popup is position:absolute inside contentContainer, so once appended
+    // it can extend the container's scrollHeight (browsers include out-of-flow
+    // descendants that overflow). We use this baseline to flip the popup
+    // before its growth ever expands the container — that's what was leaving
+    // a blank space below the last AI response after the flip.
+    var naturalScrollH = contentContainer.scrollHeight;
+
     contentContainer.appendChild(popup);
     var popupW = popup.offsetWidth;
     var popupH = popup.offsetHeight;
@@ -464,6 +472,25 @@
       popup._jrBottomAnchor = top + popupH;
     }
 
+    // Capture the height threshold for streaming-overflow detection on the
+    // "below" side. The "above" case has a moving anchor (attachAboveAnchorObserver
+    // pushes popup.style.top toward 0 as height grows), so it's detected via
+    // popup.style.top < 0. The "below" side has no moving anchor, so we freeze
+    // a fixed threshold here.
+    //
+    // Threshold is the SMALLER of:
+    //   (a) viewport room below the highlight — flip before popup overflows the page edge
+    //   (b) container room below the popup's top — flip before popup expands the
+    //       container's scrollHeight, which is what was leaving the trailing blank
+    //       space after the flip
+    if (direction === "below") {
+      var roomViewport = window.innerHeight - rect.bottom - gap;
+      var roomContainer = naturalScrollH - top;
+      popup._jrMaxHBelow = Math.min(roomViewport, roomContainer);
+    } else {
+      popup._jrMaxHBelow = null;
+    }
+
     JR.updateArrow(popup, centerRect, containerRect, left);
   };
 
@@ -487,69 +514,90 @@
   };
 
   /**
-   * During streaming, check if the popup overflows the scroll container
-   * and flip direction (above↔below) if the other side has room.
-   * Called after each streaming content sync.
+   * During streaming, detect when the popup overflows the page edge on its
+   * current side and flip direction (above↔below). Called every streaming sync.
+   *
+   * Detection mechanism — symmetric and immune to ChatGPT's auto-scroll:
+   *
+   *  - "above" mode: popup.style.top < 0. attachAboveAnchorObserver actively
+   *    drives popup.style.top downward as height grows (anchored at the
+   *    highlight's bottom), so this value crosses 0 deterministically when
+   *    the popup overflows the container's top edge. (Original mechanism —
+   *    confirmed working by user.)
+   *
+   *  - "below" mode: popup.offsetHeight > popup._jrMaxHBelow, where the
+   *    threshold was captured at popup placement as `viewportH - rect.bottom
+   *    - gap` (the room available below the highlight in the viewport AT
+   *    creation). offsetHeight is what's actually growing, and the threshold
+   *    was frozen before any auto-scroll could shift coordinates around. So
+   *    detection fires the moment the popup grows past the page's lower
+   *    edge, regardless of any layout games ChatGPT plays during streaming.
+   *
+   * One-shot flip: once a flip occurs in this streaming session, we don't
+   * flip again. Prevents ping-pong when neither side fits the popup.
    */
   JR.checkStreamingOverflow = function () {
     if (!st.activePopup || st.activeSourceHighlights.length === 0) return;
     var popup = st.activePopup;
+    if (popup._jrFlippedDuringStream) return; // one-shot
     var contentContainer = popup.parentElement;
     if (!contentContainer) return;
 
     var direction = popup._jrLockedDirection || popup._jrDirection;
-    var popupH = popup.offsetHeight;
     var gap = 8;
+    var popupH = popup.offsetHeight;
+
+    // Symmetric overflow detection on each side.
+    var popupTop = parseFloat(popup.style.top) || 0;
+    var overflowsAbove = direction === "above" && popupTop < 0;
+    var overflowsBelow = direction === "below" &&
+                         popup._jrMaxHBelow != null &&
+                         popupH > popup._jrMaxHBelow;
+    if (!overflowsAbove && !overflowsBelow) return;
+
+    var newDirection = direction === "below" ? "above" : "below";
+
+    // Verify the target side has scroll-container room (so the popup isn't
+    // clipped by the container's edge after the flip).
     var containerRect = contentContainer.getBoundingClientRect();
     var rect = JR.getHighlightRect(st.activeSourceHighlights);
+    var aboveTopInContainer = rect.top - containerRect.top - popupH - gap;
+    var belowBottomInContainer = rect.bottom - containerRect.top + gap + popupH;
     var scrollH = contentContainer.scrollHeight || contentContainer.offsetHeight;
+    if (newDirection === "above" && aboveTopInContainer < 0) return;
+    if (newDirection === "below" && belowBottomInContainer > scrollH) return;
 
-    // Popup's absolute position inside the content container
-    var popupTop = parseFloat(popup.style.top) || 0;
-    var popupBottom = popupTop + popupH;
+    // Apply the flip.
+    popup._jrLockedDirection = newDirection;
+    popup._jrDirection = newDirection;
+    popup._jrFlippedDuringStream = true;
 
-    var overflows = false;
-    var newDirection;
-    if (direction === "below" && popupBottom > scrollH) {
-      // Check if above has room
-      var aboveTop = rect.top - containerRect.top - popupH - gap;
-      if (aboveTop >= 0) {
-        newDirection = "above";
-        overflows = true;
-      }
-    } else if (direction === "above" && popupTop < 0) {
-      // Check if below has room
-      var belowBottom = rect.bottom - containerRect.top + gap + popupH;
-      if (belowBottom <= scrollH) {
-        newDirection = "below";
-        overflows = true;
-      }
+    var adjRect = JR.getAdjacentLineRect(st.activeSourceHighlights, newDirection);
+    var centerRect = adjRect || rect;
+    var popupW = popup.offsetWidth;
+    var left = centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2;
+    var containerW = contentContainer.clientWidth;
+    left = clampPopupLeft(left, popupW, containerRect, containerW);
+
+    var top;
+    if (newDirection === "above") {
+      top = centerRect.top - containerRect.top - popupH - gap;
+      popup._jrBottomAnchor = top + popupH;
+      popup._jrMaxHBelow = null;
+    } else {
+      top = centerRect.bottom - containerRect.top + gap;
+      popup._jrBottomAnchor = null;
+      // (One-shot flag above means this path is unreachable in practice,
+      // but keep the threshold consistent with positionPopup just in case.)
+      popup._jrMaxHBelow = Math.min(
+        window.innerHeight - rect.bottom - gap,
+        scrollH - top
+      );
     }
 
-    if (overflows && newDirection) {
-      popup._jrLockedDirection = newDirection;
-      popup._jrDirection = newDirection;
-
-      // Recalculate position with new direction
-      var adjRect = JR.getAdjacentLineRect(st.activeSourceHighlights, newDirection);
-      var centerRect = adjRect || rect;
-      var left = centerRect.left - containerRect.left + centerRect.width / 2 - popup.offsetWidth / 2;
-      var containerW = contentContainer.clientWidth;
-      left = clampPopupLeft(left, popup.offsetWidth, containerRect, containerW);
-
-      var top;
-      if (newDirection === "above") {
-        top = centerRect.top - containerRect.top - popupH - gap;
-        popup._jrBottomAnchor = top + popupH;
-      } else {
-        top = centerRect.bottom - containerRect.top + gap;
-        popup._jrBottomAnchor = null;
-      }
-
-      popup.style.left = left + "px";
-      popup.style.top = top + "px";
-      JR.updateArrow(popup, centerRect, containerRect, left);
-    }
+    popup.style.left = left + "px";
+    popup.style.top = top + "px";
+    JR.updateArrow(popup, centerRect, containerRect, left);
   };
 
   /**

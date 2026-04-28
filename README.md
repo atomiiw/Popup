@@ -2,7 +2,7 @@
 
 Chrome extension that turns ChatGPT's linear chat into a branching conversation. Highlight any part of a response, ask a follow-up in a floating popup, and keep going. Popups nest recursively, so you can drill as deep as you want without cluttering the main thread.
 
-Built Feb to Mar 2026. Solo project.
+Built Feb to Mar 2026. Solo build.
 
 ## How it works
 
