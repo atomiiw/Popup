@@ -298,9 +298,11 @@
     if (markdown) {
       responseDiv.innerHTML = markdown.innerHTML;
     } else {
-      var text = responseTurn.textContent || "";
-      text = text.replace(JR.AI_LABEL_TEXT, "").trim();
-      responseDiv.textContent = text;
+      // Fallback: read the assistant message body directly. The sr-only label
+      // sits outside this node, so no localized prefix needs stripping.
+      var assistantBody = responseTurn.querySelector(S.assistantMsg);
+      var text = (assistantBody || responseTurn).textContent || "";
+      responseDiv.textContent = text.trim();
     }
     if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
     if (JR.processResponseLinks) JR.processResponseLinks(responseDiv);
@@ -1031,8 +1033,10 @@
 
       if (!questionTurn && allTurns.length > turnsBefore) {
         var candidate = allTurns[turnsBefore];
-        var label = candidate.querySelector(S.aiLabel);
-        if (!label || !label.textContent.includes(JR.AI_LABEL_TEXT)) {
+        // Permissive: any newly-mounted turn at this index that isn't yet
+        // confirmed assistant is our injected question. Strict role-check
+        // here would let the un-hidden article paint a frame → composer flash.
+        if (!JR.isAssistantTurn(candidate)) {
           questionTurn = candidate;
           questionTurn.classList.add("jr-hidden");
           var qIdx = JR.getTurnNumber(questionTurn);
@@ -1059,8 +1063,7 @@
 
       if (!responseTurn && allTurns.length > turnsBefore + 1) {
         var candidate2 = allTurns[turnsBefore + 1];
-        var label2 = candidate2.querySelector(S.aiLabel);
-        if (label2 && label2.textContent.includes(JR.AI_LABEL_TEXT)) {
+        if (JR.isAssistantTurn(candidate2)) {
           responseTurn = candidate2;
           responseTurn.classList.add("jr-hidden");
           var rIdx = JR.getTurnNumber(responseTurn);

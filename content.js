@@ -1030,6 +1030,29 @@
     document.body.appendChild(btn);
   }
 
+  // Known localized labels for ChatGPT's selection-toolbar "Ask" button.
+  // Normalized form: lowercased, whitespace collapsed.
+  var ASK_BTN_LABELS = [
+    "ask chatgpt",        // English
+    "询问 chatgpt",       // Simplified Chinese (with space)
+    "询问chatgpt",        // Simplified Chinese (no space)
+    "詢問 chatgpt",       // Traditional Chinese
+    "詢問chatgpt",
+  ];
+
+  function isAskChatGPTButton(btn) {
+    if (btn.closest(".jr-popup")) return false;
+    var raw = (btn.textContent || "").trim();
+    if (!raw || raw.length > 40) return false;
+    var norm = raw.toLowerCase().replace(/\s+/g, " ");
+    if (ASK_BTN_LABELS.indexOf(norm) !== -1) return true;
+    if (ASK_BTN_LABELS.indexOf(norm.replace(/\s+/g, "")) !== -1) return true;
+    // Structural fallback for unknown locales: short button containing the
+    // un-translated brand "ChatGPT", inside a popover-like floating container.
+    if (norm.indexOf("chatgpt") !== -1 && btn.closest("[popover]")) return true;
+    return false;
+  }
+
   // Observer handles both: show × when Ask ChatGPT appears, remove × when
   // it disappears, and auto-hide if user previously dismissed.
   // Deferred to rAF so it never blocks trigger button paint.
@@ -1042,9 +1065,8 @@
       var candidates = document.querySelectorAll('button');
       var found = null;
       for (var i = 0; i < candidates.length; i++) {
-        var c = candidates[i];
-        if (c.textContent.trim() === "Ask ChatGPT" && !c.closest(".jr-popup")) {
-          found = c;
+        if (isAskChatGPTButton(candidates[i])) {
+          found = candidates[i];
           break;
         }
       }

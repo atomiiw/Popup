@@ -6,14 +6,17 @@
     // --- Constants ---
     SELECTORS: {
       aiTurn: '[data-testid^="conversation-turn-"]',
-      aiLabel: "h4.sr-only",
+      // Language-independent role markers — present on chatgpt.com regardless
+      // of UI locale. data-message-author-role is the primary signal; data-turn
+      // is a secondary fallback for older/varying ChatGPT DOMs.
+      assistantMsg: '[data-message-author-role="assistant"], [data-turn="assistant"]',
+      userMsg: '[data-message-author-role="user"], [data-turn="user"]',
       chatInput: '#prompt-textarea',
       sendButton: 'button[data-testid="send-button"]',
       stopButton: 'button[data-testid="stop-button"]',
       responseContent: ".markdown",
     },
 
-    AI_LABEL_TEXT: "ChatGPT said:",
     MAX_DISPLAY_CHARS: 120,
 
     BLOCK_TAGS: new Set([

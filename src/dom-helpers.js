@@ -5,15 +5,29 @@
   var S = JR.SELECTORS;
 
   /**
+   * Whether a turn article is an assistant (AI) turn.
+   * Uses ChatGPT's structural role attributes — not the localized sr-only
+   * label — so it works on any UI language.
+   */
+  JR.isAssistantTurn = function (article) {
+    return !!(article && article.querySelector(S.assistantMsg));
+  };
+
+  /**
+   * Whether a turn article is a user turn.
+   */
+  JR.isUserTurn = function (article) {
+    return !!(article && article.querySelector(S.userMsg));
+  };
+
+  /**
    * Check if a node is inside an AI response turn (not a user turn).
    * Returns the article element if yes, null otherwise.
    */
   JR.getAIResponseArticle = function (node) {
     var article = node.closest(S.aiTurn);
     if (!article) return null;
-    var label = article.querySelector(S.aiLabel);
-    if (!label || !label.textContent.includes(JR.AI_LABEL_TEXT)) return null;
-    return article;
+    return JR.isAssistantTurn(article) ? article : null;
   };
 
   /**
