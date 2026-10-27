@@ -4,6 +4,7 @@
 
   var st = JR.state;
 
+
   /**
    * Wrap the text nodes within a range in <span class="jr-source-highlight">.
    * Returns an array of all wrapper spans created.
@@ -235,10 +236,10 @@
       spans: wrappers,
       responseHTML: hl.responseHTML,
       text: hl.text,
+      nth: hl.nth || 0,
       sentence: hl.sentence || null,
       blockTypes: hl.blockTypes || null,
       question: hl.question || null,
-      color: hl.color || null,
       contentContainer: contentContainer,
       parentId: hl.parentId || null,
       parentItemId: hl.parentItemId || null,
@@ -255,12 +256,12 @@
    * (chained highlights inside a popup response).
    *
    * @param {Element} root - DOM element to search for the text
-   * @param {object} hl - Highlight data (quoteId, text, color, parentId, items, ...)
+   * @param {object} hl - Highlight data (quoteId, text, nth, parentId, items, ...)
    * @param {Element} contentContainer
    */
   JR.restoreHighlightInElement = function (root, hl, contentContainer) {
     var hlKey = hl.quoteId || hl.id;
-    var range = JR.findTextRange(root, hl.text);
+    var range = JR.findTextRange(root, hl.text, hl.nth || 0);
     if (!range) return false;
     var wrappers = JR.highlightRange(range);
     if (wrappers.length === 0) return false;
@@ -319,7 +320,7 @@
       var q = map[r.quoteId];
       if (!q) {
         q = map[r.quoteId] = {
-          quoteId: r.quoteId, text: r.text, color: r.color, parentId: r.parentId,
+          quoteId: r.quoteId, text: r.text, nth: r.nth || 0, parentId: r.parentId,
           parentItemId: r.parentItemId, sourceTurnKey: r.sourceTurnKey, wholeResponse: r.wholeResponse,
           items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null, responseHTML: null,
         };
@@ -327,7 +328,7 @@
       var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, createdAt: r.createdAt };
       fillFromQA(item);
       q.items.push(item);
-      if (r.active) { q.activeItemIndex = q.items.length - 1; q.color = r.color; }
+      if (r.active) q.activeItemIndex = q.items.length - 1;
       if (!q.sourceTurnKey && r.sourceTurnKey) q.sourceTurnKey = r.sourceTurnKey;
     });
     Object.keys(map).forEach(function (k) {

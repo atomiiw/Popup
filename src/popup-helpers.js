@@ -1216,7 +1216,7 @@
 
   function detachPopupState() {
     if (JR.removeTriggerBtn) JR.removeTriggerBtn();
-    if (st.cancelResponseWatch) st.cancelResponseWatch(true);
+    if (st.cancelResponseWatch) st.cancelResponseWatch(); // detach: the answer keeps saving in the background
     st.activeSourceHighlights = [];
     if (st.resizeHandler) {
       window.removeEventListener("resize", st.resizeHandler);

@@ -318,7 +318,7 @@
    * @param {function} [opts.beforeSend] - Called right before injection; should call JR.prepareSend(w, anchor).
    */
   JR.enqueueMessage = function (opts) {
-    if (!opts.force && (JR.isGenerating() || st.responseWatchActive)) {
+    if (JR.isGenerating() || st.responseWatchActive) {
       st.messageQueue.push(opts);
       return;
     }
@@ -575,13 +575,19 @@
     var parentItemId = resolveParentItemId(null, parentId);
     st.responseWatchActive = true;
     var convUrl = location.href; // storage writes go to this conversation even if the user navigates away
+    // Turns already hidden before this send belong to earlier Popup Q&As. One that
+    // remounts during this send can look new (same message prefix when asked from
+    // the same sentence): never claim it.
+    var hiddenBefore = new Set(st.hiddenTurnKeys);
     var startTime = Date.now();
-    var timeoutMs = 100000; // 100 seconds
+    // Give up only when nothing has happened for a while, never mid-answer:
+    // slow models think or search for minutes before (and between) words.
+    var IDLE_LIMIT_MS = 100000;       // ChatGPT not generating and no new text
+    var GENERATING_LIMIT_MS = 600000; // ChatGPT says it is generating, but no new text
     var timerId = null;
     var qaKeys = [];          // keys of the turn(s) holding our Q&A (1 in the new DOM, 2 in the legacy DOM)
     var responseTurn = null;  // element holding the answer (re-found by key if ChatGPT remounts it)
     var responseKey = null;
-    var cancelled = false;
     var detached = false;
     var detachedSpans = null;
     var detachedHlId = editOpts ? editOpts.hlId : null;
@@ -647,10 +653,6 @@
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
       JR.checkStreamingOverflow();
       if (targetPopup._jrLockedDirection === "above") JR.repositionPopup();
-    }
-
-    function unhideTurns() {
-      JR.unhideTurnKeys(qaKeys);
     }
 
     /**
@@ -838,65 +840,55 @@
       observeStream();
     }
 
-    st.cancelResponseWatch = function (detachMode) {
-      if (detachMode) {
-        detachedSpans = st.activeSourceHighlights.slice();
-        detached = true;
+    // Closing the popup mid-answer detaches: the watch keeps running and saves
+    // the answer to the highlight in the background.
+    st.cancelResponseWatch = function () {
+      detachedSpans = st.activeSourceHighlights.slice();
+      detached = true;
 
-        if (editOpts) {
-          // Edit mode detach — spans and entry already exist
-          // detachedHlId already set from editOpts.hlId
-          // Keep observer running — streaming continues in background
-          if (unlockScroll) unlockScroll();
-          unlockScroll = null;
-          st.cancelResponseWatch = null;
-          return;
-        }
-
-        if (preRegisteredHlId) {
-          // Use pre-registered entry from doSend
-          detachedHlId = preRegisteredHlId;
-        } else {
-          detachedHlId = crypto.randomUUID();
-          var contentContainer = JR.site.popupHost(JR.site.turnOf(detachedSpans[0]));
-          for (var k = 0; k < detachedSpans.length; k++) {
-            detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
-            detachedSpans[k].classList.add("jr-source-highlight-done");
-          }
-          var detachEntry = {
-            quoteId: detachedHlId,
-            spans: detachedSpans.slice(),
-            responseHTML: null,
-            text: text,
-            sentence: sentence,
-            blockTypes: blockTypes,
-            question: question || null,
-            contentContainer: contentContainer,
-            parentId: parentId || null,
-            parentItemId: parentItemId || null,
-            sourceTurnKey: JR.getTurnKey(detachedSpans[0]),
-            items: [],
-            activeItemIndex: 0,
-          };
-          st.completedHighlights.set(detachedHlId, detachEntry);
-        }
-
+      if (editOpts) {
+        // Edit mode detach — spans and entry already exist
+        // detachedHlId already set from editOpts.hlId
         // Keep observer running — streaming continues in background
         if (unlockScroll) unlockScroll();
         unlockScroll = null;
         st.cancelResponseWatch = null;
         return;
       }
-      cancelled = true;
-      if (timerId) clearTimeout(timerId);
-      cleanup();
-      unhideTurns();
-      removeHiddenTurns(convUrl, qaKeys);
-    };
 
-    function captureIfLive() {
-      if (!cancelled) captureResponse();
-    }
+      if (preRegisteredHlId) {
+        // Use pre-registered entry from doSend
+        detachedHlId = preRegisteredHlId;
+      } else {
+        detachedHlId = crypto.randomUUID();
+        var contentContainer = JR.site.popupHost(JR.site.turnOf(detachedSpans[0]));
+        for (var k = 0; k < detachedSpans.length; k++) {
+          detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
+          detachedSpans[k].classList.add("jr-source-highlight-done");
+        }
+        var detachEntry = {
+          quoteId: detachedHlId,
+          spans: detachedSpans.slice(),
+          responseHTML: null,
+          text: text,
+          sentence: sentence,
+          blockTypes: blockTypes,
+          question: question || null,
+          contentContainer: contentContainer,
+          parentId: parentId || null,
+          parentItemId: parentItemId || null,
+          sourceTurnKey: JR.getTurnKey(detachedSpans[0]),
+          items: [],
+          activeItemIndex: 0,
+        };
+        st.completedHighlights.set(detachedHlId, detachEntry);
+      }
+
+      // Keep observer running — streaming continues in background
+      if (unlockScroll) unlockScroll();
+      unlockScroll = null;
+      st.cancelResponseWatch = null;
+    };
 
     function captureResponse() {
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
@@ -1101,12 +1093,13 @@
     }
 
     var lastContentSnapshot = "";
-    var lastContentChangeTime = Date.now();
-    var STALE_THRESHOLD = 10000; // 10 seconds of no content change → force capture
+    var lastNetLength = 0;
+    var lastProgress = Date.now();     // last time the answer grew (DOM or network)
+    var STALE_THRESHOLD = 60000; // generating flag stuck: answer unchanged this long → capture what is there
     var savedKeys = false;
 
     function poll() {
-      if (cancelled || injectionFailed) return;
+      if (injectionFailed) return;
 
       // 1. Recognise the turn(s) our send created.
       var fresh = JR.findNewTurns(snap, message);
@@ -1114,7 +1107,7 @@
         var added = [];
         for (var fi = 0; fi < fresh.length; fi++) {
           var fk = JR.site.turnKey(fresh[fi]);
-          if (fk && qaKeys.indexOf(fk) === -1) { qaKeys.push(fk); added.push(fk); }
+          if (fk && qaKeys.indexOf(fk) === -1 && !hiddenBefore.has(fk)) { qaKeys.push(fk); added.push(fk); }
         }
         if (added.length) {
           JR.hideTurnKeys(added);
@@ -1143,30 +1136,35 @@
       // 2. Done: ChatGPT stopped generating and the answer has text.
       if (turn && !generating && JR.site.assistantText(turn).trim().length > 0) {
         if (streamObserver) syncStreamContent();
-        setTimeout(captureIfLive, 300);
+        setTimeout(captureResponse, 300);
         return;
       }
       // Done per the network stream while the DOM answer isn't usable
       // (turn never mounted, or ChatGPT's "couldn't load").
       if (net.done && net.text.trim() && !domAnswerUsable()) {
-        setTimeout(captureIfLive, 300);
+        setTimeout(captureResponse, 300);
         return;
       }
       // Done while the answer is scrolled out of the DOM (keys known, content later).
       if (responseKey && !turn && !generating && !net.matched) {
-        setTimeout(captureIfLive, 300);
+        setTimeout(captureResponse, 300);
         return;
       }
 
+      // Progress: the answer grew in the DOM or in the network stream.
+      var currentContent = turn ? JR.site.assistantText(turn) : "";
+      if (currentContent !== lastContentSnapshot || net.text.length !== lastNetLength) {
+        lastContentSnapshot = currentContent;
+        lastNetLength = net.text.length;
+        lastProgress = Date.now();
+      }
+
       // Stale-content safeguard: generating flag stuck but the (mounted) answer stopped changing.
-      if (turn && generating) {
-        var currentContent = JR.site.assistantText(turn);
-        if (currentContent !== lastContentSnapshot) {
-          lastContentSnapshot = currentContent;
-          lastContentChangeTime = Date.now();
-        } else if (currentContent.trim() && Date.now() - lastContentChangeTime >= STALE_THRESHOLD) {
+      // (not while the network stream is still open: ChatGPT may be searching or running code)
+      if (turn && generating && !(net.matched && !net.done)) {
+        if (currentContent.trim() && Date.now() - lastProgress >= STALE_THRESHOLD) {
           console.warn("[Popup] Response stale for " + STALE_THRESHOLD + "ms — force capturing");
-          setTimeout(captureIfLive, 300);
+          setTimeout(captureResponse, 300);
           return;
         }
       }
@@ -1188,7 +1186,6 @@
           rejected.pending = true;
           st.lastSendReport = { ok: false, stage: "retrying", detail: "ChatGPT was still busy; will resend", when: new Date().toISOString() };
           (function resendWhenIdle(tries) {
-            if (cancelled) return;
             if (JR.isGenerating() && tries < 120) { setTimeout(function () { resendWhenIdle(tries + 1); }, 500); return; }
             snap = JR.snapshotTurns();
             startTime = Date.now();
@@ -1219,7 +1216,7 @@
         }
       }
 
-      if (Date.now() - startTime >= timeoutMs) {
+      if (Date.now() - Math.max(startTime, lastProgress) >= (generating ? GENERATING_LIMIT_MS : IDLE_LIMIT_MS)) {
         stopGeneration();
         finishWithTimeout();
         return;
@@ -1235,7 +1232,6 @@
     var watch = {
       /** The injection itself failed: stop watching, undo, and say why in the popup. */
       failInjection: function () {
-        if (cancelled) return;
         injectionFailed = true;
         if (timerId) clearTimeout(timerId);
         cleanup();

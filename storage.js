@@ -9,7 +9,7 @@
 // conversation's small record instead of rewriting every highlight ever made:
 //   "popup:conv:<conversationId>" → {
 //     v: 2,
-//     items: [{ id, quoteId, text, color, parentId, parentItemId, sourceTurnKey,
+//     items: [{ id, quoteId, text, nth, parentId, parentItemId, sourceTurnKey,
 //               turnKeys: [..], status: "done"|"pending"|"timeout", active,
 //               wholeResponse, createdAt }],
 //     hidden: [turnKey, ...]   // Q&A turns of deleted highlights (stay hidden)
@@ -102,7 +102,7 @@ function toPublic(rec) {
     id: rec.id,
     quoteId: rec.quoteId,
     text: rec.text,
-    color: rec.color || null,
+    nth: rec.nth || 0,
     parentId: rec.parentId || null,
     parentItemId: rec.parentItemId || null,
     sourceTurnKey: rec.sourceTurnKey || null,
@@ -157,7 +157,6 @@ function migrateLegacyOnce() {
           id: v.id,
           quoteId: h.quoteId || h.id,
           text: h.text,
-          color: h.color || null,
           parentId: h.parentId || null,
           parentItemId: h.parentItemId || null,
           sourceTurnKey: null,
@@ -201,7 +200,7 @@ async function saveHighlight(opts) {
     id: opts.id || crypto.randomUUID(),
     quoteId: opts.quoteId || crypto.randomUUID(),
     text: opts.text,
-    color: opts.color || null,
+    nth: opts.nth || undefined, // which occurrence of text in its answer (0 = first, not stored)
     parentId: opts.parentId || null,
     parentItemId: opts.parentItemId || null,
     sourceTurnKey: opts.sourceTurnKey || null,
@@ -215,6 +214,11 @@ async function saveHighlight(opts) {
     createdAt: Date.now(),
   };
   await modifyDoc(convKeyForUrl(opts.url), function (doc) {
+    // A new version (edit/retry) is the same highlight: keep where its text was.
+    if (!rec.nth) {
+      var first = doc.items.find(function (it) { return it.quoteId === rec.quoteId && it.nth; });
+      if (first) rec.nth = first.nth;
+    }
     if (rec.active) {
       doc.items.forEach(function (it) { if (it.quoteId === rec.quoteId) it.active = false; });
     }
@@ -225,7 +229,7 @@ async function saveHighlight(opts) {
 
 /**
  * Update fields on an item. Accepts: responseHTML (only its status is kept),
- * turnKeys, sourceTurnKey, color, active, parentItemId. Optional third arg: url.
+ * turnKeys, sourceTurnKey, active, parentItemId. Optional third arg: url.
  */
 function updateHighlightFields(id, fields, url) {
   // url: the conversation the item belongs to. Pass it from async flows (a
@@ -238,7 +242,6 @@ function updateHighlightFields(id, fields, url) {
     if (rec.status === "done") delete rec.question;
     if (fields.turnKeys) rec.turnKeys = fields.turnKeys.filter(Boolean);
     if ("sourceTurnKey" in fields) rec.sourceTurnKey = fields.sourceTurnKey;
-    if ("color" in fields) rec.color = fields.color;
     if ("active" in fields) rec.active = fields.active;
     if ("parentItemId" in fields) rec.parentItemId = fields.parentItemId;
   });
@@ -324,12 +327,4 @@ async function getHiddenTurnKeys(url) {
 /** Forget cached docs (on SPA navigation). */
 function resetStorageCache() {
   _docCache = {};
-}
-
-/** Undo addDeletedTurns for these keys (a send the user cancelled before it finished). */
-function removeHiddenTurns(url, turnKeys) {
-  if (!turnKeys || !turnKeys.length) return Promise.resolve();
-  return modifyDoc(convKeyForUrl(url), function (doc) {
-    doc.hidden = doc.hidden.filter(function (k) { return turnKeys.indexOf(k) === -1; });
-  });
 }

@@ -25,8 +25,8 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 - `src/scroll-guard.js`, `src/net-tap.js` — MAIN-world helpers (block ChatGPT's auto-scroll during a send; read the answer stream)
 - `collab/` — Claude ↔ Codex collaboration (`HANDOFF.md` = current status; `BOARD.md`/`evidence/` are local-only)
 - `icons/` — Extension icons (16, 48, 128px)
-- **Permissions:** `storage` (persist highlights + Q&A), `activeTab`
-- **Supported sites:** ChatGPT, Claude, Gemini, Microsoft Copilot
+- **Permissions:** `storage` (highlight keys); host access to chatgpt.com / chat.openai.com
+- **Supported site:** ChatGPT only (since the 2026-10 redesign rewrite; other sites were never implemented)
 
 ## Docs
 - [Features](docs/FEATURES.md)
@@ -38,5 +38,5 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 - **Follow the TODO steps in order.** Only work on the current step. Do not add features, fix-forward, or jump to later steps — even if the user reports a trivial issue. If a bug report relates to a stub or placeholder from the current step, explain that it's expected behavior for this step.
 - Always match the style guide for any UI changes (see docs/STYLE_GUIDE.md)
 - Keep all styles in `styles.css` — no inline styles in JS
-- Test on all supported sites before considering a feature done
+- Test on ChatGPT (light and dark, English and another UI language) before considering a feature done; run `tools/net-tap-test.js`, `tools/qa-content-test.js`, `tools/dom-test.html`
 - Use `chrome.storage.local` for highlights, Q&A chains, and user preferences

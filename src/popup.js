@@ -26,8 +26,11 @@
       var codeBlock = btn.closest(".jr-code-block");
       var codeEl = codeBlock ? codeBlock.querySelector("pre code") : null;
       var text = codeEl ? codeEl.textContent : "";
-      navigator.clipboard.writeText(text);
-      btn.innerHTML = CHECK_ICON + " Copied!";
+      navigator.clipboard.writeText(text).then(function () {
+        btn.innerHTML = CHECK_ICON + " Copied!";
+      }, function () {
+        btn.innerHTML = COPY_ICON + " Couldn\u2019t copy";
+      });
       setTimeout(function () { btn.innerHTML = COPY_ICON + " Copy"; }, 2000);
     });
     container.appendChild(btn);
@@ -693,7 +696,7 @@
     dropdown.className = "jr-send-mode-dropdown jr-disabled";
     function rebuildDropdown() {
       populateModeDropdown(dropdown, function (key) {
-        var current = questionText.textContent.trim();
+        var current = readQuestion(questionText);
         if (!current) return;
         doSend(key);
       });
@@ -704,8 +707,9 @@
     container.appendChild(questionDiv);
 
     function doSend(mode) {
-      var question = questionText.textContent.trim();
+      var question = readQuestion(questionText);
       if (!question) return;
+      if (extensionWasUpdated(popup)) return;
 
       st.responseMode = mode;
 
@@ -764,11 +768,20 @@
         wrappers[si].classList.add("jr-source-highlight-done");
       }
 
+      // Which occurrence of the text this is, inside the answer it was selected in.
+      var nth = 0;
+      if (wrappers.length && wrappers[0].firstChild) {
+        var nthRoot = wrappers[0].closest(".jr-popup-response")
+          || (sourceTurn && JR.site.assistantBodies(sourceTurn).filter(function (b) { return b.contains(wrappers[0]); })[0]);
+        nth = JR.occurrenceIndex(nthRoot, wrappers[0].firstChild, text);
+      }
+
       var pendingEntry = {
         quoteId: sendHlId,
         spans: wrappers.slice(),
         responseHTML: "__PENDING__",
         text: text,
+        nth: nth,
         sentence: sentence,
         blockTypes: blockTypes,
         question: question,
@@ -780,6 +793,9 @@
         activeItemIndex: 0,
         wholeResponse: !!wholeResponse,
       };
+      // The unsent placeholder entry (temp-…) is replaced by this one.
+      var tempEntry = st.completedHighlights.get(st.activeHighlightId);
+      if (tempEntry && tempEntry._jrTemp) st.completedHighlights.delete(st.activeHighlightId);
       st.completedHighlights.set(sendHlId, pendingEntry);
       st.activeHighlightId = sendHlId;
 
@@ -787,6 +803,7 @@
         id: sendItemId,
         quoteId: sendHlId,
         text: text,
+        nth: nth,
         sentence: sentence,
         blockTypes: blockTypes,
         responseHTML: "__PENDING__",
@@ -821,14 +838,14 @@
     // Click send arrow → send with current default mode
     sendBtn.addEventListener("click", function (e) {
       e.stopPropagation();
-      var current = questionText.textContent.trim();
+      var current = readQuestion(questionText);
       if (!current) return;
       doSend(st.responseMode);
     });
 
     // Track input to enable/disable send + dropdown
     questionText.addEventListener("input", function () {
-      var current = questionText.textContent.trim();
+      var current = readQuestion(questionText);
       if (!current && questionText.innerHTML !== "") {
         questionText.innerHTML = "";
       }
@@ -851,7 +868,7 @@
           e.preventDefault();
         } else {
           e.preventDefault();
-          var current = questionText.textContent.trim();
+          var current = readQuestion(questionText);
           if (current) doSend(st.responseMode);
         }
       }
@@ -868,9 +885,6 @@
   var PENCIL_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M230.14,70.54,185.46,25.85a20,20,0,0,0-28.29,0L33.86,149.17A19.85,19.85,0,0,0,28,163.31V208a20,20,0,0,0,20,20H92.69a19.86,19.86,0,0,0,14.14-5.86L230.14,98.82a20,20,0,0,0,0-28.28ZM91,204H52V165l84-84,39,39ZM192,103,153,64l18.34-18.34,39,39Z"/></svg>';
 
   var TRASH_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM192,208H64V64H192ZM80,24a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,24Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a12,12,0,0,0,0,24h4V208a20,20,0,0,0,20,20H192a20,20,0,0,0,20-20V72h4a12,12,0,0,0,0-24ZM188,204H68V72H188ZM76,20A12,12,0,0,1,88,8h80a12,12,0,0,1,0,24H88A12,12,0,0,1,76,20Z"/></svg>';
-
-  // Toolbar no-ops kept for callers.
-  JR.positionToolbar = function () {};
 
 
   function showDeleteConfirmation(hlId, entry) {
@@ -1090,7 +1104,7 @@
       if (activeParentItemId && chEntry.parentItemId !== activeParentItemId) return;
       if (chEntry.wholeResponse) return; // reply-to-all: opened via reply button, not text-matched
       JR.restoreHighlightInElement(responseDiv, {
-        quoteId: chQuoteId, text: chEntry.text, responseHTML: chEntry.responseHTML,
+        quoteId: chQuoteId, text: chEntry.text, nth: chEntry.nth, responseHTML: chEntry.responseHTML,
         sentence: chEntry.sentence, blockTypes: chEntry.blockTypes, question: chEntry.question,
         parentId: chEntry.parentId, parentItemId: chEntry.parentItemId,
         items: chEntry.items, activeItemIndex: chEntry.activeItemIndex,
@@ -1112,7 +1126,6 @@
               sentence: child.sentence,
               blockTypes: null,
               question: child.question || null,
-              color: child.color || null,
               contentContainer: contentContainer,
               parentId: child.parentId || null,
               parentItemId: child.parentItemId || null,
@@ -1129,6 +1142,31 @@
     });
   }
 
+  /**
+   * After Chrome updates or reloads the extension, this page's copy of Popup
+   * can no longer save anything (chrome.storage is gone until a reload). Say so
+   * instead of sending a question whose highlight would silently not be kept.
+   */
+  function extensionWasUpdated(popup) {
+    if (isContextValid()) return false;
+    if (!popup.querySelector(".jr-popup-stale")) {
+      var note = document.createElement("div");
+      note.className = "jr-popup-loading jr-popup-stale";
+      note.textContent = "Popup was updated. Refresh the page to keep asking.";
+      popup.appendChild(note);
+    }
+    return true;
+  }
+
+  /**
+   * The question typed in a popup input. innerText keeps line breaks (Cmd+Enter,
+   * pasted paragraphs) that textContent drops; blank lines are collapsed because
+   * JR.parsePopupMessage splits the sent message on them.
+   */
+  function readQuestion(el) {
+    return (el.innerText || "").replace(/\r/g, "").replace(/[ \t\u00a0]+\n/g, "\n").replace(/\n{2,}/g, "\n").trim();
+  }
+
   /** A stored record with its question/answer read back from ChatGPT (JR.qa), when available. */
   function withContent(rec) {
     var out = Object.assign({}, rec);
@@ -1139,6 +1177,7 @@
   var SEND_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></svg>';
 
   function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode) {
+    if (extensionWasUpdated(popup)) return;
     // Exit edit mode, enter generating state
     popup.classList.add("jr-popup--generating");
     var questionDiv = popup.querySelector(".jr-popup-question");
@@ -1181,24 +1220,21 @@
     });
   }
 
-  function showCompletedResponse(popup, upper, id, entry, contentContainer, skipStorageSync) {
-    // Always land on the last version
+  function showCompletedResponse(popup, upper, id, entry, contentContainer) {
+    // Land on the version the user last viewed (stored as the active item;
+    // a finished edit makes the new version active).
     if (entry.items && entry.items.length > 0) {
-      var lastIdx = entry.items.length - 1;
-      entry.activeItemIndex = lastIdx;
-      var lastItem = entry.items[lastIdx];
+      var idx = entry.activeItemIndex;
+      if (idx == null || idx < 0 || idx >= entry.items.length) idx = entry.items.length - 1;
+      entry.activeItemIndex = idx;
+      var item = entry.items[idx];
       // Convert stale __PENDING__ to __TIMEOUT__ (no watch running after reload/reopen)
-      if (lastItem.responseHTML === "__PENDING__" && !st.responseWatchActive) {
-        lastItem.responseHTML = "__TIMEOUT__";
-        updateHighlightFields(lastItem.id, { responseHTML: "__TIMEOUT__" });
+      if (item.responseHTML === "__PENDING__" && !st.responseWatchActive) {
+        item.responseHTML = "__TIMEOUT__";
+        updateHighlightFields(item.id, { responseHTML: "__TIMEOUT__" });
       }
-      entry.question = lastItem.question;
-      entry.responseHTML = lastItem.responseHTML;
-      // Skip storage sync when called from rebuildPopupAfterEdit — saveHighlight
-      // already set the active item and a concurrent setActiveItem would race.
-      if (!skipStorageSync) {
-        setActiveItem(id, lastItem.id);
-      }
+      entry.question = item.question;
+      entry.responseHTML = item.responseHTML;
     }
 
     // Show the question with inline edit toggle
@@ -1254,7 +1290,7 @@
       editDropdown.className = "jr-send-mode-dropdown jr-disabled";
       function rebuildEditDropdown() {
         populateModeDropdown(editDropdown, function (key) {
-          var current = questionText.textContent.trim();
+          var current = readQuestion(questionText);
           if (!current || current === originalText) return;
           editing = false; // prevent blur→exitEditMode from reverting text
           st.responseMode = key;
@@ -1291,7 +1327,7 @@
         // Block editing while a response is still generating
         if (st.cancelResponseWatch) return;
         editing = true;
-        originalText = questionText.textContent.trim();
+        originalText = readQuestion(questionText);
         questionDiv.classList.add("jr-popup-question--editing");
         questionText.contentEditable = "true";
         questionText.focus();
@@ -1347,7 +1383,7 @@
 
       // Track text changes to enable/disable send
       questionText.addEventListener("input", function () {
-        var current = questionText.textContent.trim();
+        var current = readQuestion(questionText);
         var unchanged = (current === originalText || current === "");
         sendBtn.disabled = unchanged;
         if (unchanged) {
@@ -1374,7 +1410,7 @@
             e.preventDefault();
           } else {
             e.preventDefault();
-            var current = questionText.textContent.trim();
+            var current = readQuestion(questionText);
             if (current && current !== originalText) {
               editing = false; // prevent blur→exitEditMode from reverting text
               submitEdit(popup, id, entry, contentContainer, current, st.responseMode);
@@ -1390,7 +1426,7 @@
 
       sendBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        var current = questionText.textContent.trim();
+        var current = readQuestion(questionText);
         if (!current || current === originalText) return;
         editing = false; // prevent blur→exitEditMode from reverting text
         submitEdit(popup, id, entry, contentContainer, current, st.responseMode);
@@ -1452,8 +1488,9 @@
       var msg = document.createElement("div");
       msg.textContent = entry._jrFailReason || "Couldn\u2019t get a response";
       timeoutDiv.appendChild(msg);
-      // Failed items saved before 1.2.0-dev.11 have no stored question: nothing to resend.
-      if (!(activeItem ? activeItem.question : entry.question)) {
+      // Failed items saved before 1.2.0-dev.11 have no stored question (some stored the text "null"): nothing to resend.
+      var savedQuestion = activeItem ? activeItem.question : entry.question;
+      if (!savedQuestion || savedQuestion === "null") {
         msg.textContent += " \u2014 the question wasn\u2019t saved. Delete this highlight and ask again.";
         popup.appendChild(timeoutDiv);
         return timeoutDiv;
@@ -1465,6 +1502,7 @@
       retryBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
       retryBtn.addEventListener("click", function (ev) {
         ev.stopPropagation();
+        if (extensionWasUpdated(popup)) return;
         var retryItemId = activeItemId;
         var retryQuestion = activeItem ? activeItem.question : entry.question;
         var text = entry.text;
@@ -1480,8 +1518,7 @@
         popup.classList.add("jr-popup--generating");
         timeoutDiv.remove();
         popup.appendChild(JR.createLoadingDiv());
-        JR.enqueueMessage({
-          force: true,
+        JR.enqueueMessage({ // queued like any send: two live watches would fight over shared state
           message: retryMessage,
           waitOpts: {
             popup: popup, text: text, sentence: sentence,
@@ -1783,7 +1820,7 @@
       }
     }
 
-    showCompletedResponse(popup, upper, hlId, entry, entry.contentContainer, true);
+    showCompletedResponse(popup, upper, hlId, entry, entry.contentContainer);
     JR.repositionPopup();
     // Also reposition on next frame in case pending layout/scroll changes
     // (e.g. ChatGPT auto-scroll after unlock) shift the highlight spans.

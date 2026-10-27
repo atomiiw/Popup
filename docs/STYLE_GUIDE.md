@@ -21,22 +21,22 @@ Defined on `:root` and overridden for dark mode.
 | `--jr-border` | `#e3e1e1` | `#2e3038` | Borders, separators |
 | `--jr-text` | `#191414` | `#e4e4e7` | Primary text |
 | `--jr-text-muted` | `#6b7280` | `#8b92a8` | Secondary text, idle icons |
-| `--jr-action` | `#1944f1` | `#5a7af7` | Brand blue — hover color, links, send button, focus |
-| `--jr-action-hover` | `#1539cc` | `#7b95f9` | Hover state for action-colored elements |
+| `--jr-action` | `#1944f1` | `#9db7d5` | Brand blue (dark: ice blue) — hover color, links, send button, focus |
+| `--jr-action-hover` | `#1539cc` | `#bccfe4` | Hover state for action-colored elements |
 | `--jr-highlight-bg` | `#edebeb` | `#232630` | Blockquote background, code bg fallback |
 | `--jr-highlight-border` | `#d7d5d5` | `#383b45` | Blockquote borders, question underline |
-| `--jr-separator` | `#a3a2a2` | `#656570` | Search bar count separator |
 | `--jr-radius` | `8px` | `8px` | Border radius for cards, popups, dropdowns |
-| `--jr-radius-pill` | `12px` | `12px` | Border radius for pill shapes (search bar base) |
-| `--jr-mark-bg` | `#1944f1` | `#1944f1` | Highlight color on page text (white text on blue) |
-| `--jr-mark-bg-hover` | `#1539cc` | `#3d5ef3` | Highlight hover (darker in light, lighter in dark) |
-| `--jr-mark-bg-active` | `#112fa8` | `#1539cc` | Highlight active (popup open) |
+| `--jr-radius-pill` | `12px` | `12px` | Border radius for pill shapes |
+| `--jr-mark-bg` | `#1944f1` | `#a9bfd8` | Highlight color on page text (light: white text on blue; dark: dark text on ice blue) |
+| `--jr-mark-bg-hover` | `#1539cc` | `#bccde2` | Highlight hover (darker in light, lighter in dark) |
+| `--jr-mark-bg-active` | `#112fa8` | `#93abc9` | Highlight active (popup open) |
+| `--jr-mark-text` | `#fff` | `#111821` | Text on a highlight |
 | `--jr-shadow` | `0 2px 8px rgba(0,0,0,0.12), 0 0.5px 4px rgba(0,0,0,0.06)` | `0 2px 8px rgba(0,0,0,0.4), 0 0.5px 4px rgba(0,0,0,0.2)` | Two-layer elevation shadow |
-| `--jr-focus-ring` | `rgba(25,68,241,0.25)` | `rgba(90,122,247,0.35)` | Focus-visible outline glow |
-| `--jr-link` | `#1944f1` | `#5a7af7` | Link color in response text |
+| `--jr-focus-ring` | `rgba(25,68,241,0.25)` | `rgba(157,183,213,0.35)` | Focus-visible outline glow |
+| `--jr-link` | `#1944f1` | `#9db7d5` | Link color in response text |
 | `--jr-font` | system stack | system stack | Font family |
 | `--jr-icon-btn-size` | `16px` | `16px` | Icon size inside circle buttons |
-| `--jr-icon-btn-circle` | `36px` | `36px` | Circle button diameter (trigger, search, trash) |
+| `--jr-icon-btn-circle` | `36px` | `36px` | Circle button diameter (trigger, trash) |
 
 ## Dark Mode
 Dark mode activates when the `<html>` element has class `dark`, any class containing `"dark"`, or (current ChatGPT) `data-theme="dark"`:
@@ -45,7 +45,7 @@ html.dark,
 html[class*="dark"],
 html[data-theme="dark"] { ... }
 ```
-Dark mode uses neutral-cool dark backgrounds with a subtle blue undertone (not purple). The brand blue `#1944f1` is used directly for highlights; a lighter `#5a7af7` is used for interactive elements to maintain WCAG AA contrast.
+Dark mode uses neutral-cool dark backgrounds with a subtle blue undertone (not purple). Saturated brand blue glares on dark backgrounds, so dark mode uses a pale grey-blue ("ice blue"): `#a9bfd8` for highlights and `#9db7d5` for interactive elements, with dark text (`#111821`) on highlights.
 
 ## Hover System
 
@@ -53,27 +53,25 @@ All interactive elements use **scale on hover** with a unified 3-tier system:
 
 | Tier | Scale | Used by |
 |---|---|---|
-| **Subtle** (large elements, text) | `1.08` | Circle buttons (trigger, search, trash), reply button, dropdown items |
-| **Medium** (inline icons) | `1.2` | Send arrow, edit pencil, version arrows, search prev/next |
-| **Firm** (small icons, nav) | `1.3` | Nav arrows, confirm icons, disable × |
+| **Subtle** (large elements, text) | `1.08` | Circle buttons (trigger, trash), reply button, dropdown items |
+| **Medium** (inline icons) | `1.2` | Send arrow, version arrows |
+| **Firm** (small icons, nav) | `1.3` | Nav arrows, confirm icons |
 
 All hover transitions use `0.15s ease`. Press/active states use `scale(1.35)` for confirm buttons, `scale(0.97)` for the send button.
 
 ### Hover Color Rules
-- **Action elements** (trigger, search, pencil, send, nav, version, reply, dropdown items, search arrows): idle `--jr-text-muted` → hover `--jr-action` (blue)
+- **Action elements** (trigger, send, nav, version, reply, dropdown items): idle `--jr-text-muted` → hover `--jr-action` (blue)
 - **Destructive** (trash, danger confirm): idle `--jr-text-muted` → hover `#ef4444` (red)
-- **Utility** (disable ×): idle `--jr-text-muted` → hover `--jr-action` (blue)
 - **Question underline**: idle `--jr-highlight-border` → hover/focus `--jr-action` (blue)
 
 ## Components
 
-### Circle Buttons (`.jr-highlight-trigger-btn`, `.jr-search-bar--ready`, `.jr-toolbar-delete`)
+### Circle Buttons (`.jr-highlight-trigger-btn`, `.jr-toolbar-delete`)
 - `var(--jr-icon-btn-circle)` diameter (36px), `border-radius: 50%`
 - `1px solid var(--jr-border)`, `background: var(--jr-bg)`, `box-shadow: var(--jr-shadow)`
 - Icon: `var(--jr-icon-btn-size)` (16px), `color: var(--jr-text-muted)`
 - Hover: `color: var(--jr-action)`, `scale: 1.08` (trash: `color: #ef4444`)
 - Trigger button: positioned fixed near selection, dismissed on scroll/click-outside/Escape
-- Search button: positioned fixed at top-center of chat column
 - Trash button: floats at `top: -14px; right: -14px` of popup
 
 ### `.jr-popup`
@@ -114,16 +112,12 @@ All hover transitions use `0.15s ease`. Press/active states use `scale(1.35)` fo
 - Placeholder via `::before` with `content: attr(data-placeholder)`
 
 ### Inline Icon Buttons (shared base)
-Edit pencil, send arrow, version arrows, search prev/next, confirm icons, nav arrows, disable × all share:
+Send arrow, version arrows, confirm icons, nav arrows all share:
 - `display: flex; align-items: center; justify-content: center`
 - `border: none; background: none; padding: 0; cursor: pointer`
 - `color: var(--jr-text-muted); transition: color 0.15s ease, transform 0.15s ease`
 - SVG icons at 14px (standard) or 20px (nav arrows)
 - Hover: `color: var(--jr-action)` + tier-appropriate scale
-
-### `.jr-popup-edit-btn`
-- 24×24px, pencil icon toggle for editing question text
-- Active state: `color: var(--jr-text)`
 
 ### `.jr-popup-edit-send`
 - 24×24px send arrow, `color: var(--jr-text)` idle (darker than muted — primary action)
@@ -159,7 +153,7 @@ Edit pencil, send arrow, version arrows, search prev/next, confirm icons, nav ar
 
 ### `.jr-toolbar-delete` (floating circle)
 - `position: absolute; top: -14px; right: -14px`
-- Same circle button pattern as trigger/search
+- Same circle button pattern as the trigger
 - Hover: `color: #ef4444` (red), `scale(1.08)`
 
 ### Delete Confirmation
@@ -173,18 +167,6 @@ Edit pencil, send arrow, version arrows, search prev/next, confirm icons, nav ar
 - Up/down arrows: 36×36px, 20px icons, `color: var(--jr-text-muted)` idle
 - Disabled: `color: var(--jr-border)`, `pointer-events: none`
 - `.jr-nav-indicator`: `font-size: 13px`, `color: var(--jr-text-muted)`
-
-### Search Bar
-- **Ready state**: Circle button (matches trigger/search), `z-index: 999999`
-- **Active state**: 300×40px bar, `border-radius: var(--jr-radius)`, `padding: 0 4px 0 14px`, `font-size: 14px`
-- `animation: jr-fade-in 0.15s ease-out` on expand
-- `.jr-search-input`: inherits font, transparent bg, no border
-- `.jr-search-count`: `font-size: 12px`, `border-left: 1px solid var(--jr-border)` separator
-- Prev/next: 24×24px, 14px icons, `color: var(--jr-text)` enabled, `var(--jr-action)` hover
-
-### Search Marks
-- `.jr-search-mark`: `background: #fff500`, `color: #000` (yellow, non-active match)
-- `.jr-search-mark-active`: `background: #1944f1`, `color: #fff` (brand blue, active match)
 
 ## Icon Color Reference
 
@@ -201,7 +183,7 @@ Edit pencil, send arrow, version arrows, search prev/next, confirm icons, nav ar
 - All icon-only buttons have `aria-label` attributes
 - `focus-visible` outline: `2px solid var(--jr-action)`, `offset: 2px` on all interactive elements
 - `--jr-text-muted` (#6b7280) passes WCAG AA on white (4.63:1)
-- White on brand blue passes WCAG AA (6.69:1)
+- White on brand blue passes WCAG AA (6.69:1); dark text `#111821` on ice blue `#a9bfd8` passes AA in dark mode
 - `@media (prefers-reduced-motion: reduce)` kills all animations/transitions
 
 ## Naming Convention
@@ -213,4 +195,3 @@ All classes follow the pattern: `.jr-<component>-<element>`
 - `.jr-highlight-trigger-btn` — the chat bubble circle button
 - `.jr-toolbar-delete` — the trash circle button
 - `.jr-reply-whole-btn` — the reply to response button
-- `.jr-search-bar` — the search bar (with `--ready` and `--active` modifiers)

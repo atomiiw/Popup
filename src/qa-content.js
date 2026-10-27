@@ -29,6 +29,9 @@
    */
   JR.buildMessage = function (o) {
     if (!o.question || !String(o.question).trim()) throw new Error("Popup: refusing to send an empty question");
+    // A blank line inside the question would read as a section break to
+    // JR.parsePopupMessage (which splits on them): keep single line breaks only.
+    o = Object.assign({}, o, { question: String(o.question).replace(/\r/g, "").replace(/\n\s*\n+/g, "\n").trim() });
     var message;
     if (o.wholeResponse) {
       message = o.wholeResponseFull

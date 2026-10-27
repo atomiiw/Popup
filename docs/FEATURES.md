@@ -56,7 +56,7 @@
 - Clicking a detached highlight during generation opens a popup showing "Generating..." — when the response finishes, the popup updates in-place with the actual response
 - If the popup is not open when the response arrives, the highlight stays clickable and clicking it shows the completed response
 - If the response times out while detached, turns are unhidden, the highlight is removed from `completedHighlights`, and spans are unwrapped
-- Timeout after 60 seconds: shows "Response timed out." and unhides turns
+- Gives up only when nothing happens: 100 s without new answer text while ChatGPT is idle (10 min while it says it is generating, e.g. thinking or searching); the item is saved as failed with a retry button and its turns stay hidden
 - On page reload, hidden turns reappear (persistence is handled in Step 4)
 
 ### Source Text Shadow Highlight & Popup Anchoring (Step 3b)
@@ -90,21 +90,17 @@
 - Works inside chained popups: clicking a child's source highlights in a parent popup's response selects text for copy instead of spawning another chain
 - CSS `user-select: text` ensures highlight text is selectable regardless of host site styles
 
-### Storage Layer
-- Highlights and their Q&A chain metadata persist via `chrome.storage.local`
-- Each highlight stores: id, text, sentence, blockTypes, responseHTML, url, site, parentId, sourceTurnIndex, questionIndex, responseIndex, color, createdAt
-- `saveHighlight()` accepts all fields in a single call — no separate `linkQA()` needed for new highlights
-- `updateHighlightResponseHTML()` updates a parent's `responseHTML` in storage after a chained highlight is captured, so chained spans persist across page reload
-- Supports child/descendant queries for chained popups
-- `updateHighlightColor()` persists a highlight's chosen color
-- `countDescendants()` counts all chained Q&As under a highlight (for delete confirmation)
-- Cascade delete removes a highlight and all its descendants
-- `jumpreturn_deleted_turns` storage key (per-URL) tracks turn indices that should stay hidden after deletion
+### Storage Layer (v2, 1.2.0)
+- One `chrome.storage.local` key per conversation: `popup:conv:<id>` = `{ v: 2, items: [...], hidden: [turnKey...] }`
+- Each item (one version of a highlight) stores keys only: id, quoteId, text, nth (which occurrence of text in its answer), parentId, parentItemId, sourceTurnKey, turnKeys, status, active, wholeResponse, createdAt; the question only while the item is pending or failed
+- Answers and questions are read back from ChatGPT (mounted turn, session cache, or ChatGPT's conversation data) — never stored
+- Writes go through one serialized chain; other tabs' writes invalidate the cache via `storage.onChanged`
+- `getChildHighlights()`, `countDescendants()` (delete confirmation), cascade `deleteHighlight()` (turn keys move to `hidden` so the Q&A stays out of the main chat)
 
 ### Persistence Across Reload (Step 4)
 - On page load, `restoreHighlights()` queries storage for the current conversation URL
-- Polls the DOM for conversation turns to appear (ChatGPT renders asynchronously), up to 15 seconds
-- For each saved highlight: finds the source turn by `sourceTurnIndex`, locates the text via `findTextRange()`, wraps it in highlight spans using `highlightRange()`
+- Event-driven: whenever ChatGPT mounts a turn (it virtualizes the thread), highlights whose source turn is present are re-applied
+- For each saved highlight: finds the source turn by `sourceTurnKey`, locates the text via `findTextRange(root, text, nth)` (the nth occurrence, so a repeated word is restored where it was selected), wraps it with `highlightRange()`
 - All Q&A turns (level-1 and chained, all versions) are hidden from the main chat on reload
 - Restored highlights are fully interactive — clicking re-opens the read-only popup with the saved AI response
 - SPA navigation cleans up old highlights and restores for the new conversation after React re-renders
@@ -169,38 +165,29 @@
 - Shows on popup reopen and after page reload for both regular and chained popups
 
 ### Edit Question & Response Versions (Step 5e)
-- Completed popups show a pencil icon and a send arrow next to the question text
-- Clicking the pencil toggles edit mode: the question text becomes editable in place (contenteditable) with a subtle underline, and the pencil turns blue
-- Clicking the pencil again exits edit mode and discards any changes (restores original text)
+- Clicking the question text of a completed popup enters edit mode: it becomes editable in place with a subtle underline
 - A send arrow appears during edit mode, greyed out until the text actually changes from the original
 - Hovering the send arrow reveals a Brief/Elaborate dropdown (same as initial question); Escape cancels edit mode
 - On send: the new question is injected into the chat thread, the response is replaced with loading/streaming for the new response
 - Both old and new responses are kept as **versions** — a version nav bar (`◀ 1 / 2 ▶`) appears when multiple versions exist
 - Clicking version nav arrows switches the displayed question text and response HTML
+- Reopening the popup (also after reload) shows the version viewed last; finishing an edit makes the new version current (1.2.0; before: always the newest)
 - All versions' Q&A turns stay hidden in the main chat (both on page and after reload)
 - Storage: `versions` array and `activeVersion` index on each highlight; backward compatible with single-version highlights
 - Dismissing the popup during an edit response detaches (keeps polling), same as new popups
 - Works for both level-1 and chained popups
 
-### Highlight Toolbar — Color Picker & Delete (Step 7a)
-- A floating pill-shaped toolbar appears near the highlighted text on the opposite side from the popup (popup below → toolbar above, and vice versa)
-- Contains 5 color swatches (blue, yellow, green, pink, purple) and a trash icon
-- Clicking a swatch immediately changes the highlight's background color on the page and in the popup blockquote, and persists the color in storage
-- Active swatch is indicated by a border ring matching the text color
-- Trash icon opens a confirmation overlay inside the popup showing how many chained follow-ups will also be deleted
+### Delete (Step 7a; the color picker was removed before 1.1.3 — one highlight color)
+- A trash button on completed popups opens a confirmation overlay inside the popup showing how many chained follow-ups will also be deleted
 - On confirm: highlight spans are unwrapped, Q&A turns stay hidden (not returned to chat), all descendants are cascade-deleted from storage, popup closes
-- Deleted turns persist as hidden across page reload via `jumpreturn_deleted_turns` storage key (per-URL)
+- Deleted turns persist as hidden across page reload (the conversation record's `hidden` list)
 - On cancel: popup returns to its normal state
-- Highlight colors persist across page reload — restored highlights use their saved color
-- The toolbar only appears on completed highlights, not on new/in-progress popups
+- The trash button only appears on completed highlights, not on new/in-progress popups
 - Works in both light and dark mode
 
 ### Highlight Hover & Active States (Step 7b)
-- Completed highlights darken on mouse hover via `:hover` pseudo-class with a smooth 0.12s transition
-- When a highlight's popup is open, the highlight gets a `.jr-source-highlight-active` class with an even darker background
-- Active state overrides hover so the color stays consistent while the popup is open
-- Works for all 5 highlight colors (blue, yellow, green, pink, purple) plus the default blue
-- `JR.syncHighlightActive(hlId)` toggles the active class — called on popup open, close, and response capture
+- Completed highlights change shade on hover (`--jr-mark-bg-hover`: darker in light mode, lighter in dark) with a 0.12s transition
+- Highlights of the open popup stack get `.jr-source-highlight-active` (`--jr-mark-bg-active`) from `JR.syncHighlightActive()` (popup open/close, answer arrival, turn remount); it wins over hover
 - Works for both level-1 highlights in the chat and chained highlights inside popup responses
 - Light and dark mode have independently tuned alpha values
 

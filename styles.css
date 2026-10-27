@@ -18,6 +18,7 @@
   --jr-mark-bg: #1944f1;
   --jr-mark-bg-hover: #1539cc;
   --jr-mark-bg-active: #112fa8;
+  --jr-mark-text: #fff;
   --jr-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), 0 0.25px 2px rgba(0, 0, 0, 0.1);
   --jr-focus-ring: rgba(25, 68, 241, 0.25);
   --jr-link: #1944f1;
@@ -34,17 +35,19 @@ html[data-theme="dark"] {
   --jr-border: #2e3038;
   --jr-text: #e4e4e7;
   --jr-text-muted: #8b92a8;
-  --jr-action: #5a7af7;
-  --jr-action-hover: #7b95f9;
+  /* Ice blue: a pale grey-blue that doesn't glare on dark backgrounds; dark text on it */
+  --jr-action: #9db7d5;
+  --jr-action-hover: #bccfe4;
   --jr-highlight-bg: #232630;
   --jr-highlight-border: #383b45;
   --jr-separator: #656570;
-  --jr-mark-bg: #1944f1;
-  --jr-mark-bg-hover: #3d5ef3;
-  --jr-mark-bg-active: #1539cc;
+  --jr-mark-bg: #a9bfd8;
+  --jr-mark-bg-hover: #bccde2;
+  --jr-mark-bg-active: #93abc9;
+  --jr-mark-text: #111821;
   --jr-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0.25px 2px rgba(0, 0, 0, 0.3);
-  --jr-focus-ring: rgba(90, 122, 247, 0.35);
-  --jr-link: #5a7af7;
+  --jr-focus-ring: rgba(157, 183, 213, 0.35);
+  --jr-link: #9db7d5;
   --jr-radius-pill: 6px;
 }
 
@@ -53,7 +56,6 @@ html[data-theme="dark"] {
    ========================================================================== */
 
 /* Inline icon button — borderless, centered, muted idle, blue hover */
-.jr-popup-edit-btn,
 .jr-popup-edit-send,
 .jr-popup-version-prev,
 .jr-popup-version-next,
@@ -72,7 +74,6 @@ html[data-theme="dark"] {
 }
 
 /* Standard icon size (14px) */
-.jr-popup-edit-btn svg,
 .jr-popup-edit-send svg,
 .jr-popup-version-prev svg,
 .jr-popup-version-next svg,
@@ -95,15 +96,12 @@ html[data-theme="dark"] {
 
 /* Focus-visible — unified for all interactive elements */
 .jr-popup-edit-send:focus-visible,
-.jr-popup-edit-btn:focus-visible,
 .jr-popup-version-prev:focus-visible,
 .jr-popup-version-next:focus-visible,
 .jr-toolbar-delete:focus-visible,
 .jr-popup-confirm-icon-btn:focus-visible,
 .jr-nav-up:focus-visible,
 .jr-nav-down:focus-visible,
-.jr-popup-send:focus-visible,
-.jr-popup-send-toggle:focus-visible,
 .jr-send-mode-item:focus-visible,
 .jr-highlight-trigger-btn:focus-visible,
 .jr-reply-whole-btn:focus-visible {
@@ -291,7 +289,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   background: var(--jr-mark-bg);
   border-radius: 0;
   padding: 2px 0;
-  color: #fff;
+  color: var(--jr-mark-text);
 }
 
 /* Citation pill */
@@ -305,112 +303,13 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 }
 
 /* ==========================================================================
-   Input row & send button
-   ========================================================================== */
-
-.jr-popup-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  margin: 10px 0 0 0;
-  padding: 0;
-  background: none;
-}
-
-.jr-popup-input {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--jr-border);
-  border-radius: var(--jr-radius);
-  background: var(--jr-bg);
-  color: var(--jr-text);
-  font-family: var(--jr-font);
-  font-size: 14px;
-  line-height: 1.4;
-  resize: none;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.jr-popup-input:focus {
-  border-color: var(--jr-action);
-  box-shadow: 0 0 0 2px var(--jr-focus-ring);
-}
-
-.jr-popup-send-group {
-  position: relative;
-  display: flex;
-  border-radius: var(--jr-radius);
-  overflow: visible;
-  flex-shrink: 0;
-}
-
-.jr-popup-send {
-  padding: 8px 14px;
-  border: none;
-  border-radius: var(--jr-radius) 0 0 var(--jr-radius);
-  background: var(--jr-action);
-  color: #ffffff;
-  font-family: var(--jr-font);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.jr-popup-send:hover { background: var(--jr-action-hover); }
-.jr-popup-send:active { transform: scale(0.97); }
-
-.jr-popup-send-toggle {
-  padding: 8px 8px;
-  border: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0 var(--jr-radius) var(--jr-radius) 0;
-  background: var(--jr-action);
-  color: #ffffff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.jr-popup-send-toggle:hover { background: var(--jr-action-hover); }
-
-/* Mode dropdown (old style) */
-.jr-popup-dropdown {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 4px;
-  min-width: 120px;
-  background: var(--jr-bg);
-  border: none;
-  border-radius: var(--jr-radius);
-  box-shadow: 0 0 0 1px var(--jr-border), var(--jr-shadow);
-  z-index: 1;
-  overflow: hidden;
-}
-
-.jr-popup-dropdown-item {
-  padding: 6px 12px;
-  font-family: var(--jr-font);
-  font-size: 13px;
-  color: var(--jr-text);
-  cursor: pointer;
-  transition: background 0.1s ease;
-}
-
-.jr-popup-dropdown-item:hover { background: var(--jr-highlight-bg); }
-.jr-popup-dropdown-item.active { color: var(--jr-action); font-weight: 500; }
-
-/* ==========================================================================
    Source highlights & underlines
    ========================================================================== */
 
 .jr-source-highlight {
   background: var(--jr-mark-bg);
   border-radius: 0;
-  color: #fff;
+  color: var(--jr-mark-text);
   user-select: text;
   cursor: pointer;
   line-height: inherit;
@@ -428,6 +327,11 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   position: relative;
 }
 
+.jr-source-highlight-done:hover { background: var(--jr-mark-bg-hover); }
+/* Highlights of the open popups (JR.syncHighlightActive) */
+.jr-source-highlight-active,
+.jr-source-highlight-active:hover { background: var(--jr-mark-bg-active); }
+
 .jr-source-highlight-done .jr-source-highlight-done {
   position: relative;
   z-index: 1;
@@ -440,8 +344,6 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   pointer-events: none;
   z-index: 1;
 }
-
-.jr-hidden { display: none !important; }
 
 /* ==========================================================================
    Loading state
@@ -526,6 +428,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   flex: 1;
   min-width: 0;
   overflow-wrap: break-word;
+  white-space: pre-wrap; /* multi-line questions */
   outline: none;
   text-decoration: none;
   cursor: text;
@@ -558,10 +461,6 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   pointer-events: none;
 }
 
-.jr-popup--generating .jr-popup-edit-btn {
-  display: none;
-}
-
 .jr-popup--generating .jr-popup-version-prev,
 .jr-popup--generating .jr-popup-version-next {
   pointer-events: none;
@@ -587,19 +486,6 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 /* ==========================================================================
    Edit & version controls
    ========================================================================== */
-
-/* Pencil button — extends shared inline icon base */
-.jr-popup-edit-btn {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  padding: 4px;
-  margin-top: 2px;
-}
-
-.jr-popup-edit-btn:hover { color: var(--jr-action); transform: scale(1.2); }
-.jr-popup-edit-btn--active { color: var(--jr-text); }
-.jr-popup-edit-btn--active:hover { color: var(--jr-action); }
 
 /* Send icon — extends shared inline icon base */
 .jr-edit-send-wrapper {
@@ -684,13 +570,6 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-version-next:hover:not(:disabled) {
   color: var(--jr-action);
   transform: scale(1.2);
-}
-
-.jr-popup-version-indicator {
-  font-size: 13px;
-  color: var(--jr-text-muted);
-  min-width: 40px;
-  text-align: center;
 }
 
 /* ==========================================================================

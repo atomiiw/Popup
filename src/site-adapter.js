@@ -415,7 +415,10 @@
     var inConversation = !!JR.site.conversationId();
 
     var report = {
-      version: chrome.runtime.getManifest ? (chrome.runtime.getManifest().version_name || chrome.runtime.getManifest().version) : "?",
+      version: (function () {
+        try { var m = chrome.runtime.getManifest(); return m.version_name || m.version; }
+        catch (e) { return "stale (extension was updated; reload the page)"; }
+      })(),
       when: new Date().toISOString(),
       url: location.pathname,
       scrollTop: (function () { var sc = JR.site.scrollContainer(); return sc ? Math.round(sc.scrollTop) : null; })(),

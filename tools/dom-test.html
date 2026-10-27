@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- dom-test.html — text matching in a real browser DOM (src/text-extraction.js + src/highlight.js).
+     Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
+          --allow-file-access-from-files --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
+     or open it in Chrome and read the page. -->
+<html><head><meta charset="utf-8"><title>dom-test</title></head><body>
+<div id="answer"><p>Read <b>the cache</b> first. Later, read the cache again; the cache wins.</p></div>
+<pre id="out"></pre>
+<script src="../src/jr-namespace.js"></script>
+<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code" };</script>
+<script src="../src/text-extraction.js"></script>
+<script src="../src/highlight.js"></script>
+<script>
+var out = [], failed = 0;
+function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
+var root = document.getElementById("answer");
+var html0 = root.innerHTML;
+
+// The user selects each occurrence of "the cache"; after a reload only the text and its
+// occurrence index are known, and restore must land on the same one.
+for (var want = 0; want < 3; want++) {
+  root.innerHTML = html0;
+  var r = JR.findTextRange(root, "the cache", want);
+  var spans = JR.highlightRange(r);
+  var nth = JR.occurrenceIndex(root, spans[0].firstChild, "the cache");
+  check("occurrence " + want + " saved as nth", nth === want, nth);
+  // where it is in the whole text
+  var pos = 0, walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n;
+  while ((n = walker.nextNode()) && n !== spans[0].firstChild) pos += n.data.length;
+  root.innerHTML = html0;
+  var again = JR.findTextRange(root, "the cache", nth);
+  var pos2 = 0; walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  while ((n = walker.nextNode()) && n !== again.startContainer) pos2 += n.data.length;
+  pos2 += again.startOffset;
+  check("occurrence " + want + " restored at the same place", pos2 === pos, pos + " vs " + pos2);
+}
+root.innerHTML = html0;
+check("nth beyond the count falls back to the first", !!JR.findTextRange(root, "the cache", 7));
+check("missing text", JR.findTextRange(root, "no such words", 0) === null);
+
+out.push(failed ? failed + " FAILED" : "all passed");
+document.getElementById("out").textContent = out.join("\n");
+document.title = failed ? "FAIL" : "PASS";
+</script></body></html>

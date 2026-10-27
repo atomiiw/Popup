@@ -56,6 +56,6 @@ src/
   highlight.js         Highlight wrapping, restore on reload, cascade delete
   text-extraction.js   Sentence extraction, block detection, context formatting
   dom-helpers.js       Scroll, layout, DOM utilities
-  console-bridge.js    Debug helpers (JR.go, JR.state inspection)
+  console-bridge.js    JR.diagnose() in the page console (hook self-check)
   early-hide.js        Hide Q&A turns before React renders them
 ```

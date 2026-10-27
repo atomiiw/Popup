@@ -429,29 +429,54 @@
     return false;
   }
 
-  JR.findTextRange = function (root, searchText) {
-    // Collect text nodes by simple concatenation (no block-boundary markers).
-    function collectTextNodes(walkerRoot, skipFn) {
-      var w = document.createTreeWalker(walkerRoot, NodeFilter.SHOW_TEXT, null);
-      var nodes = [];
-      var fullText = "";
-      var n2;
-      while ((n2 = w.nextNode())) {
-        if (isToolbarTextNode(n2)) continue;
-        if (skipFn && skipFn(n2)) continue;
-        nodes.push({ node: n2, start: fullText.length });
-        fullText += n2.textContent;
-      }
-      return { nodes: nodes, fullText: fullText };
+  // Collect text nodes by simple concatenation (no block-boundary markers).
+  function collectTextNodes(walkerRoot, skipFn) {
+    var w = document.createTreeWalker(walkerRoot, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    var fullText = "";
+    var n2;
+    while ((n2 = w.nextNode())) {
+      if (isToolbarTextNode(n2)) continue;
+      if (skipFn && skipFn(n2)) continue;
+      nodes.push({ node: n2, start: fullText.length });
+      fullText += n2.textContent;
     }
+    return { nodes: nodes, fullText: fullText };
+  }
 
+  /** Start of the nth (0-based) exact occurrence of s in text, or -1. */
+  function nthIndexOf(text, s, nth) {
+    var i = text.indexOf(s);
+    for (var k = 0; k < nth && i !== -1; k++) i = text.indexOf(s, i + 1);
+    return i;
+  }
+
+  /**
+   * Which occurrence of `text` (0-based) inside root starts at the text node
+   * `firstNode`: saved with a highlight so a word that appears several times
+   * is restored at the right one, not the first.
+   */
+  JR.occurrenceIndex = function (root, firstNode, text) {
+    if (!root || !firstNode || !text) return 0;
+    var map = collectTextNodes(root, null);
+    var start = -1;
+    for (var i = 0; i < map.nodes.length; i++) if (map.nodes[i].node === firstNode) { start = map.nodes[i].start; break; }
+    if (start < 0) return 0;
+    var n = 0;
+    for (var at = map.fullText.indexOf(text); at !== -1 && at < start; at = map.fullText.indexOf(text, at + 1)) n++;
+    return n;
+  };
+
+  /** nth: which exact occurrence to use (JR.occurrenceIndex); the first one if there are fewer. */
+  JR.findTextRange = function (root, searchText, nth) {
     var map = collectTextNodes(root, null);
     var nodes = map.nodes;
     var fullText = map.fullText;
 
     if (nodes.length === 0) return null;
 
-    var idx = fullText.indexOf(searchText);
+    var idx = nth > 0 ? nthIndexOf(fullText, searchText, nth) : -1;
+    if (idx === -1) idx = fullText.indexOf(searchText);
 
     // Fallback: selection.toString() inserts \n at block boundaries differently
     // than DOM text nodes. Strip all \n from both strings and search with a
