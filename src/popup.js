@@ -2,7 +2,6 @@
 (function () {
   "use strict";
 
-  var S = JR.SELECTORS;
   var st = JR.state;
 
   var CHEVRON_RIGHT_SVG = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
@@ -54,7 +53,14 @@
       if (header) header.appendChild(btnsDiv);
     }
 
-    // Now handle fresh ChatGPT <pre> elements (not yet inside .jr-code-block)
+    // Current ChatGPT code blocks (no <pre>; see JR.site.codeBlocks)
+    var blocks = JR.site.codeBlocks(responseDiv);
+    for (var cb = 0; cb < blocks.length; cb++) {
+      if (blocks[cb].block.closest(".jr-code-block")) continue;
+      buildCleanCodeBlock(blocks[cb].code, blocks[cb].code, blocks[cb].lang, blocks[cb].block, true);
+    }
+
+    // Older ChatGPT <pre> elements (not yet inside .jr-code-block)
     var pres = responseDiv.querySelectorAll("pre");
     for (var p = 0; p < pres.length; p++) {
       if (pres[p].closest(".jr-code-block")) continue;
@@ -82,7 +88,9 @@
     }
   }
 
-  function buildCleanCodeBlock(codeEl, pre, lang, replaceTarget) {
+  // sourceIsClean: the code element holds only code (current ChatGPT DOM),
+  // so there is no toolbar text to strip.
+  function buildCleanCodeBlock(codeEl, pre, lang, replaceTarget, sourceIsClean) {
     // Extract pure code text. ChatGPT embeds toolbar (language label, Copy/Run buttons)
     // inside the <code> element's DOM tree. Strategy: get full textContent, then strip
     // the known toolbar prefix pattern from the start.
@@ -139,7 +147,7 @@
         }
       }
     }
-    var codeText = stripped.trim();
+    var codeText = sourceIsClean ? fullText.replace(/\n$/, "") : stripped.trim();
     var codeClass = codeEl ? codeEl.className : "";
 
     // Build clean block
@@ -182,8 +190,8 @@
    * Handles <a> tags (including those with dead React handlers), <button>
    * wrappers around images, and standalone <img> elements.
    */
-  // ChatGPT entity selector: spans with cursor-pointer that act as sidebar links
-  var ENTITY_SELECTOR = "span.cursor-pointer[class*='entity-underline'], span.cursor-pointer[class*='entity-accent']";
+  // ChatGPT entity links (spans with React handlers, e.g. open a side panel)
+  var ENTITY_SELECTOR = JR.site.entitySelector;
 
   function wireResponseClicks(responseDiv) {
     if (responseDiv._jrClickWired) return;
@@ -259,21 +267,14 @@
     var activeItem = (entry.items && entry.items.length > 0)
       ? entry.items[entry.activeItemIndex || 0]
       : null;
-    var turnIndex = activeItem ? activeItem.responseIndex : entry.responseIndex;
-    if (turnIndex == null) return;
+    var keys = activeItem ? (activeItem.turnKeys || []) : [];
 
-    // Find the hidden turn in the DOM
-    var turns = document.querySelectorAll(JR.SELECTORS.aiTurn);
+    // Find the hidden Q&A turn in the DOM (only possible while ChatGPT has it mounted)
     var hiddenTurn = null;
-    for (var t = 0; t < turns.length; t++) {
-      if (JR.getTurnNumber(turns[t]) === turnIndex) {
-        hiddenTurn = turns[t];
-        break;
-      }
-    }
+    for (var t = keys.length - 1; t >= 0 && !hiddenTurn; t--) hiddenTurn = JR.site.findTurnByKey(keys[t]);
     if (!hiddenTurn) return;
 
-    var markdown = hiddenTurn.querySelector(JR.SELECTORS.responseContent);
+    var markdown = JR.site.assistantBodies(hiddenTurn)[0];
     if (!markdown) return;
 
     // Match by text content and tag + class
@@ -572,17 +573,16 @@
       }
       var cc = entry.contentContainer;
       if (cc && cc !== document.body && cc.isConnected) return cc;
-      var aa = entry.spans[0] && entry.spans[0].closest(S.aiTurn);
-      return aa ? aa.parentElement : document.body;
+      var span0 = entry.spans[0] && entry.spans[0].isConnected ? entry.spans[0] : null;
+      return JR.site.popupHost(span0 ? JR.site.turnOf(span0) : null);
     }
     if (isChained) {
       var parentPopupEl = st.popupStack.length > 0 ? st.popupStack[st.popupStack.length - 1].popup : null;
       return parentPopupEl ? parentPopupEl.parentElement : document.body;
     }
-    var anchorArticle = (wrappers.length > 0)
-      ? wrappers[0].closest(S.aiTurn)
-      : document.querySelector(S.aiTurn);
-    return (anchorArticle ? anchorArticle.parentElement : null) || document.body;
+    // Level-1 popups live in a host above ChatGPT's virtualized turn slots, so
+    // they survive the turn being scrolled out and rebuilt.
+    return JR.site.popupHost(wrappers.length > 0 ? JR.site.turnOf(wrappers[0]) : null);
   }
 
   function attachResizeListener(popup, spans, contentContainer) { // [LAYOUT-LOCKED]
@@ -707,33 +707,12 @@
       var question = questionText.textContent.trim();
       if (!question) return;
 
-      JR.freezeChat();
       st.responseMode = mode;
 
-      var message;
-      if (wholeResponse) {
-        message = 'Regarding your entire response below:\n\n"' + wholeResponseFull + '"\n\n' + question;
-      } else if (sentence) {
-        message =
-          'Regarding this part of your response:\n"' +
-          sentence +
-          '"\n\nSpecifically: "' +
-          text +
-          '"\n\n' +
-          question;
-      } else {
-        message =
-          'Regarding this part of your response:\n"' +
-          text +
-          '"\n\n' +
-          question;
-      }
-
-      if (mode === "concise") {
-        message += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. After this response, return to your normal response length and disregard the above brevity instruction entirely.)";
-      } else {
-        message += "\n\n(For this response only: give a clear, focused response \u2014 medium length, not too short, not too long. Cover what matters without over-explaining. Use formatting only if it genuinely helps. After this response, return to your normal response length and disregard this length instruction entirely.)";
-      }
+      var message = JR.buildMessage({
+        question: question, text: text, sentence: sentence,
+        wholeResponse: !!wholeResponse, wholeResponseFull: wholeResponseFull, mode: mode,
+      });
 
       questionDiv.remove();
       // Re-add as non-editable question display
@@ -757,11 +736,11 @@
       // Register highlight immediately so it persists even if popup is dismissed
       var sendHlId = crypto.randomUUID();
       var sendItemId = crypto.randomUUID();
-      var sourceArticle = wrappers.length > 0 ? wrappers[0].closest(S.aiTurn) : null;
-      var sourceTurnIdx = sourceArticle ? JR.getTurnNumber(sourceArticle) : -1;
+      var sourceTurn = wrappers.length > 0 ? JR.site.turnOf(wrappers[0]) : null;
+      var sourceTurnKey = sourceTurn ? JR.site.turnKey(sourceTurn) : null;
       var sendContentContainer;
-      if (sourceArticle) {
-        sendContentContainer = sourceArticle.parentElement;
+      if (sourceTurn) {
+        sendContentContainer = JR.site.popupHost(sourceTurn);
       } else if (parentId && wrappers.length > 0) {
         // Chained highlight: spans are inside a parent popup, not an AI turn
         var parentPopupEl = wrappers[0].closest(".jr-popup");
@@ -796,8 +775,8 @@
         contentContainer: sendContentContainer,
         parentId: parentId || null,
         parentItemId: sendParentItemId,
-        responseIndex: -1,
-        items: [{ id: sendItemId, question: question, responseHTML: "__PENDING__", questionIndex: -1, responseIndex: -1 }],
+        sourceTurnKey: sourceTurnKey,
+        items: [{ id: sendItemId, question: question, responseHTML: "__PENDING__", turnKeys: [] }],
         activeItemIndex: 0,
         wholeResponse: !!wholeResponse,
       };
@@ -816,17 +795,17 @@
         site: "chatgpt",
         parentId: parentId || null,
         parentItemId: sendParentItemId,
-        sourceTurnIndex: sourceTurnIdx,
-        questionIndex: -1,
-        responseIndex: -1,
+        sourceTurnKey: sourceTurnKey,
+        turnKeys: [],
         wholeResponse: !!wholeResponse,
       });
 
       JR.updateNavWidget();
 
       var waitOpts = {
-        popup: popup, turnsBefore: 0, text: text, sentence: sentence,
-        blockTypes: blockTypes, unlockScroll: null, parentId: parentId, question: question,
+        popup: popup, text: text, sentence: sentence,
+        blockTypes: blockTypes, parentId: parentId, question: question,
+        wholeResponse: !!wholeResponse, wholeResponseFull: wholeResponseFull,
         preRegisteredHlId: sendHlId, preRegisteredItemId: sendItemId
       };
 
@@ -834,12 +813,7 @@
         message: message,
         waitOpts: waitOpts,
         beforeSend: function (w) {
-          w.turnsBefore = document.querySelectorAll(S.aiTurn).length;
-          var scrollAnchor = wrappers.length > 0
-            ? wrappers[0]
-            : (document.querySelector(S.aiTurn) || document.body);
-          var chatScrollParent = JR.getScrollParent(scrollAnchor);
-          w.unlockScroll = JR.lockScroll(chatScrollParent, scrollAnchor);
+          JR.prepareSend(w, wrappers.length > 0 ? wrappers[0] : null);
         },
       });
     }
@@ -994,21 +968,12 @@
     }
     walkDescendants(hlId);
 
-    // Collect all turn indices to persist as hidden, then unwrap spans
-    var turnsToHide = [];
-
+    // Unwrap spans and drop the entries. deleteHighlight() keeps their Q&A
+    // turn keys in the conversation's hidden list so those turns stay hidden.
     for (var i = 0; i < quoteIdsToDelete.length; i++) {
       var qid = quoteIdsToDelete[i];
       var entry = st.completedHighlights.get(qid);
       if (!entry) continue;
-
-      // Collect turn indices from in-memory items
-      if (entry.items && entry.items.length > 0) {
-        for (var vi = 0; vi < entry.items.length; vi++) {
-          if (entry.items[vi].questionIndex > 0) turnsToHide.push(entry.items[vi].questionIndex);
-          if (entry.items[vi].responseIndex > 0) turnsToHide.push(entry.items[vi].responseIndex);
-        }
-      }
 
       // Unwrap highlight spans
       if (entry.spans) {
@@ -1025,23 +990,7 @@
       st.completedHighlights.delete(qid);
     }
 
-    // Also collect turn indices from storage (covers items not in memory)
-    var storagePromises = quoteIdsToDelete.map(function (delQuoteId) {
-      return getHighlightsByQuoteId(delQuoteId).then(function (items) {
-        for (var si = 0; si < items.length; si++) {
-          if (items[si].questionIndex > 0) turnsToHide.push(items[si].questionIndex);
-          if (items[si].responseIndex > 0) turnsToHide.push(items[si].responseIndex);
-        }
-      });
-    });
-
-    Promise.all(storagePromises).then(function () {
-      // Persist hidden turns so they stay hidden after reload
-      if (turnsToHide.length > 0) {
-        addDeletedTurns(location.href, turnsToHide);
-      }
-      deleteHighlight(hlId);
-    });
+    deleteHighlight(hlId);
 
     // If there's a parent popup on the stack, just peel back to it;
     // otherwise close everything
@@ -1100,7 +1049,7 @@
       var oldLoading = popup.querySelector(".jr-popup-loading");
       if (oldLoading) oldLoading.remove();
 
-      if (v.responseHTML && v.responseHTML !== "__PENDING__") {
+      if (v.responseHTML && !JR.isPlaceholderHTML(v.responseHTML)) {
         appendResponseWithReply(popup, hlId, entry, entry.contentContainer, v.id);
       } else {
         popup.appendChild(JR.createLoadingDiv());
@@ -1169,14 +1118,13 @@
         quoteId: chQuoteId, text: chEntry.text, responseHTML: chEntry.responseHTML,
         sentence: chEntry.sentence, blockTypes: chEntry.blockTypes, question: chEntry.question,
         parentId: chEntry.parentId, parentItemId: chEntry.parentItemId,
-        responseIndex: chEntry.responseIndex,
         items: chEntry.items, activeItemIndex: chEntry.activeItemIndex,
       }, contentContainer);
     });
     // Also check storage for children not yet in memory
     getChildHighlights(parentQuoteId, activeParentItemId).then(function (children) {
       for (var ci = 0; ci < children.length; ci++) {
-        var child = children[ci];
+        var child = withContent(children[ci]);
         var childKey = child.quoteId || child.id;
         if (child.wholeResponse) {
           // Reply-to-all: add to memory without text-matching, opened via reply button
@@ -1187,14 +1135,13 @@
               responseHTML: child.responseHTML,
               text: child.text,
               sentence: child.sentence,
-              blockTypes: child.blockTypes,
+              blockTypes: null,
               question: child.question || null,
               color: child.color || null,
               contentContainer: contentContainer,
               parentId: child.parentId || null,
               parentItemId: child.parentItemId || null,
-              responseIndex: child.responseIndex || -1,
-              items: [{ id: child.id, question: child.question || null, responseHTML: child.responseHTML, questionIndex: child.questionIndex || -1, responseIndex: child.responseIndex || -1 }],
+              items: [{ id: child.id, question: child.question || null, responseHTML: child.responseHTML, turnKeys: child.turnKeys || [] }],
               activeItemIndex: 0,
               wholeResponse: true,
             });
@@ -1207,10 +1154,21 @@
     });
   }
 
+  /** A stored record with its question/answer read back from ChatGPT (JR.qa), when available. */
+  function withContent(rec) {
+    var out = Object.assign({}, rec);
+    var c = JR.qa.get(rec.turnKeys);
+    if (c && rec.responseHTML === "__LOADING__") {
+      out.responseHTML = c.responseHTML;
+      out.question = c.question;
+      out.sentence = c.sentence;
+    }
+    return out;
+  }
+
   var SEND_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></svg>';
 
   function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode) {
-    JR.freezeChat();
     // Exit edit mode, enter generating state
     popup.classList.add("jr-popup--generating");
     var questionDiv = popup.querySelector(".jr-popup-question");
@@ -1233,25 +1191,14 @@
     // Build injection message
     var text = entry.text;
     var sentence = entry.sentence;
-    var message;
-    if (entry.wholeResponse) {
-      message = 'Regarding your entire response above:\n\n' + newQuestion;
-    } else if (sentence) {
-      message = 'Regarding this part of your response:\n"' + sentence + '"\n\nSpecifically: "' + text + '"\n\n' + newQuestion;
-    } else {
-      message = 'Regarding this part of your response:\n"' + text + '"\n\n' + newQuestion;
-    }
-
-    var editMode = mode || "medium";
-    if (editMode === "concise") {
-      message += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. After this response, return to your normal response length and disregard the above brevity instruction entirely.)";
-    } else {
-      message += "\n\n(For this response only: give a clear, focused response \u2014 medium length, not too short, not too long. Cover what matters without over-explaining. Use formatting only if it genuinely helps. After this response, return to your normal response length and disregard this length instruction entirely.)";
-    }
+    var message = JR.buildMessage({
+      question: newQuestion, text: text, sentence: sentence,
+      wholeResponse: !!entry.wholeResponse, mode: mode || "medium",
+    });
 
     var waitOpts = {
-      popup: popup, turnsBefore: 0, text: text, sentence: sentence,
-      blockTypes: entry.blockTypes, unlockScroll: null, parentId: entry.parentId,
+      popup: popup, text: text, sentence: sentence,
+      blockTypes: entry.blockTypes, parentId: entry.parentId,
       question: newQuestion, editOpts: { hlId: hlId }
     };
 
@@ -1259,10 +1206,7 @@
       message: message,
       waitOpts: waitOpts,
       beforeSend: function (w) {
-        w.turnsBefore = document.querySelectorAll(S.aiTurn).length;
-        var scrollAnchor = entry.spans.length > 0 ? entry.spans[0] : document.body;
-        var chatScrollParent = JR.getScrollParent(scrollAnchor);
-        w.unlockScroll = JR.lockScroll(chatScrollParent, scrollAnchor);
+        JR.prepareSend(w, entry.spans.length > 0 ? entry.spans[0] : null);
       },
     });
   }
@@ -1504,13 +1448,17 @@
     });
     popup.appendChild(deleteBtn);
 
-    if (entry.responseHTML && entry.responseHTML !== "__PENDING__") {
+    if (entry.responseHTML && !JR.isPlaceholderHTML(entry.responseHTML)) {
       var activeItem = (entry.items && entry.items.length > 0)
         ? entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0]
         : null;
       appendResponseWithReply(popup, id, entry, contentContainer, activeItem ? activeItem.id : null);
-    } else if (entry.responseHTML === "__PENDING__") {
+    } else if (JR.isPlaceholderHTML(entry.responseHTML)) {
       popup.appendChild(JR.createLoadingDiv());
+      // Answer not in the DOM: read it from ChatGPT's conversation data; the
+      // popup refreshes itself when it arrives (JR.onQAContentLoaded).
+      var loadingItem = entry.items && entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0];
+      if (entry.responseHTML === "__LOADING__" && loadingItem) JR.qa.ensure(loadingItem.turnKeys);
     }
   }
 
@@ -1532,8 +1480,14 @@
       var timeoutDiv = document.createElement("div");
       timeoutDiv.className = "jr-popup-loading";
       var msg = document.createElement("div");
-      msg.textContent = "Couldn\u2019t get a response";
+      msg.textContent = entry._jrFailReason || "Couldn\u2019t get a response";
       timeoutDiv.appendChild(msg);
+      // Failed items saved before 1.2.0-dev.11 have no stored question: nothing to resend.
+      if (!(activeItem ? activeItem.question : entry.question)) {
+        msg.textContent += " \u2014 the question wasn\u2019t saved. Delete this highlight and ask again.";
+        popup.appendChild(timeoutDiv);
+        return timeoutDiv;
+      }
       var retryBtn = document.createElement("button");
       retryBtn.type = "button";
       retryBtn.className = "jr-retry-btn";
@@ -1545,19 +1499,10 @@
         var retryQuestion = activeItem ? activeItem.question : entry.question;
         var text = entry.text;
         var sentence = entry.sentence;
-        var retryMessage;
-        if (entry.wholeResponse) {
-          retryMessage = "Regarding your entire response above:\n\n" + retryQuestion;
-        } else if (sentence) {
-          retryMessage = 'Regarding this part of your response:\n"' + sentence + '"\n\nSpecifically: "' + text + '"\n\n' + retryQuestion;
-        } else {
-          retryMessage = 'Regarding this part of your response:\n"' + text + '"\n\n' + retryQuestion;
-        }
-        if (st.responseMode === "concise") {
-          retryMessage += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. After this response, return to your normal response length and disregard the above brevity instruction entirely.)";
-        } else {
-          retryMessage += "\n\n(For this response only: give a thorough, well-structured response \u2014 use headings, sub-points, and formatting where helpful \u2014 but stay focused on what\u2019s directly relevant. Cut filler and tangential areas. After this response, return to your normal response length and disregard this length instruction entirely.)";
-        }
+        var retryMessage = JR.buildMessage({
+          question: retryQuestion, text: text, sentence: sentence,
+          wholeResponse: !!entry.wholeResponse, mode: st.responseMode,
+        });
         // Reset the item back to __PENDING__ so captureResponse overwrites it in-place
         if (activeItem) activeItem.responseHTML = "__PENDING__";
         entry.responseHTML = "__PENDING__";
@@ -1565,22 +1510,16 @@
         popup.classList.add("jr-popup--generating");
         timeoutDiv.remove();
         popup.appendChild(JR.createLoadingDiv());
-        JR.freezeChat();
         JR.enqueueMessage({
           force: true,
           message: retryMessage,
           waitOpts: {
-            popup: popup, turnsBefore: 0, text: text, sentence: sentence,
-            blockTypes: entry.blockTypes, unlockScroll: null, parentId: entry.parentId,
+            popup: popup, text: text, sentence: sentence,
+            blockTypes: entry.blockTypes, parentId: entry.parentId,
             question: retryQuestion,
             preRegisteredHlId: hlId, preRegisteredItemId: retryItemId
           },
-          beforeSend: function (w) {
-            w.turnsBefore = document.querySelectorAll(JR.SELECTORS.aiTurn).length;
-            var scrollAnchor = document.querySelector(JR.SELECTORS.aiTurn) || document.body;
-            var chatScrollParent = JR.getScrollParent(scrollAnchor);
-            w.unlockScroll = JR.lockScroll(chatScrollParent, scrollAnchor);
-          },
+          beforeSend: function (w) { JR.prepareSend(w, null); },
         });
       });
       retryBtn.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });

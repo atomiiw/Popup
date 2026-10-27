@@ -6,7 +6,7 @@
 
   /** Get the horizontal center of the chat column, or null. */
   function getChatColCenter() {
-    var el = document.querySelector('[class*="react-scroll-to-bottom"]') || document.querySelector('main');
+    var el = JR.site.chatColumn();
     if (!el) return null;
     var r = el.getBoundingClientRect();
     return r.left + r.width / 2;
@@ -97,7 +97,6 @@
       var byQuote = {};
       for (var i = 0; i < storageHighlights.length; i++) {
         var h = storageHighlights[i];
-        if (h.url !== location.href) continue;
         var qid = h.quoteId;
         if (!byQuote[qid]) byQuote[qid] = [];
         byQuote[qid].push(h);
@@ -124,7 +123,9 @@
           question: items[activeIdx].question,
           spans: [],
           items: items.map(function (it) {
-            return { id: it.id, question: it.question, responseHTML: it.responseHTML, questionIndex: it.questionIndex, responseIndex: it.responseIndex };
+            // Stored records hold no content; read it back from ChatGPT when available.
+            var c = JR.isPlaceholderHTML(it.responseHTML) ? JR.qa.get(it.turnKeys) : null;
+            return { id: it.id, question: c ? c.question : it.question, responseHTML: c ? c.responseHTML : it.responseHTML, turnKeys: it.turnKeys };
           }),
           activeItemIndex: activeIdx,
           wholeResponse: !!items[0].wholeResponse,
@@ -145,8 +146,6 @@
     if (!query) return [];
     var q = query.toLowerCase();
     var result = [];
-    var S = JR.SELECTORS;
-
     var allEntries = searchMap.entries;
     var childrenOf = searchMap.childrenOf;
 
@@ -188,7 +187,7 @@
 
         // Response matches interleaved with child highlights by position
         var versionKids = kidsByParentItem[item.id] || [];
-        if (item.responseHTML && item.responseHTML !== "__PENDING__") {
+        if (item.responseHTML && !JR.isPlaceholderHTML(item.responseHTML)) {
           var rText = stripHTML(item.responseHTML, item.id);
           var rLower = rText.toLowerCase();
 
@@ -247,13 +246,14 @@
     }
 
     // Walk turns in DOM order
-    var turns = document.querySelectorAll(S.aiTurn);
+    // (ChatGPT virtualizes the thread: only turns near the viewport are in the DOM.)
+    var turns = JR.site.turns();
 
     for (var ti = 0; ti < turns.length; ti++) {
       var turn = turns[ti];
-      if (turn.classList.contains("jr-hidden")) continue;
+      if (st.hiddenTurnKeys.has(JR.site.turnKey(turn))) continue;
 
-      var markdown = turn.querySelector(S.responseContent);
+      var markdown = JR.site.assistantBodies(turn)[0];
       if (!markdown) continue;
 
       // Collect page matches with their character offsets
@@ -271,7 +271,7 @@
       st.completedHighlights.forEach(function (entry, id) {
         if (entry.parentId || entry._jrTemp) return;
         if (!entry.spans || entry.spans.length === 0 || !entry.spans[0].isConnected) return;
-        var hlTurn = entry.spans[0].closest(S.aiTurn);
+        var hlTurn = JR.site.turnOf(entry.spans[0]);
         if (hlTurn !== turn) return;
         var charOff = charOffsetOf(entry.spans[0], markdown);
         hlsInTurn.push({ charOffset: charOff, quoteId: id, entry: entry });

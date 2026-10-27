@@ -2,7 +2,6 @@
 (function () {
   "use strict";
 
-  var S = JR.SELECTORS;
   var st = JR.state;
 
   /**
@@ -22,160 +21,289 @@
 
   // Block ChatGPT's stop button while a Popup question is generating.
   // Uses capture phase so it fires before ChatGPT's own handler.
+  // st.allowStopClick lets Popup's own timeout stop generation (it used to be
+  // swallowed by this very listener).
   document.addEventListener("click", function (e) {
-    if (!st.responseWatchActive) return;
-    var stopBtn = e.target.closest(S.stopButton);
-    if (stopBtn) {
+    if (!st.responseWatchActive || st.allowStopClick) return;
+    if (JR.site.isStopButton(e.target)) {
       e.stopPropagation();
       e.preventDefault();
     }
   }, true);
 
-  // --- Chat viewport freeze ---
-  // Visually freezes the conversation so injected turns never flash.
-  // Called from popup send; released when the question turn is hidden.
-  var _freezeStyle = null;
+  function stopGeneration() {
+    var stopBtn = JR.site.stopButton();
+    if (!stopBtn) return;
+    st.allowStopClick = true;
+    try { stopBtn.click(); } finally { st.allowStopClick = false; }
+  }
+
+  // Open Popup response streams (net-tap.js start/done), counted in JR.isGenerating.
+  st.netActive = 0;
+  document.addEventListener("jr-net", function (e) {
+    var kind;
+    try { kind = JSON.parse(e.detail).kind; } catch (err) { return; }
+    if (kind === "start") st.netActive++;
+    else if (kind === "done") st.netActive = Math.max(0, st.netActive - 1);
+  });
+
+  /** Remove text from ChatGPT's composer (used when ChatGPT refused our send). */
+  function clearComposer(composer) {
+    if (!composer) return;
+    composer.focus({ preventScroll: true });
+    try {
+      document.execCommand("selectAll", false, null);
+      document.execCommand("delete", false, null);
+    } catch (e) { /* ignore */ }
+    if (JR.site.composerText(composer).trim()) {
+      composer.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true }));
+    }
+    composer.blur();
+  }
+
+  // --- Turn snapshots & chat freeze ---
 
   /**
-   * Hide any conversation turn that follows the current last turn.
-   * Uses the CSS sibling combinator — applies synchronously before paint,
-   * so new turns are never visible even for a single frame.
+   * Record which turns exist right now, so the turn created by our send can be
+   * recognised as "new". Keys, not counts: ChatGPT virtualizes the thread, so
+   * the number of turns in the DOM changes as the user scrolls.
    */
-  JR.freezeChat = function () {
-    if (_freezeStyle) return;
-    var allTurns = document.querySelectorAll(S.aiTurn);
-    if (allTurns.length === 0) return;
-    var lastTurn = allTurns[allTurns.length - 1];
-    var lastNum = JR.getTurnNumber(lastTurn);
-    if (lastNum < 1) return;
-    _freezeStyle = document.createElement("style");
-    _freezeStyle.id = "jr-freeze";
-    // Hide the next several turn numbers explicitly
-    var rules = [];
-    for (var fi = 1; fi <= 6; fi++) {
-      rules.push('[data-testid="conversation-turn-' + (lastNum + fi) + '"]');
+  JR.snapshotTurns = function () {
+    var turns = JR.site.turns();
+    var keys = new Set();
+    for (var i = 0; i < turns.length; i++) {
+      var k = JR.site.turnKey(turns[i]);
+      if (k) keys.add(k);
     }
-    _freezeStyle.textContent = rules.join(",\n") + " { display: none !important; }";
-    document.head.appendChild(_freezeStyle);
+    return { keys: keys, lastKey: turns.length ? JR.site.turnKey(turns[turns.length - 1]) : null };
   };
 
+  /** True if turn comes after the snapshot's last turn (or that turn isn't mounted any more). */
+  function isAfterSnapshot(turn, snap) {
+    if (!snap.lastKey) return true;
+    var last = JR.site.findTurnByKey(snap.lastKey);
+    if (!last) return true;
+    return !!(last.compareDocumentPosition(turn) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+
+  function norm60(s) {
+    return (s || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  }
+
+  /**
+   * Turns created by a Popup send since the snapshot, in DOM order.
+   *
+   * "Not in the snapshot" alone is not enough: ChatGPT virtualizes the thread,
+   * so scrolling remounts OLD turns that weren't in the DOM at snapshot time.
+   * A turn only counts once its question text is rendered and identifies it:
+   * equal to `message` when given, otherwise any Popup-format message. A turn
+   * whose text isn't rendered yet shows nothing, so it can wait for the next check.
+   */
+  JR.findNewTurns = function (snap, message) {
+    if (!snap || !snap.keys) return [];
+    var want = message ? norm60(message) : null;
+    var out = [];
+    var turns = JR.site.turns();
+    for (var i = 0; i < turns.length; i++) {
+      var k = JR.site.turnKey(turns[i]);
+      if (!k || snap.keys.has(k)) continue;
+      if (!isAfterSnapshot(turns[i], snap)) continue;
+      var ut = JR.site.userText(turns[i]);
+      if (!ut || !ut.trim()) continue;
+      if (want ? norm60(ut) !== want : !JR.isPopupMessage(ut)) continue;
+      out.push(turns[i]);
+    }
+    return out;
+  };
+
+  // Freeze: while a Popup send is in flight, any turn that appears after the
+  // snapshot is hidden synchronously inside a MutationObserver callback, which
+  // runs before the browser paints — so the injected Q&A never flashes.
+  var _freeze = null;
+
+  JR.freezeChat = function () {
+    if (_freeze) return;
+    var snap = JR.snapshotTurns();
+    var root = JR.site.scrollContainer() || document.body;
+    var mo = new MutationObserver(function () {
+      if (JR.perf) JR.perf.count("freezeObserver");
+      var fresh = JR.findNewTurns(snap);
+      var keys = [];
+      for (var i = 0; i < fresh.length; i++) {
+        var k = JR.site.turnKey(fresh[i]);
+        if (st.hiddenTurnKeys.has(k)) continue; // already hidden (an earlier Popup Q&A remounting)
+        if (_freeze.keys.indexOf(k) === -1) { _freeze.keys.push(k); keys.push(k); }
+      }
+      if (keys.length) JR.hideTurnKeys(keys);
+    });
+    mo.observe(root, { childList: true, subtree: true });
+    _freeze = { mo: mo, keys: [] };
+  };
+
+  /** Stop freezing. Returns the keys the freeze hid (the caller unhides them if the send is abandoned). */
   JR.unfreezeChat = function () {
-    if (!_freezeStyle) return;
-    _freezeStyle.remove();
-    _freezeStyle = null;
+    if (!_freeze) return [];
+    _freeze.mo.disconnect();
+    var keys = _freeze.keys;
+    _freeze = null;
+    return keys;
   };
 
   // --- Chat injection ---
 
-  JR.findSendButton = function () {
-    var btn = document.querySelector(S.sendButton);
-    if (btn) return btn;
-    btn = document.querySelector('#composer-submit-button');
-    if (btn) return btn;
-    btn = document.querySelector('button[aria-label="Send prompt"]');
-    if (btn) return btn;
-    btn = document.querySelector('form button[type="submit"]');
-    return btn || null;
-  };
-
-  JR.injectAndSend = function (message) {
-    // Prefer #prompt-textarea (ChatGPT's ProseMirror editor) over generic contenteditable
-    var chatInput = document.querySelector('#prompt-textarea') || document.querySelector(S.chatInput);
-    if (!chatInput) {
-      console.error("[Popup] Chat input not found");
-      return;
+  /** Insert text into ChatGPT's composer. Returns true if the text is verifiably there. */
+  function insertIntoComposer(composer, message) {
+    var probe = message.replace(/\s+/g, " ").slice(0, 30);
+    function landed() {
+      return JR.site.composerText(composer).replace(/\s+/g, " ").indexOf(probe) !== -1;
     }
 
-    // Freeze the conversation scroll container before touching the input —
-    // prevents any ChatGPT-triggered scroll-to-bottom from causing a visible flicker.
-    var scrollAnchor = document.querySelector(S.aiTurn) || chatInput;
-    var scrollParent = JR.getScrollParent(scrollAnchor);
-    var savedScrollTop = scrollParent ? scrollParent.scrollTop : 0;
-
-    // Hide injected text + freeze composer height.
-    // Target the prosemirror-parent (direct parent of #prompt-textarea).
-    var composerH = chatInput.parentElement ? chatInput.parentElement.offsetHeight : 52;
-    var hideStyle = document.createElement("style");
-    hideStyle.textContent =
-      '#prompt-textarea, #prompt-textarea * { color: transparent !important; caret-color: transparent !important; }' +
-      '\ndiv:has(> #prompt-textarea) { max-height: ' + composerH + 'px !important; overflow: hidden !important; }';
-    document.head.appendChild(hideStyle);
-
-    hideStyle.id = "jr-hide-style";
-
-    chatInput.focus({ preventScroll: true });
+    if (composer.tagName === "TEXTAREA") {
+      var setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      setter.call(composer, message);
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      return landed();
+    }
 
     // Strategy 1: ProseMirror beforeinput event (modern ProseMirror input handling)
-    var inserted = false;
     try {
-      chatInput.dispatchEvent(new InputEvent("beforeinput", {
-        inputType: "insertText",
-        data: message,
-        bubbles: true,
-        cancelable: true,
-        composed: true,
+      composer.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "insertText", data: message, bubbles: true, cancelable: true, composed: true,
       }));
-      var afterBeforeinput = chatInput.textContent || "";
-      if (afterBeforeinput.indexOf(message.slice(0, 30)) !== -1) {
-        inserted = true;
-      }
+      if (landed()) return true;
     } catch (e) { /* ignore */ }
 
     // Strategy 2: execCommand insertText
-    if (!inserted) {
-      try {
-        inserted = document.execCommand("insertText", false, message);
-      } catch (e) { /* ignore */ }
+    try {
+      document.execCommand("insertText", false, message);
+      if (landed()) return true;
+    } catch (e) { /* ignore */ }
+
+    // Strategy 3: synthetic paste event
+    var dt = new DataTransfer();
+    dt.setData("text/plain", message);
+    composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    return landed();
+  }
+
+  /** Record the outcome of a send step (shown by JR.diagnose and the timeout UI). */
+  function report(ok, stage, detail) {
+    st.lastSendReport = { ok: ok, stage: stage, detail: detail || null, when: new Date().toISOString() };
+    if (!ok) {
+      console.error("[Popup] Send failed at " + stage + (detail ? ": " + detail : ""));
+      JR.diagnose();
+    }
+    return st.lastSendReport;
+  }
+
+  /**
+   * Type `message` into ChatGPT's composer (hidden from view) and send it.
+   * onDone(report) gets { ok, stage, detail } once the message is sent, or as
+   * soon as a step fails (composer missing, text didn't land, couldn't submit).
+   */
+  JR.injectAndSend = function (message, onDone) {
+    onDone = onDone || function () {};
+    var chatInput = JR.site.composer();
+    if (!chatInput) {
+      onDone(report(false, "composer", "ChatGPT's input box was not found"));
+      return;
     }
 
-    // Strategy 3: synthetic paste event (worked with older ChatGPT builds)
-    if (!inserted) {
-      var dt = new DataTransfer();
-      dt.setData("text/plain", message);
-      chatInput.dispatchEvent(new ClipboardEvent("paste", {
-        clipboardData: dt,
-        bubbles: true,
-        cancelable: true,
-      }));
+    // Prevent any ChatGPT-triggered scroll-to-bottom from causing a visible flicker.
+    var scrollParent = JR.site.scrollContainer();
+    var savedScrollTop = scrollParent ? scrollParent.scrollTop : 0;
+
+    // Hide injected text + freeze composer height while it sits in the input.
+    var composerH = chatInput.parentElement ? chatInput.parentElement.offsetHeight : 52;
+    chatInput.setAttribute("data-jr-injecting", "");
+    var hideStyle = document.createElement("style");
+    hideStyle.id = "jr-hide-style";
+    hideStyle.textContent =
+      "[data-jr-injecting], [data-jr-injecting] * { color: transparent !important; caret-color: transparent !important; }" +
+      "\n:has(> [data-jr-injecting]) { max-height: " + composerH + "px !important; overflow: hidden !important; }";
+    document.head.appendChild(hideStyle);
+    function unhideComposer() {
+      hideStyle.remove();
+      chatInput.removeAttribute("data-jr-injecting");
     }
 
+    chatInput.focus({ preventScroll: true });
+    var inserted = insertIntoComposer(chatInput, message);
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+    if (!inserted) {
+      unhideComposer();
+      onDone(report(false, "insert", "the text did not appear in ChatGPT's input box"));
+      return;
+    }
+
+    var probe = message.replace(/\s+/g, " ").slice(0, 30);
+    function afterSubmit(how) {
+      chatInput.blur();
+      if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+      // Keep the text hidden until React has actually cleared the input.
+      var tries = 0;
+      (function removeHideWhenEmpty() {
+        var left = JR.site.composerText(chatInput);
+        if (left.trim().length === 0 || tries > 20) {
+          unhideComposer();
+          var stuck = left.replace(/\s+/g, " ").indexOf(probe) !== -1;
+          onDone(stuck ? report(false, "submit", "the message stayed in the input after " + how)
+                       : report(true, "sent", how));
+          return;
+        }
+        tries++;
+        requestAnimationFrame(removeHideWhenEmpty);
+      })();
+    }
 
     var attempts = 0;
     function trySend() {
-      var sendBtn = JR.findSendButton();
+      var sendBtn = JR.site.sendButton(chatInput);
       if (sendBtn && !sendBtn.disabled) {
         if (scrollParent) scrollParent.scrollTop = savedScrollTop;
         sendBtn.click();
-        chatInput.blur();
-        if (scrollParent) scrollParent.scrollTop = savedScrollTop;
-        // Delay hideStyle removal — React clears the input async after click.
-        // Wait until the input is empty so text doesn't flash.
-        var _hideAttempts = 0;
-        function removeHideWhenEmpty() {
-          if ((chatInput.textContent || "").trim().length === 0 || _hideAttempts > 20) {
-            hideStyle.remove();
-            return;
-          }
-          _hideAttempts++;
-          requestAnimationFrame(removeHideWhenEmpty);
-        }
-        requestAnimationFrame(removeHideWhenEmpty);
+        afterSubmit("send button");
         return;
       }
       attempts++;
-      if (attempts < 20) {
+      if (attempts < 12) {
         setTimeout(trySend, 150);
-      } else {
-        hideStyle.remove();
-        console.error(
-          "[Popup] Send button not found or disabled after retries.",
-          "Button found:", !!sendBtn,
-          "Input text:", chatInput.textContent.slice(0, 50)
-        );
+        return;
       }
+      // No usable send button (renamed / localized): try Enter, then form submit.
+      chatInput.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true,
+      }));
+      setTimeout(function () {
+        if (JR.site.composerText(chatInput).trim().length === 0) { afterSubmit("Enter key"); return; }
+        var form = chatInput.closest("form");
+        if (form && form.requestSubmit) {
+          try { form.requestSubmit(); } catch (e) { /* ignore */ }
+        }
+        setTimeout(function () { afterSubmit("form submit"); }, 300);
+      }, 300);
     }
     requestAnimationFrame(trySend);
+  };
+
+  /**
+   * Shared beforeSend step for every send path: snapshot the turns (to spot the
+   * new one) and keep the user's scroll position while ChatGPT answers.
+   */
+  JR.prepareSend = function (w, anchorEl) {
+    // Freeze here, when the message is really sent (not when it was queued).
+    JR.freezeChat();
+    w.turnsBefore = JR.snapshotTurns();
+    var scroller = JR.site.scrollContainer();
+    var anchor = anchorEl && anchorEl.isConnected ? anchorEl : null;
+    var unlock = scroller ? JR.lockScroll(scroller, anchor) : null;
+    // Page-world guard (scroll-guard.js): ChatGPT's own scroll-to-new-turn is ignored while set.
+    document.documentElement.setAttribute("data-jr-scroll-lock", String(Date.now()));
+    JR.setTailHidden(true);
+    w.unlockScroll = function () {
+      document.documentElement.removeAttribute("data-jr-scroll-lock");
+      if (unlock) unlock();
+    };
   };
 
   // --- Message queue ---
@@ -186,8 +314,8 @@
    * Enqueue a message to be sent. If idle, sends immediately.
    * @param {object} opts
    * @param {string} opts.message - The injection message
-   * @param {object} opts.waitOpts - Args for JR.waitForResponse (popup, turnsBefore, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts)
-   * @param {function} [opts.beforeSend] - Called right before injection (UI setup: show loading, lock scroll, etc.). Receives opts.waitOpts and should mutate it (e.g. set turnsBefore).
+   * @param {object} opts.waitOpts - Args for JR.waitForResponse (popup, text, sentence, blockTypes, parentId, question, editOpts, ...)
+   * @param {function} [opts.beforeSend] - Called right before injection; should call JR.prepareSend(w, anchor).
    */
   JR.enqueueMessage = function (opts) {
     if (!opts.force && (JR.isGenerating() || st.responseWatchActive)) {
@@ -198,19 +326,24 @@
   };
 
   function sendQueued(opts) {
-    if (opts.beforeSend) opts.beforeSend(opts.waitOpts);
+    var w = opts.waitOpts;
+    if (opts.beforeSend) opts.beforeSend(w);
+    if (!w.turnsBefore || !w.turnsBefore.keys) w.turnsBefore = JR.snapshotTurns();
 
     // Offline check: skip injection entirely, save __TIMEOUT__ immediately
     if (!navigator.onLine) {
-      var w = opts.waitOpts;
+      report(false, "offline", "the browser is offline");
       immediateTimeout(w);
       JR.drainQueue();
       return;
     }
 
-    JR.injectAndSend(opts.message);
-    var w = opts.waitOpts;
-    JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll, w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId);
+    var watch = JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll,
+      w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId, opts.message,
+      w.wholeResponse, w.wholeResponseFull);
+    JR.injectAndSend(opts.message, function (r) {
+      if (!r.ok && watch) watch.failInjection(r);
+    });
   }
 
   /**
@@ -218,6 +351,8 @@
    * Mirrors saveTimeoutVersion logic but without needing a waitForResponse context.
    */
   function immediateTimeout(w) {
+    JR.unfreezeChat();
+    if (w.unlockScroll) w.unlockScroll();
     var hlId = w.editOpts ? w.editOpts.hlId : (w.preRegisteredHlId || null);
     if (!hlId) return;
     var memEntry = st.completedHighlights.get(hlId);
@@ -225,16 +360,14 @@
 
     if (w.editOpts) {
       var newItemId = crypto.randomUUID();
-      memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", questionIndex: -1, responseIndex: -1 });
+      memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", turnKeys: [] });
       memEntry.activeItemIndex = memEntry.items.length - 1;
       memEntry.question = w.question;
       memEntry.responseHTML = "__TIMEOUT__";
       saveHighlight({
-        id: newItemId, quoteId: hlId, text: memEntry.text, sentence: memEntry.sentence,
-        blockTypes: memEntry.blockTypes, responseHTML: "__TIMEOUT__", question: w.question,
-        url: location.href, site: "chatgpt",
-        parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
-        sourceTurnIndex: -1, questionIndex: -1, responseIndex: -1, active: true,
+        id: newItemId, quoteId: hlId, text: memEntry.text, responseHTML: "__TIMEOUT__",
+        url: location.href, parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
+        sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: [], active: true,
         wholeResponse: !!memEntry.wholeResponse,
       });
     } else {
@@ -259,10 +392,11 @@
 
   /**
    * Drain the next queued message after a generation completes.
-   * Called from captureResponse.
+   * If ChatGPT is still generating, the poller below drains once it is idle.
    */
   JR.drainQueue = function () {
     if (st.messageQueue.length === 0) return;
+    if (JR.isGenerating()) return;
     var next = st.messageQueue.shift();
     sendQueued(next);
   };
@@ -279,6 +413,75 @@
 
   // --- Response capture ---
 
+  /** Copy a turn's assistant answer (all markdown roots) into a popup's response div. */
+  // --- Incremental streaming mirror ---
+  // Copying the whole answer every frame recreated every word, which restarted
+  // ChatGPT's per-word fade-in and made text appear in jumps. Instead, patch the
+  // popup copy in place: existing nodes are kept (text updated, attributes
+  // synced) and only new nodes are cloned in, so each new word animates once.
+
+  function sameKind(a, b) {
+    return a.nodeType === b.nodeType && (a.nodeType !== 1 || a.tagName === b.tagName);
+  }
+
+  function syncAttrs(src, dst) {
+    var i, a;
+    for (i = dst.attributes.length - 1; i >= 0; i--) {
+      a = dst.attributes[i].name;
+      if (!src.hasAttribute(a)) dst.removeAttribute(a);
+    }
+    for (i = 0; i < src.attributes.length; i++) {
+      a = src.attributes[i];
+      if (dst.getAttribute(a.name) !== a.value) dst.setAttribute(a.name, a.value);
+    }
+  }
+
+  /** Make dstParent's children mirror srcNodes (an array), reusing matching nodes. */
+  function syncChildren(srcNodes, dstParent) {
+    var d = dstParent.firstChild;
+    for (var i = 0; i < srcNodes.length; i++) {
+      var s = srcNodes[i];
+      if (d && sameKind(s, d)) {
+        if (s.nodeType === 3 || s.nodeType === 8) {
+          if (d.data !== s.data) d.data = s.data;
+        } else if (s.nodeType === 1) {
+          syncAttrs(s, d);
+          syncChildren(Array.prototype.slice.call(s.childNodes), d);
+        }
+        d = d.nextSibling;
+      } else {
+        dstParent.insertBefore(s.cloneNode(true), d);
+      }
+    }
+    while (d) {
+      var next = d.nextSibling;
+      dstParent.removeChild(d);
+      d = next;
+    }
+  }
+
+  /** Mirror a turn's answer (all markdown roots) into responseDiv incrementally. */
+  function syncAnswerInto(responseDiv, turn) {
+    var bodies = JR.site.assistantBodies(turn);
+    if (!bodies.length) return false;
+    var src = [];
+    for (var i = 0; i < bodies.length; i++) src = src.concat(Array.prototype.slice.call(bodies[i].childNodes));
+    syncChildren(src, responseDiv);
+    return true;
+  }
+
+  function cloneAnswerInto(responseDiv, turn) {
+    var bodies = JR.site.assistantBodies(turn);
+    if (!bodies.length) return false;
+    var nodes = [];
+    for (var i = 0; i < bodies.length; i++) {
+      var c = bodies[i].cloneNode(true);
+      while (c.firstChild) nodes.push(c.removeChild(c.firstChild));
+    }
+    responseDiv.replaceChildren.apply(responseDiv, nodes);
+    return true;
+  }
+
   /**
    * Display the AI response content inside the popup.
    * Reuses an existing .jr-popup-response div if streaming already created one.
@@ -293,17 +496,7 @@
       responseDiv.className = "jr-popup-response";
       popup.appendChild(responseDiv);
     }
-
-    var markdown = responseTurn.querySelector(S.responseContent);
-    if (markdown) {
-      responseDiv.innerHTML = markdown.innerHTML;
-    } else {
-      // Fallback: read the assistant message body directly. The sr-only label
-      // sits outside this node, so no localized prefix needs stripping.
-      var assistantBody = responseTurn.querySelector(S.assistantMsg);
-      var text = (assistantBody || responseTurn).textContent || "";
-      responseDiv.textContent = text.trim();
-    }
+    cloneAnswerInto(responseDiv, responseTurn);
     if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
     if (JR.processResponseLinks) JR.processResponseLinks(responseDiv);
     if (JR.processResponseImages) JR.processResponseImages(responseDiv); // [CAROUSEL-LOCKED]
@@ -314,6 +507,15 @@
    * Block programmatic auto-scrolling on a container. Returns an unlock function.
    */
   JR.lockScroll = function (container, anchorEl) {
+    // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
+    // virtual list re-measures, which detaches the original element.
+    var anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
+    if (anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey) || anchorEl;
+    function liveAnchor() {
+      if (anchorEl && anchorEl.isConnected) return anchorEl;
+      if (anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);
+      return anchorEl && anchorEl.isConnected ? anchorEl : null;
+    }
     var savedTop = container.scrollTop;
     var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     var userScrolling = false;
@@ -330,35 +532,41 @@
       el.addEventListener("wheel", markUser, { passive: true });
       el.addEventListener("touchstart", markUser, { passive: true });
       el.addEventListener("touchend", markUser, { passive: true });
+      el.addEventListener("keydown", markUser, { passive: true });
+      el.addEventListener("pointerdown", markUser, { passive: true });
     }
     function removeListeners(el) {
       el.removeEventListener("wheel", markUser);
       el.removeEventListener("touchstart", markUser);
       el.removeEventListener("touchend", markUser);
+      el.removeEventListener("keydown", markUser);
+      el.removeEventListener("pointerdown", markUser);
     }
 
     function enforce() {
-      if (!container.isConnected && anchorEl && anchorEl.isConnected) {
+      if (!container.isConnected) {
+        var fresh = JR.site.scrollContainer();
+        if (!fresh) return;
         removeListeners(container);
         container.scrollTo = origScrollTo;
         container.scrollBy = origScrollBy;
-        container = JR.getScrollParent(anchorEl);
+        container = fresh;
         savedTop = container.scrollTop;
         origScrollTo = container.scrollTo;
         origScrollBy = container.scrollBy;
         patchScroll();
         addListeners(container);
       }
-      if (!container.isConnected) return;
 
+      var anchor = liveAnchor();
       if (userScrolling) {
         savedTop = container.scrollTop;
-        if (anchorEl && anchorEl.isConnected) {
-          savedAnchorY = anchorEl.getBoundingClientRect().top;
+        if (anchor) {
+          savedAnchorY = anchor.getBoundingClientRect().top;
         }
       } else {
-        if (anchorEl && anchorEl.isConnected && savedAnchorY !== null) {
-          var currentY = anchorEl.getBoundingClientRect().top;
+        if (anchor && savedAnchorY !== null) {
+          var currentY = anchor.getBoundingClientRect().top;
           var drift = currentY - savedAnchorY;
           if (Math.abs(drift) > 1) {
             container.scrollTop += drift;
@@ -400,7 +608,25 @@
     };
   };
 
-  JR.waitForResponse = function (popup, turnsBefore, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts, preRegisteredHlId, preRegisteredItemId) {
+  /** User-facing reason for a failed send, from the last injection report. */
+  var failureText = JR.sendFailureText = function () {
+    var r = st.lastSendReport;
+    if (!r || r.ok) return "Couldn’t get a response";
+    if (r.stage === "composer") return "Popup couldn’t find ChatGPT’s input box — nothing was sent";
+    if (r.stage === "insert") return "Popup couldn’t type into ChatGPT’s input box — nothing was sent";
+    if (r.stage === "submit") return "Popup couldn’t press Send — nothing was sent";
+    if (r.stage === "offline") return "You’re offline — nothing was sent";
+    if (r.stage === "turn-not-found") return "ChatGPT answered, but Popup couldn’t find the answer on the page";
+    return "Couldn’t get a response";
+  };
+
+  /**
+   * Watch for the Q&A turn created by our send, hide it, stream the answer
+   * into the popup and save the result. Returns { failInjection(report) }.
+   * @param {object} snap - JR.snapshotTurns() taken right before sending
+   * @param {string} message - the exact injected message (used to recognise the new turn)
+   */
+  JR.waitForResponse = function (popup, snap, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts, preRegisteredHlId, preRegisteredItemId, message, wholeResponse, wholeResponseFull) {
     // Resolve the parent's active item id at call time (for parentItemId tracking)
     var parentItemId = null;
     if (parentId) {
@@ -411,11 +637,13 @@
       }
     }
     st.responseWatchActive = true;
+    var convUrl = location.href; // storage writes go to this conversation even if the user navigates away
     var startTime = Date.now();
     var timeoutMs = 100000; // 100 seconds
     var timerId = null;
-    var questionTurn = null;
-    var responseTurn = null;
+    var qaKeys = [];          // keys of the turn(s) holding our Q&A (1 in the new DOM, 2 in the legacy DOM)
+    var responseTurn = null;  // element holding the answer (re-found by key if ChatGPT remounts it)
+    var responseKey = null;
     var cancelled = false;
     var detached = false;
     var detachedSpans = null;
@@ -423,10 +651,69 @@
     var streamObserver = null;
     var streamRafId = null;
     var streamDirty = false;
+    var injectionFailed = false;
+
+    // Answer text from ChatGPT's network stream (net-tap.js, MAIN world). Used
+    // when the answer's turn isn't in the DOM (virtualized away) or ChatGPT
+    // failed to render it; ChatGPT's own DOM rendering is preferred otherwise.
+    var net = { matched: false, text: "", done: false };
+    var rejected = { count: 0, pending: false };
+    function onNet(e) {
+      var d;
+      try { d = JSON.parse(e.detail); } catch (err) { return; }
+      if (d.kind === "start") {
+        net.matched = !!message && norm60(d.question) === norm60(message);
+        return;
+      }
+      if (!net.matched) return;
+      if (JR.perf) JR.perf.count("netEvents");
+      if (d.kind === "turn") {
+        // The stream names our Q&A turn even when it never mounts: hide it now
+        // and save the key, so it stays hidden and can be read back later.
+        if (d.turnKey && qaKeys.indexOf(d.turnKey) === -1) {
+          qaKeys.push(d.turnKey); // responseKey stays unset until the turn mounts, so the DOM stream observer attaches then
+          st.watchingTurnKey = d.turnKey;
+          JR.hideTurnKeys([d.turnKey]);
+          addDeletedTurns(convUrl, [d.turnKey]);
+          if (!editOpts && preRegisteredItemId) updateHighlightFields(preRegisteredItemId, { turnKeys: qaKeys.slice() }, convUrl);
+        }
+        return;
+      }
+      net.text = d.text || net.text;
+      if (d.kind === "done") net.done = true;
+      if (!domAnswerUsable()) renderNetText();
+    }
+    document.addEventListener("jr-net", onNet);
+
+    /** ChatGPT's DOM has a usable answer for our turn right now. */
+    function domAnswerUsable() {
+      var t = liveResponseTurn();
+      return !!(t && !JR.site.renderFailed(t) && JR.site.assistantText(t).trim());
+    }
+
+    function renderNetText() {
+      var targetPopup = getStreamTarget();
+      if (!targetPopup || !net.text) return;
+      var responseDiv = targetPopup.querySelector(".jr-popup-response");
+      if (!responseDiv) {
+        var loadingEl = targetPopup.querySelector(".jr-popup-loading");
+        if (loadingEl) loadingEl.remove();
+        responseDiv = document.createElement("div");
+        responseDiv.className = "jr-popup-response";
+        targetPopup.appendChild(responseDiv);
+        JR.repositionPopup();
+      }
+      var tmp = document.createElement("div");
+      tmp.innerHTML = JR.renderMarkdown(net.text);
+      syncChildren(Array.prototype.slice.call(tmp.childNodes), responseDiv);
+      targetPopup.classList.add("jr-popup--streaming");
+      if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
+      JR.checkStreamingOverflow();
+      if (targetPopup._jrLockedDirection === "above") JR.repositionPopup();
+    }
 
     function unhideTurns() {
-      if (questionTurn) questionTurn.classList.remove("jr-hidden");
-      if (responseTurn) responseTurn.classList.remove("jr-hidden");
+      JR.unhideTurnKeys(qaKeys);
     }
 
     function showTimeoutUI(targetPopup) {
@@ -440,7 +727,7 @@
       timeoutDiv.className = "jr-popup-loading";
 
       var msg = document.createElement("div");
-      msg.textContent = "Couldn\u2019t get a response";
+      msg.textContent = failureText();
       timeoutDiv.appendChild(msg);
 
       var retryBtn = document.createElement("button");
@@ -452,21 +739,14 @@
         ev.stopPropagation();
         timeoutDiv.remove();
 
-        // Rebuild the message
-        var retryMessage;
-        if (sentence) {
-          retryMessage = 'Regarding this part of your response:\n"' + sentence + '"\n\nSpecifically: "' + text + '"\n\n' + question;
-        } else {
-          retryMessage = 'Regarding this part of your response:\n"' + text + '"\n\n' + question;
-        }
-        if (st.responseMode === "concise") {
-          retryMessage += "\n\n(For this response only: please keep it brief \u2014 2-3 sentences. After this response, return to your normal response length and disregard the above brevity instruction entirely.)";
-        } else {
-          retryMessage += "\n\n(For this response only: give a clear, focused response \u2014 medium length, not too short, not too long. Cover what matters without over-explaining. Use formatting only if it genuinely helps. After this response, return to your normal response length and disregard this length instruction entirely.)";
-        }
+        var retryMessage = JR.buildMessage({
+          question: question, text: text, sentence: sentence, mode: st.responseMode,
+          wholeResponse: !!wholeResponse, wholeResponseFull: wholeResponseFull,
+        });
 
         // Reset item to __PENDING__ so captureResponse overwrites in-place
         var retryHlId = editOpts ? editOpts.hlId : (preRegisteredHlId || detachedHlId);
+        var retryItemId = null;
         if (retryHlId) {
           var retryEntry = st.completedHighlights.get(retryHlId);
           if (retryEntry) {
@@ -474,36 +754,23 @@
             var retryIdx = retryEntry.activeItemIndex || 0;
             if (retryEntry.items && retryEntry.items[retryIdx]) {
               retryEntry.items[retryIdx].responseHTML = "__PENDING__";
+              retryItemId = retryEntry.items[retryIdx].id;
             }
-          }
-        }
-        var retryItemId = null;
-        if (retryHlId) {
-          var re = st.completedHighlights.get(retryHlId);
-          if (re && re.items) {
-            var ri2 = re.activeItemIndex || 0;
-            if (re.items[ri2]) retryItemId = re.items[ri2].id;
           }
         }
 
         targetPopup.appendChild(JR.createLoadingDiv());
 
-        JR.freezeChat();
         JR.enqueueMessage({
           force: true,
           message: retryMessage,
           waitOpts: {
-            popup: targetPopup, turnsBefore: 0, text: text, sentence: sentence,
-            blockTypes: blockTypes, unlockScroll: null, parentId: parentId,
-            question: question,
+            popup: targetPopup, text: text, sentence: sentence,
+            blockTypes: blockTypes, parentId: parentId, question: question,
+            wholeResponse: wholeResponse, wholeResponseFull: wholeResponseFull,
             preRegisteredHlId: retryHlId, preRegisteredItemId: retryItemId
           },
-          beforeSend: function (w) {
-            w.turnsBefore = document.querySelectorAll(S.aiTurn).length;
-            var scrollAnchor = document.querySelector(S.aiTurn) || document.body;
-            var chatScrollParent = JR.getScrollParent(scrollAnchor);
-            w.unlockScroll = JR.lockScroll(chatScrollParent, scrollAnchor);
-          },
+          beforeSend: function (w) { JR.prepareSend(w, null); },
         });
       });
       timeoutDiv.appendChild(retryBtn);
@@ -515,44 +782,47 @@
      * Works for both new highlights (preRegisteredHlId) and edits (editOpts).
      */
     function saveTimeoutVersion() {
+      // Anything our send created stays out of the main chat; record it so it
+      // stays hidden after reload too.
+      var stray = JR.findNewTurns(snap, message).map(JR.site.turnKey);
+      var hideKeys = qaKeys.concat(stray.filter(function (k) { return qaKeys.indexOf(k) === -1; }));
+      if (hideKeys.length) {
+        JR.hideTurnKeys(hideKeys);
+        addDeletedTurns(convUrl, hideKeys);
+      }
+
       var hlId = editOpts ? editOpts.hlId : (preRegisteredHlId || detachedHlId);
       if (!hlId) return;
       var memEntry = st.completedHighlights.get(hlId);
       if (!memEntry) return;
-
-      var qNum = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
+      memEntry._jrFailReason = failureText(); // shown by this popup only, not by others
 
       if (editOpts) {
         // Edit: create a new version item with __TIMEOUT__
         var newItemId = crypto.randomUUID();
-        var newItem = { id: newItemId, question: question, responseHTML: "__TIMEOUT__", questionIndex: qNum, responseIndex: -1 };
-        memEntry.items.push(newItem);
+        memEntry.items.push({ id: newItemId, question: question, responseHTML: "__TIMEOUT__", turnKeys: hideKeys });
         memEntry.activeItemIndex = memEntry.items.length - 1;
         memEntry.question = question;
         memEntry.responseHTML = "__TIMEOUT__";
         saveHighlight({
-          id: newItemId, quoteId: hlId, text: text, sentence: sentence,
-          blockTypes: blockTypes, responseHTML: "__TIMEOUT__", question: question,
-          url: location.href, site: "chatgpt",
-          parentId: parentId || null, parentItemId: (memEntry && memEntry.parentItemId) || parentItemId || null,
-          sourceTurnIndex: memEntry.spans && memEntry.spans[0] ? JR.getTurnNumber(memEntry.spans[0].closest(S.aiTurn)) : -1,
-          questionIndex: qNum, responseIndex: -1, active: true,
-          wholeResponse: memEntry ? !!memEntry.wholeResponse : false,
+          id: newItemId, quoteId: hlId, text: text, responseHTML: "__TIMEOUT__", question: question,
+          url: convUrl, parentId: parentId || null,
+          parentItemId: (memEntry && memEntry.parentItemId) || parentItemId || null,
+          sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: hideKeys, active: true,
+          wholeResponse: !!memEntry.wholeResponse,
         });
       } else {
         // New highlight (pre-registered or detached): update the pending item to __TIMEOUT__
         var itemIdx = memEntry.activeItemIndex || 0;
         if (memEntry.items && memEntry.items.length > itemIdx) {
           memEntry.items[itemIdx].responseHTML = "__TIMEOUT__";
-          memEntry.items[itemIdx].questionIndex = qNum;
+          memEntry.items[itemIdx].turnKeys = hideKeys;
         }
         memEntry.responseHTML = "__TIMEOUT__";
         var updateId = preRegisteredItemId
           || (memEntry.items && memEntry.items[itemIdx] ? memEntry.items[itemIdx].id : null);
         if (updateId) {
-          updateHighlightFields(updateId, {
-            responseHTML: "__TIMEOUT__", questionIndex: qNum,
-          });
+          updateHighlightFields(updateId, { responseHTML: "__TIMEOUT__", turnKeys: hideKeys, question: question }, convUrl);
         }
       }
 
@@ -561,23 +831,17 @@
       if (targetPopup && targetPopup.isConnected) {
         JR.rebuildPopupAfterEdit(targetPopup, hlId);
       }
-
-      // Hide ALL turns created after turnsBefore — covers cases where
-      // the poll didn't find them before the timeout fired
-      var allTurnsNow = document.querySelectorAll(S.aiTurn);
-      for (var hti = turnsBefore; hti < allTurnsNow.length; hti++) {
-        var hideTurn = allTurnsNow[hti];
-        hideTurn.classList.add("jr-hidden");
-        var hideIdx = JR.getTurnNumber(hideTurn);
-        JR.addHiddenTurnIndex(hideIdx);
-        addDeletedTurns(location.href, [hideIdx]);
-      }
       JR.updateNavWidget();
     }
 
     function cleanup() {
+      document.removeEventListener("jr-net", onNet);
       st.responseWatchActive = false;
-      JR.unfreezeChat();
+      st.watchingTurnKey = null;
+      var frozen = JR.unfreezeChat();
+      // Turns the freeze hid that turned out not to be ours: show them again.
+      var notOurs = frozen.filter(function (k) { return qaKeys.indexOf(k) === -1; });
+      if (notOurs.length && qaKeys.length) JR.unhideTurnKeys(notOurs);
       if (streamObserver) {
         streamObserver.disconnect();
         streamObserver = null;
@@ -587,6 +851,15 @@
         streamRafId = null;
       }
       if (unlockScroll) unlockScroll();
+      document.querySelectorAll(".jr-popup--streaming").forEach(function (p) { p.classList.remove("jr-popup--streaming"); });
+      setTimeout(JR.diagnose, 500); // keep #jr-diagnostics current after each send
+    }
+
+    function finishWithTimeout() {
+      cleanup();
+      saveTimeoutVersion();
+      st.cancelResponseWatch = null;
+      JR.drainQueue();
     }
 
     /**
@@ -607,23 +880,34 @@
       return null;
     }
 
+    /** The live element for the response turn (ChatGPT may have remounted it). */
+    function liveResponseTurn() {
+      if (!responseKey) return null;
+      if (responseTurn && responseTurn.isConnected) return responseTurn;
+      var fresh = JR.site.findTurnByKey(responseKey);
+      if (fresh) {
+        responseTurn = fresh;
+        if (streamObserver) observeStream();
+      }
+      return fresh;
+    }
+
     /**
-     * Clone current response content into the popup using cloneNode
-     * instead of innerHTML to avoid flicker.
+     * Clone current response content into the popup (replaceChildren instead
+     * of innerHTML to avoid flicker).
      */
     function syncStreamContent() {
       streamDirty = false;
       streamRafId = null;
+      if (JR.perf) JR.perf.count("streamSync");
 
-      var markdown = responseTurn.querySelector(S.responseContent);
-      if (!markdown) return;
-
+      var turn = liveResponseTurn();
+      if (!turn) return;
+      if (JR.site.renderFailed(turn)) return; // ChatGPT's "couldn't load" — the network text is shown instead
+      // ChatGPT mounts an empty answer placeholder first: keep "Waiting for response…" until text arrives.
+      if (!JR.site.assistantText(turn).trim()) return;
       var targetPopup = getStreamTarget();
       if (!targetPopup) return;
-
-      // Remove loading div if still present
-      var loadingEl = targetPopup.querySelector(".jr-popup-loading");
-      if (loadingEl) loadingEl.remove();
 
       // Create or reuse the response div
       var responseDiv = targetPopup.querySelector(".jr-popup-response");
@@ -631,15 +915,15 @@
       if (!responseDiv) {
         responseDiv = document.createElement("div");
         responseDiv.className = "jr-popup-response";
-        targetPopup.appendChild(responseDiv);
         isNew = true;
       }
-
-      // Clone children from source — no innerHTML destruction/rebuild
-      var cloned = markdown.cloneNode(true);
-      var nodes = [];
-      while (cloned.firstChild) nodes.push(cloned.removeChild(cloned.firstChild));
-      responseDiv.replaceChildren.apply(responseDiv, nodes);
+      if (!syncAnswerInto(responseDiv, turn)) return;
+      targetPopup.classList.add("jr-popup--streaming");
+      if (isNew) {
+        var loadingEl = targetPopup.querySelector(".jr-popup-loading");
+        if (loadingEl) loadingEl.remove();
+        targetPopup.appendChild(responseDiv);
+      }
 
       // Delegated click handler for links + images (attach once via shared helper)
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
@@ -663,19 +947,19 @@
       streamRafId = requestAnimationFrame(syncStreamContent);
     }
 
+    function observeStream() {
+      if (streamObserver) streamObserver.disconnect();
+      streamObserver = new MutationObserver(onStreamMutation);
+      streamObserver.observe(responseTurn, { childList: true, subtree: true, characterData: true });
+    }
+
     /**
      * Attach a MutationObserver to the response turn so the popup
      * updates at the same speed ChatGPT renders tokens.
      */
     function startStreaming() {
-      responseTurn.classList.add("jr-hidden");
       syncStreamContent();
-      streamObserver = new MutationObserver(onStreamMutation);
-      streamObserver.observe(responseTurn, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
+      observeStream();
     }
 
     st.cancelResponseWatch = function (detachMode) {
@@ -688,6 +972,7 @@
           // detachedHlId already set from editOpts.hlId
           // Keep observer running — streaming continues in background
           if (unlockScroll) unlockScroll();
+          unlockScroll = null;
           st.cancelResponseWatch = null;
           return;
         }
@@ -697,8 +982,7 @@
           detachedHlId = preRegisteredHlId;
         } else {
           detachedHlId = crypto.randomUUID();
-          var sourceArticle = detachedSpans[0].closest(S.aiTurn);
-          var contentContainer = sourceArticle ? sourceArticle.parentElement : document.body;
+          var contentContainer = JR.site.popupHost(JR.site.turnOf(detachedSpans[0]));
           for (var k = 0; k < detachedSpans.length; k++) {
             detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
             detachedSpans[k].classList.add("jr-source-highlight-done");
@@ -714,6 +998,7 @@
             contentContainer: contentContainer,
             parentId: parentId || null,
             parentItemId: parentItemId || null,
+            sourceTurnKey: JR.getTurnKey(detachedSpans[0]),
             items: [],
             activeItemIndex: 0,
           };
@@ -722,6 +1007,7 @@
 
         // Keep observer running — streaming continues in background
         if (unlockScroll) unlockScroll();
+        unlockScroll = null;
         st.cancelResponseWatch = null;
         return;
       }
@@ -729,7 +1015,12 @@
       if (timerId) clearTimeout(timerId);
       cleanup();
       unhideTurns();
+      removeHiddenTurns(convUrl, qaKeys);
     };
+
+    function captureIfLive() {
+      if (!cancelled) captureResponse();
+    }
 
     function captureResponse() {
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
@@ -744,59 +1035,53 @@
         streamRafId = null;
       }
 
-      responseTurn.classList.add("jr-hidden");
-
-      // If response is empty (user stopped, error), save as __TIMEOUT__
-      var earlyMarkdown = responseTurn.querySelector(S.responseContent);
-      var earlyText = earlyMarkdown ? (earlyMarkdown.textContent || "").trim() : "";
-      if (earlyText.length < 1) {
-        cleanup();
-        saveTimeoutVersion();
-        st.cancelResponseWatch = null;
-        JR.drainQueue();
+      var turn = liveResponseTurn();
+      var responseHTML = null;
+      if (domAnswerUsable()) {
+        responseHTML = JR.site.assistantHTML(turn);
+      } else if (net.text.trim()) {
+        responseHTML = JR.renderMarkdown(net.text); // turn not in the DOM, or ChatGPT failed to render it
+      } else if (turn) {
+        // Empty answer (user stopped, error): save as __TIMEOUT__
+        finishWithTimeout();
         return;
+      } else {
+        // Finished while scrolled out of the DOM and no network copy: keep the
+        // keys; the content is read back when the turn mounts again (JR.qa).
+        responseHTML = "__LOADING__";
       }
+      if (responseHTML !== "__LOADING__") qaKeys.forEach(function (k) {
+        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true });
+      });
+      cleanup();
+
+      var sourceTurnKey = spans.length > 0 ? JR.getTurnKey(spans[0]) : null;
 
       // --- Edit mode: save new item with same quoteId ---
       if (editOpts) {
         var hlId = editOpts.hlId;
 
-        var responseHTML = null;
-        var markdown = responseTurn.querySelector(S.responseContent);
-        if (markdown) responseHTML = markdown.innerHTML;
-        cleanup();
-
-        var qNum = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
-        var rNum = JR.getTurnNumber(responseTurn);
-
         // Update in-memory entry
         var memEntry = st.completedHighlights.get(hlId);
         var newItemId = crypto.randomUUID();
         if (memEntry) {
-          var newItem = { id: newItemId, question: question, responseHTML: responseHTML, questionIndex: qNum, responseIndex: rNum };
-          memEntry.items.push(newItem);
+          memEntry.items.push({ id: newItemId, question: question, responseHTML: responseHTML, turnKeys: qaKeys.slice() });
           memEntry.activeItemIndex = memEntry.items.length - 1;
           memEntry.question = question;
           memEntry.responseHTML = responseHTML;
-          memEntry.responseIndex = rNum;
         }
 
-        // Persist new item to storage (deactivates old items with same quoteId)
+        // Persist new item (deactivates old items with same quoteId; old items keep their own turn keys)
         saveHighlight({
           id: newItemId,
           quoteId: hlId,
           text: text,
-          sentence: sentence,
-          blockTypes: blockTypes,
           responseHTML: responseHTML,
-          question: question,
-          url: location.href,
-          site: "chatgpt",
+          url: convUrl,
           parentId: parentId || null,
           parentItemId: resolveParentItemId(memEntry, parentId) || parentItemId || null,
-          sourceTurnIndex: memEntry ? (memEntry.spans && memEntry.spans[0] ? JR.getTurnNumber(memEntry.spans[0].closest(S.aiTurn)) : -1) : -1,
-          questionIndex: qNum,
-          responseIndex: rNum,
+          sourceTurnKey: (memEntry && memEntry.sourceTurnKey) || sourceTurnKey,
+          turnKeys: qaKeys,
           active: true,
           wholeResponse: memEntry ? !!memEntry.wholeResponse : false,
         });
@@ -824,56 +1109,40 @@
       }
 
       // --- Normal (non-edit) capture ---
-      var responseHTML = null;
-      var markdown2 = responseTurn.querySelector(S.responseContent);
-      if (markdown2) responseHTML = markdown2.innerHTML;
-
-      // If response is empty (user stopped, error), save as __TIMEOUT__ instead
-      var responseText = markdown2 ? (markdown2.textContent || "").trim() : "";
-      if (responseText.length < 1) {
-        saveTimeoutVersion();
-        st.cancelResponseWatch = null;
-        JR.drainQueue();
-        return;
-      }
-      // Clean up scroll lock + observers. Skip the intermediate
-      // showResponseInPopup + repositionPopup — rebuildPopupAfterEdit
-      // (called below) will strip and rebuild the popup content anyway.
-      cleanup();
-
       var hlId2;
-      var qNum2 = questionTurn ? JR.getTurnNumber(questionTurn) : -1;
-      var rNum2 = JR.getTurnNumber(responseTurn);
+      var entry = null;
+      var itemId2 = null;
+
+      function fillItem(e, itemId) {
+        e.responseHTML = responseHTML;
+        e.question = e.question || question || null;
+        if (!e.sourceTurnKey) e.sourceTurnKey = sourceTurnKey;
+        var found = false;
+        if (e.items && itemId) {
+          for (var di = 0; di < e.items.length; di++) {
+            if (e.items[di].id === itemId) {
+              e.items[di].responseHTML = responseHTML;
+              e.items[di].turnKeys = qaKeys.slice();
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found && e.items && e.items.length > 0 && (e.items[0].responseHTML === "__PENDING__" || !itemId)) {
+          e.items[0].responseHTML = responseHTML;
+          e.items[0].turnKeys = qaKeys.slice();
+          found = true;
+        }
+        if (!found && (!e.items || e.items.length === 0)) {
+          e.items = [{ id: crypto.randomUUID(), question: question || null, responseHTML: responseHTML, turnKeys: qaKeys.slice() }];
+          e.activeItemIndex = 0;
+        }
+      }
 
       if (detached) {
         hlId2 = detachedHlId;
-        var entry = st.completedHighlights.get(hlId2);
-        if (entry) {
-          entry.responseHTML = responseHTML;
-          entry.responseIndex = rNum2;
-          // Update the specific pending item by preRegisteredItemId
-          var foundDetachItem = false;
-          if (entry.items && preRegisteredItemId) {
-            for (var di = 0; di < entry.items.length; di++) {
-              if (entry.items[di].id === preRegisteredItemId) {
-                entry.items[di].responseHTML = responseHTML;
-                entry.items[di].questionIndex = qNum2;
-                entry.items[di].responseIndex = rNum2;
-                foundDetachItem = true;
-                break;
-              }
-            }
-          }
-          if (!foundDetachItem && entry.items && entry.items.length > 0 && entry.items[0].responseHTML === "__PENDING__") {
-            entry.items[0].responseHTML = responseHTML;
-            entry.items[0].questionIndex = qNum2;
-            entry.items[0].responseIndex = rNum2;
-          } else if (!foundDetachItem && (!entry.items || entry.items.length === 0)) {
-            var detItemId = crypto.randomUUID();
-            entry.items = [{ id: detItemId, question: question || null, responseHTML: responseHTML, questionIndex: qNum2, responseIndex: rNum2 }];
-            entry.activeItemIndex = 0;
-          }
-        }
+        entry = st.completedHighlights.get(hlId2);
+        if (entry) fillItem(entry, preRegisteredItemId);
 
         if (st.activePopup && (st.activeHighlightId === hlId2 ||
             (st.activeSourceHighlights.length > 0 && st.activeSourceHighlights[0].getAttribute("data-jr-highlight-id") === hlId2))) {
@@ -884,29 +1153,8 @@
       } else if (preRegisteredHlId) {
         // Update pre-registered pending entry with real response
         hlId2 = preRegisteredHlId;
-        var preEntry = st.completedHighlights.get(hlId2);
-        if (preEntry) {
-          preEntry.responseHTML = responseHTML;
-          preEntry.responseIndex = rNum2;
-          // Find the specific item by preRegisteredItemId
-          var foundPreItem = false;
-          if (preEntry.items && preRegisteredItemId) {
-            for (var pi2 = 0; pi2 < preEntry.items.length; pi2++) {
-              if (preEntry.items[pi2].id === preRegisteredItemId) {
-                preEntry.items[pi2].responseHTML = responseHTML;
-                preEntry.items[pi2].questionIndex = qNum2;
-                preEntry.items[pi2].responseIndex = rNum2;
-                foundPreItem = true;
-                break;
-              }
-            }
-          }
-          if (!foundPreItem && preEntry.items && preEntry.items.length > 0) {
-            preEntry.items[0].responseHTML = responseHTML;
-            preEntry.items[0].questionIndex = qNum2;
-            preEntry.items[0].responseIndex = rNum2;
-          }
-        }
+        entry = st.completedHighlights.get(hlId2);
+        if (entry) fillItem(entry, preRegisteredItemId);
         // Rebuild popup into completed view (editable question, version nav)
         if (popup && popup.isConnected) {
           st.activeHighlightId = hlId2;
@@ -915,14 +1163,13 @@
         }
       } else {
         hlId2 = crypto.randomUUID();
-        var itemId2 = crypto.randomUUID();
-        if (spans.length > 0 && responseHTML) {
-          var contentContainer2 = popup.parentElement;
+        itemId2 = crypto.randomUUID();
+        if (spans.length > 0) {
           for (var k = 0; k < spans.length; k++) {
             spans[k].setAttribute("data-jr-highlight-id", hlId2);
             spans[k].classList.add("jr-source-highlight-done");
           }
-          var entryObj = {
+          st.completedHighlights.set(hlId2, {
             quoteId: hlId2,
             spans: spans.slice(),
             responseHTML: responseHTML,
@@ -930,14 +1177,13 @@
             sentence: sentence,
             blockTypes: blockTypes,
             question: question || null,
-            contentContainer: contentContainer2,
+            contentContainer: popup.parentElement,
             parentId: parentId || null,
             parentItemId: parentItemId || null,
-            responseIndex: rNum2,
-            items: [{ id: itemId2, question: question || null, responseHTML: responseHTML, questionIndex: qNum2, responseIndex: rNum2 }],
+            sourceTurnKey: sourceTurnKey,
+            items: [{ id: itemId2, question: question || null, responseHTML: responseHTML, turnKeys: qaKeys.slice() }],
             activeItemIndex: 0,
-          };
-          st.completedHighlights.set(hlId2, entryObj);
+          });
         }
 
         // Rebuild popup into completed view (editable question, version nav)
@@ -948,214 +1194,181 @@
         }
       }
 
-      var sourceArticle = spans.length > 0
-        ? spans[0].closest(S.aiTurn)
-        : null;
-      var sourceTurnIdx = sourceArticle ? JR.getTurnNumber(sourceArticle) : -1;
-
       // Determine the item id to persist
-      var persistItemId;
-      if (preRegisteredItemId) {
-        persistItemId = preRegisteredItemId;
-      } else if (detached && entry && entry.items && entry.items[0]) {
-        persistItemId = entry.items[0].id;
-      } else {
-        persistItemId = itemId2;
-      }
+      var persistItemId = preRegisteredItemId
+        || (detached && entry && entry.items && entry.items[0] ? entry.items[0].id : itemId2);
 
       if (preRegisteredItemId || (detached && preRegisteredHlId)) {
         // Update the existing pending storage record
         updateHighlightFields(persistItemId, {
           responseHTML: responseHTML,
-          questionIndex: qNum2,
-          responseIndex: rNum2,
-          sourceTurnIndex: sourceTurnIdx,
-        });
+          turnKeys: qaKeys,
+          sourceTurnKey: (entry && entry.sourceTurnKey) || sourceTurnKey,
+        }, convUrl);
       } else {
         saveHighlight({
           id: persistItemId,
           quoteId: hlId2,
           text: text,
-          sentence: sentence,
-          blockTypes: blockTypes,
           responseHTML: responseHTML,
-          question: question || null,
-          url: location.href,
-          site: "chatgpt",
+          url: convUrl,
           parentId: parentId || null,
           parentItemId: parentItemId || null,
-          sourceTurnIndex: sourceTurnIdx,
-          questionIndex: qNum2,
-          responseIndex: rNum2,
+          sourceTurnKey: sourceTurnKey,
+          turnKeys: qaKeys,
         });
       }
-
-      // Register with persistent enforcer so React remounts can't unhide
-      JR.addHiddenTurnIndex(qNum2);
-      JR.addHiddenTurnIndex(rNum2);
 
       JR.updateNavWidget();
       st.cancelResponseWatch = null;
       JR.drainQueue();
     }
 
-    /**
-     * Re-verify that hidden turns are still hidden. React may unmount
-     * and remount article elements, losing our jr-hidden class.
-     */
-    function enforceHidden() {
-      var allTurns = document.querySelectorAll(S.aiTurn);
-      if (questionTurn) {
-        var qCurrent = allTurns[turnsBefore];
-        if (qCurrent && qCurrent !== questionTurn) {
-          // React swapped the element — update reference
-          questionTurn = qCurrent;
-        }
-        questionTurn.classList.add("jr-hidden");
-      }
-      if (responseTurn) {
-        var rCurrent = allTurns[turnsBefore + 1];
-        if (rCurrent && rCurrent !== responseTurn) {
-          responseTurn = rCurrent;
-        }
-        responseTurn.classList.add("jr-hidden");
-      }
-    }
-
     var lastContentSnapshot = "";
     var lastContentChangeTime = Date.now();
     var STALE_THRESHOLD = 10000; // 10 seconds of no content change → force capture
+    var savedKeys = false;
 
     function poll() {
-      if (cancelled) return;
+      if (cancelled || injectionFailed) return;
 
-      var allTurns = document.querySelectorAll(S.aiTurn);
-
-      if (!questionTurn && allTurns.length > turnsBefore) {
-        var candidate = allTurns[turnsBefore];
-        // Permissive: any newly-mounted turn at this index that isn't yet
-        // confirmed assistant is our injected question. Strict role-check
-        // here would let the un-hidden article paint a frame → composer flash.
-        if (!JR.isAssistantTurn(candidate)) {
-          questionTurn = candidate;
-          questionTurn.classList.add("jr-hidden");
-          var qIdx = JR.getTurnNumber(questionTurn);
-          JR.addHiddenTurnIndex(qIdx);
-          // Write to BOTH storage keys so it survives reload even if one write fails
-          addDeletedTurns(location.href, [qIdx]);
-          var qHlKey = preRegisteredHlId || (editOpts && editOpts.hlId);
-          var qHlRec = qHlKey ? st.completedHighlights.get(qHlKey) : null;
-          // Resolve the actual item ID — for edits, find it from the in-memory entry
-          var qSaveId = preRegisteredItemId
-            || (qHlRec && qHlRec.items && qHlRec.items[qHlRec.activeItemIndex || 0]
-                ? qHlRec.items[qHlRec.activeItemIndex || 0].id : null);
-          if (qSaveId && qHlRec && qHlRec.items) {
-            var oldItem = qHlRec.items[qHlRec.activeItemIndex || 0];
-            if (oldItem && oldItem.questionIndex > 0 && oldItem.questionIndex !== qIdx) {
-              addDeletedTurns(location.href, [oldItem.questionIndex]);
-              JR.addHiddenTurnIndex(oldItem.questionIndex);
+      // 1. Recognise the turn(s) our send created.
+      var fresh = JR.findNewTurns(snap, message);
+      if (fresh.length) {
+        var added = [];
+        for (var fi = 0; fi < fresh.length; fi++) {
+          var fk = JR.site.turnKey(fresh[fi]);
+          if (fk && qaKeys.indexOf(fk) === -1) { qaKeys.push(fk); added.push(fk); }
+        }
+        if (added.length) {
+          JR.hideTurnKeys(added);
+          st.watchingTurnKey = qaKeys[qaKeys.length - 1];
+          // Persist right away so a reload mid-answer still hides the Q&A and
+          // can read the answer back (the item loads instead of "failed").
+          addDeletedTurns(convUrl, added);
+          if (!editOpts && preRegisteredItemId) updateHighlightFields(preRegisteredItemId, { turnKeys: qaKeys.slice() }, convUrl);
+          if (!savedKeys) { savedKeys = true; JR.repositionPopup(); }
+        }
+        if (!responseKey) {
+          for (var ri = fresh.length - 1; ri >= 0; ri--) {
+            if (JR.isAssistantTurn(fresh[ri])) {
+              responseTurn = fresh[ri];
+              responseKey = JR.site.turnKey(responseTurn);
+              startStreaming();
+              break;
             }
-            updateHighlightFields(qSaveId, { questionIndex: qIdx });
           }
-          JR.repositionPopup();
         }
       }
 
-      if (!responseTurn && allTurns.length > turnsBefore + 1) {
-        var candidate2 = allTurns[turnsBefore + 1];
-        if (JR.isAssistantTurn(candidate2)) {
-          responseTurn = candidate2;
-          responseTurn.classList.add("jr-hidden");
-          var rIdx = JR.getTurnNumber(responseTurn);
-          JR.addHiddenTurnIndex(rIdx);
-          addDeletedTurns(location.href, [rIdx]);
-          var rHlKey = preRegisteredHlId || (editOpts && editOpts.hlId);
-          var rHlRec = rHlKey ? st.completedHighlights.get(rHlKey) : null;
-          var rSaveId = preRegisteredItemId
-            || (rHlRec && rHlRec.items && rHlRec.items[rHlRec.activeItemIndex || 0]
-                ? rHlRec.items[rHlRec.activeItemIndex || 0].id : null);
-          if (rSaveId && rHlRec && rHlRec.items) {
-            var oldItem2 = rHlRec.items[rHlRec.activeItemIndex || 0];
-            if (oldItem2 && oldItem2.responseIndex > 0 && oldItem2.responseIndex !== rIdx) {
-              addDeletedTurns(location.href, [oldItem2.responseIndex]);
-              JR.addHiddenTurnIndex(oldItem2.responseIndex);
-            }
-            updateHighlightFields(rSaveId, { responseIndex: rIdx });
-          }
-          startStreaming();
-        }
-      }
+      var turn = liveResponseTurn();
+      var generating = JR.isGenerating();
 
-      // Once both turns are found and have jr-hidden, the pre-hide CSS is redundant
-      // freezeChat CSS stays until cleanup() calls unfreezeChat()
-
-      // React can remount DOM elements — re-apply hiding every cycle
-      enforceHidden();
-
-      if (responseTurn && !JR.isGenerating()) {
-        // Capture after a brief delay for React to finish rendering.
-        // Force-hide the response turn now and sync content to popup immediately.
-        responseTurn.classList.add("jr-hidden");
+      // 2. Done: ChatGPT stopped generating and the answer has text.
+      if (turn && !generating && JR.site.assistantText(turn).trim().length > 0) {
         if (streamObserver) syncStreamContent();
-        setTimeout(captureResponse, 300);
+        setTimeout(captureIfLive, 300);
+        return;
+      }
+      // Done per the network stream while the DOM answer isn't usable
+      // (turn never mounted, or ChatGPT's "couldn't load").
+      if (net.done && net.text.trim() && !domAnswerUsable()) {
+        setTimeout(captureIfLive, 300);
+        return;
+      }
+      // Done while the answer is scrolled out of the DOM (keys known, content later).
+      if (responseKey && !turn && !generating && !net.matched) {
+        setTimeout(captureIfLive, 300);
         return;
       }
 
-      // Stale-content safeguard: if response exists but isGenerating() stays
-      // true while content hasn't changed for STALE_THRESHOLD, force capture.
-      if (responseTurn && JR.isGenerating()) {
-        var currentContent = responseTurn.textContent || "";
+      // Stale-content safeguard: generating flag stuck but the (mounted) answer stopped changing.
+      if (turn && generating) {
+        var currentContent = JR.site.assistantText(turn);
         if (currentContent !== lastContentSnapshot) {
           lastContentSnapshot = currentContent;
           lastContentChangeTime = Date.now();
-        } else if (Date.now() - lastContentChangeTime >= STALE_THRESHOLD) {
-          console.warn("[JR] Response stale for " + STALE_THRESHOLD + "ms — force capturing");
-          setTimeout(captureResponse, 300);
+        } else if (currentContent.trim() && Date.now() - lastContentChangeTime >= STALE_THRESHOLD) {
+          console.warn("[Popup] Response stale for " + STALE_THRESHOLD + "ms — force capturing");
+          setTimeout(captureIfLive, 300);
           return;
         }
       }
 
-      // Quick timeout: if generation already stopped and no turns appeared at all, don't wait long.
-      // Only fires when NEITHER question nor response turn has appeared — if questionTurn exists,
-      // the message was injected successfully and we should wait for the response.
-      if (!questionTurn && !responseTurn && !JR.isGenerating() && Date.now() - startTime >= 1500) {
-        cleanup();
-        saveTimeoutVersion();
-        st.cancelResponseWatch = null;
-        JR.drainQueue();
+      // ChatGPT refused the send ("wait for this response to finish") and put
+      // our message back in its input box: clear it at once (the user must never
+      // see it), then send again when ChatGPT is really idle — once.
+      if (!qaKeys.length && !net.matched && !rejected.pending && Date.now() - startTime >= 1500) {
+        var composer = JR.site.composer();
+        var probe = norm60(message).slice(0, 30);
+        if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
+          clearComposer(composer);
+          if (rejected.count >= 1) {
+            st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };
+            finishWithTimeout();
+            return;
+          }
+          rejected.count++;
+          rejected.pending = true;
+          st.lastSendReport = { ok: false, stage: "retrying", detail: "ChatGPT was still busy; will resend", when: new Date().toISOString() };
+          (function resendWhenIdle(tries) {
+            if (cancelled) return;
+            if (JR.isGenerating() && tries < 120) { setTimeout(function () { resendWhenIdle(tries + 1); }, 500); return; }
+            snap = JR.snapshotTurns();
+            startTime = Date.now();
+            rejected.pending = false;
+            JR.injectAndSend(message, function (r) { if (!r.ok) watch.failInjection(r); });
+          })(0);
+        }
+      }
+      if (rejected.pending) { timerId = setTimeout(poll, 300); return; }
+
+      // Quick timeout: nothing appeared and ChatGPT isn't generating.
+      if (!qaKeys.length && !net.matched && !generating && Date.now() - startTime >= 3000) {
+        finishWithTimeout();
         return;
       }
 
-      // Hard 10-second timeout: if no meaningful response content exists
-      // AND ChatGPT is NOT actively generating, force-stop and save __TIMEOUT__.
-      // If isGenerating() is true, ChatGPT is working — let it continue.
+      // ChatGPT is answering but our turn never mounted (user scrolled far away).
+      if (!qaKeys.length && !net.matched && generating && Date.now() - startTime >= 4000 && (!st.lastSendReport || st.lastSendReport.ok)) {
+        st.lastSendReport = { ok: false, stage: "turn-not-found", detail: "ChatGPT is generating but the new turn is not in the DOM", when: new Date().toISOString() };
+      }
+
+      // Hard 10-second timeout: no answer text and ChatGPT isn't working on it.
       if (Date.now() - startTime >= 10000) {
-        var md5 = responseTurn ? responseTurn.querySelector(S.responseContent) : null;
-        var hasRealContent = md5 && (md5.textContent || "").trim().length >= 1;
-        if (!hasRealContent) {
-          var stopBtn = document.querySelector(S.stopButton);
-          if (stopBtn) stopBtn.click();
-          cleanup();
-          saveTimeoutVersion();
-          st.cancelResponseWatch = null;
-          JR.drainQueue();
+        var hasRealContent = (turn && JR.site.assistantText(turn).trim().length >= 1) || net.text.trim().length >= 1;
+        if (!hasRealContent && !generating && !(net.matched && !net.done)) {
+          finishWithTimeout();
           return;
         }
       }
 
       if (Date.now() - startTime >= timeoutMs) {
-        cleanup();
-        saveTimeoutVersion();
-        st.cancelResponseWatch = null;
-        JR.drainQueue();
+        stopGeneration();
+        finishWithTimeout();
         return;
       }
 
       // Poll fast initially to catch new turns quickly, then slow down
-      var interval = (questionTurn && responseTurn) ? 500 : 80;
+      var interval = responseKey ? 500 : 80;
       timerId = setTimeout(poll, interval);
     }
 
     timerId = setTimeout(poll, 80);
+
+    var watch = {
+      /** The injection itself failed: stop watching, undo, and say why in the popup. */
+      failInjection: function () {
+        if (cancelled) return;
+        injectionFailed = true;
+        if (timerId) clearTimeout(timerId);
+        cleanup();
+        unhideTurns();
+        saveTimeoutVersion();
+        st.cancelResponseWatch = null;
+        JR.drainQueue();
+      },
+    };
+    return watch;
   };
 })();

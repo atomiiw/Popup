@@ -19,7 +19,11 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 ## Architecture
 - **Manifest V3** Chrome extension
 - `manifest.json` — Extension config, permissions, and content script registration
-- `storage.js` — Persistence for highlights and their associated Q&A chains using chrome.storage.local
+- `storage.js` — Persistence of highlight keys (one record per conversation, no content) using chrome.storage.local
+- `src/site-adapter.js` — The only place with ChatGPT DOM selectors; `JR.diagnose()` self-check
+- `src/qa-content.js` — Message format, hiding Q&A turns, reading answers back from ChatGPT
+- `src/scroll-guard.js`, `src/net-tap.js` — MAIN-world helpers (block ChatGPT's auto-scroll during a send; read the answer stream)
+- `collab/` — Claude ↔ Codex collaboration (`HANDOFF.md` = current status; `BOARD.md`/`evidence/` are local-only)
 - `icons/` — Extension icons (16, 48, 128px)
 - **Permissions:** `storage` (persist highlights + Q&A), `activeTab`
 - **Supported sites:** ChatGPT, Claude, Gemini, Microsoft Copilot

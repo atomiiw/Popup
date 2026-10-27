@@ -2,22 +2,13 @@
 (function () {
   "use strict";
 
-  var S = JR.SELECTORS;
-
   /**
-   * Whether a turn article is an assistant (AI) turn.
-   * Uses ChatGPT's structural role attributes — not the localized sr-only
-   * label — so it works on any UI language.
+   * Whether a turn contains an assistant (AI) message. In the new ChatGPT DOM a
+   * turn holds both the question and the answer, so this turns true once the
+   * answer starts rendering.
    */
-  JR.isAssistantTurn = function (article) {
-    return !!(article && article.querySelector(S.assistantMsg));
-  };
-
-  /**
-   * Whether a turn article is a user turn.
-   */
-  JR.isUserTurn = function (article) {
-    return !!(article && article.querySelector(S.userMsg));
+  JR.isAssistantTurn = function (turn) {
+    return JR.site.hasAssistant(turn);
   };
 
   /**
@@ -25,16 +16,18 @@
    * Returns the article element if yes, null otherwise.
    */
   JR.getAIResponseArticle = function (node) {
-    var article = node.closest(S.aiTurn);
-    if (!article) return null;
-    return JR.isAssistantTurn(article) ? article : null;
+    // Must be inside the assistant part: a new-DOM turn also contains the user's question.
+    var unit = JR.site.assistantUnitOf(node);
+    if (!unit) return null;
+    return JR.site.turnOf(unit) || unit;
   };
 
   /**
    * Check if a node is inside the chat input area.
    */
   JR.isInsideChatInput = function (node) {
-    return !!node.closest(S.chatInput);
+    var composer = JR.site.composer();
+    return !!(composer && composer.contains(node));
   };
 
   /**
@@ -42,7 +35,10 @@
    * The stop button is present ONLY during active generation.
    */
   JR.isGenerating = function () {
-    return !!document.querySelector(S.stopButton);
+    // The stop button can disappear before ChatGPT is really done (e.g. it is
+    // still producing a second answer version); an open Popup response stream
+    // (net-tap.js) also counts, or the next queued question gets rejected.
+    return JR.site.isGenerating() || JR.state.netActive > 0;
   };
 
   /**
@@ -95,14 +91,12 @@
   };
 
   /**
-   * Extract the turn number from an article's data-testid attribute.
-   * e.g. "conversation-turn-5" → 5
+   * Stable key of the turn containing an element (see JR.site.turnKey), or null.
    */
-  JR.getTurnNumber = function (article) {
-    if (!article) return -1;
-    var testId = article.getAttribute("data-testid") || "";
-    var match = testId.match(/conversation-turn-(\d+)/);
-    return match ? parseInt(match[1], 10) : -1;
+  JR.getTurnKey = function (el) {
+    if (!el) return null;
+    var turn = el.matches && el.matches(JR.SEL.turn) ? el : JR.site.turnOf(el);
+    return JR.site.turnKey(turn);
   };
 
   JR.truncateText = function (text, max) {
@@ -122,8 +116,8 @@
       var all = [];
       JR.state.completedHighlights.forEach(function (entry, id) {
         var span = entry.spans && entry.spans[0];
-        var turn = span ? span.closest(S.aiTurn) : null;
-        var turnNum = turn ? JR.getTurnNumber(turn) : -1;
+        var turn = span ? JR.site.turnOf(span) : null;
+        var turnNum = turn ? JR.getTurnKey(turn) : null;
         all.push({
           quoteId: id,
           turnIndex: turnNum,
@@ -137,10 +131,9 @@
           connected: span ? span.isConnected : false,
         });
       });
-      // Sort by turn index (cheap), then by DOM position within same turn
+      // Sort by DOM position (turn keys are UUIDs, not ordered); unmounted ones last
       all.sort(function (a, b) {
-        if (a.turnIndex !== b.turnIndex) return a.turnIndex - b.turnIndex;
-        if (!a.connected || !b.connected) return 0;
+        if (!a.connected || !b.connected) return (a.connected ? -1 : 0) + (b.connected ? 1 : 0);
         var spanA = JR.state.completedHighlights.get(a.quoteId).spans[0];
         var spanB = JR.state.completedHighlights.get(b.quoteId).spans[0];
         var pos = spanA.compareDocumentPosition(spanB);
@@ -164,8 +157,8 @@
 
     var spans = entry.spans || [];
     var firstSpan = spans[0] || null;
-    var turn = firstSpan ? firstSpan.closest(S.aiTurn) : null;
-    var turnNum = turn ? JR.getTurnNumber(turn) : -1;
+    var turn = firstSpan ? JR.site.turnOf(firstSpan) : null;
+    var turnNum = turn ? JR.getTurnKey(turn) : null;
     var rect = firstSpan && firstSpan.isConnected ? firstSpan.getBoundingClientRect() : null;
 
     // Build ancestor path

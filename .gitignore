@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+collab/.operator_seen
+collab/BOARD.md
+collab/evidence/
+dist/

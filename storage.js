@@ -1,15 +1,31 @@
-// storage.js — Persistence for highlight-to-message mappings using chrome.storage.local
+// storage.js — Persistence of highlight KEYS using chrome.storage.local
 //
-// Storage model (quoteId-based):
-// Each record = one version of a highlight: { id, quoteId, text, sentence, blockTypes,
-//   question, responseHTML, url, site, parentId, sourceTurnIndex, questionIndex,
-//   responseIndex, color, createdAt, active }
-// Records sharing the same quoteId are versions of the same highlight (same quote,
-// different question+response). Only one per quoteId has active=true.
-// parentId references the parent highlight's quoteId for chained popups.
+// Popup stores only what it needs to find things again, never content:
+//   which text is highlighted (text + the turn it's in), how highlights nest,
+//   and which ChatGPT turns hold each Popup Q&A (so they can be hidden and
+//   their content read back from ChatGPT's own conversation).
+//
+// Schema v2 — one storage key per conversation, so a save only touches that
+// conversation's small record instead of rewriting every highlight ever made:
+//   "popup:conv:<conversationId>" → {
+//     v: 2,
+//     items: [{ id, quoteId, text, color, parentId, parentItemId, sourceTurnKey,
+//               turnKeys: [..], status: "done"|"pending"|"timeout", active,
+//               wholeResponse, createdAt, legacy? }],
+//     hidden: [turnKey, ...]   // Q&A turns of deleted highlights (stay hidden)
+//   }
+// Each item = one version of a highlight; items sharing a quoteId are versions
+// of the same highlight (only one active). parentId = parent's quoteId.
+//
+// The in-memory entries (JR.state.completedHighlights) still carry question /
+// responseHTML for the current page session; those are filled from ChatGPT's DOM
+// via JR.qa and are never written here.
 
-const STORAGE_KEY = "jumpreturn_highlights";
-const DELETED_TURNS_KEY = "jumpreturn_deleted_turns";
+const LEGACY_KEY = "jumpreturn_highlights";
+const LEGACY_DELETED_KEY = "jumpreturn_deleted_turns";
+const LEGACY_BACKUP_KEY = "jumpreturn_highlights_v1_backup";
+const CONV_PREFIX = "popup:conv:";
+const META_KEY = "popup:meta";
 
 /**
  * Check if the extension context is still valid (becomes invalid after extension reload).
@@ -22,311 +38,314 @@ function isContextValid() {
   }
 }
 
-/**
- * Migrate old storage format to new quoteId-based format.
- * - Records without quoteId: set quoteId = id, active = true
- * - Records with versions array: expand into separate records
- */
-function migrateToQuoteIdFormat(highlights) {
-  var migrated = [];
-  for (var i = 0; i < highlights.length; i++) {
-    var h = highlights[i];
-    if (h.quoteId) {
-      migrated.push(h);
-      continue;
-    }
-
-    if (h.versions && h.versions.length > 0) {
-      var activeIdx = h.activeVersion != null ? h.activeVersion : h.versions.length - 1;
-      for (var vi = 0; vi < h.versions.length; vi++) {
-        var v = h.versions[vi];
-        migrated.push({
-          id: h.id + "-v" + vi,
-          quoteId: h.id,
-          text: h.text,
-          sentence: h.sentence || null,
-          blockTypes: h.blockTypes || null,
-          question: v.question || null,
-          responseHTML: v.responseHTML || null,
-          color: h.color || null,
-          url: h.url,
-          site: h.site,
-          parentId: h.parentId || null,
-          sourceTurnIndex: h.sourceTurnIndex,
-          questionIndex: v.questionIndex != null ? v.questionIndex : h.questionIndex,
-          responseIndex: v.responseIndex != null ? v.responseIndex : h.responseIndex,
-          createdAt: h.createdAt,
-          active: (vi === activeIdx),
-        });
-      }
-    } else {
-      h.quoteId = h.id;
-      h.active = true;
-      delete h.versions;
-      delete h.activeVersion;
-      migrated.push(h);
-    }
-  }
-  return migrated;
+/** Storage key for the conversation a URL belongs to. */
+function convKeyForUrl(url) {
+  var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.href);
+  return CONV_PREFIX + (m ? m[1] : "url:" + (url || location.href).split("#")[0]);
 }
 
-/**
- * Get all saved highlights, migrating old format if needed.
- */
-async function getHighlights() {
-  if (!isContextValid()) return [];
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  var highlights = result[STORAGE_KEY] || [];
+// --- Serialized read-modify-write ---------------------------------------------
+// Every write goes through one promise chain, so two quick saves can never read
+// the same old copy and overwrite each other.
 
-  var needsMigration = false;
-  for (var i = 0; i < highlights.length; i++) {
-    if (!highlights[i].quoteId) { needsMigration = true; break; }
-  }
+var _writeChain = Promise.resolve();
+var _docCache = {}; // storage key → doc (current page's conversations only)
 
-  if (needsMigration) {
-    highlights = migrateToQuoteIdFormat(highlights);
-  }
-
-  if (needsMigration) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
-  }
-
-  return highlights;
+function emptyDoc() {
+  return { v: 2, items: [], hidden: [] };
 }
 
-/**
- * Save a new highlight item.
- * If another item with the same quoteId exists, it is deactivated.
- * @param {object} opts
- * @param {string} [opts.id] - Unique item id (defaults to crypto.randomUUID())
- * @param {string} [opts.quoteId] - Quote id shared across versions (defaults to crypto.randomUUID())
- * @param {string} opts.text - The highlighted text
- * @param {string|null} [opts.sentence] - Sentence context
- * @param {Array|null} [opts.blockTypes] - Block type metadata
- * @param {string|null} [opts.responseHTML] - AI response HTML
- * @param {string} opts.url - The page URL
- * @param {string} opts.site - The AI chat site
- * @param {string|null} [opts.parentId] - Parent highlight's quoteId (for chained popups)
- * @param {string|null} [opts.parentItemId] - Specific parent item id this child was created in
- * @param {number|null} [opts.sourceTurnIndex] - Turn containing the highlighted text
- * @param {number|null} [opts.questionIndex] - Turn of the injected question
- * @param {number|null} [opts.responseIndex] - Turn of the AI response
- * @param {string|null} [opts.question] - The follow-up question
- * @param {string|null} [opts.color] - Highlight color name
- * @param {boolean} [opts.active] - Whether this is the active version (default true)
- */
-async function saveHighlight({ id, quoteId, text, sentence, blockTypes, responseHTML, url, site, parentId = null, parentItemId = null, sourceTurnIndex = null, questionIndex = null, responseIndex = null, question = null, color = null, active = true, wholeResponse = false }) {
-  if (!isContextValid()) return null;
-  const highlights = await getHighlights();
-  const newQuoteId = quoteId || crypto.randomUUID();
-  const newHighlight = {
-    id: id || crypto.randomUUID(),
-    quoteId: newQuoteId,
-    text,
-    sentence: sentence || null,
-    blockTypes: blockTypes || null,
-    responseHTML: responseHTML || null,
-    question: question || null,
-    color: color || null,
-    url,
-    site,
-    parentId,
-    parentItemId: parentItemId || null,
-    sourceTurnIndex,
-    questionIndex,
-    responseIndex,
-    createdAt: Date.now(),
-    active: active !== false,
-    wholeResponse: !!wholeResponse,
+async function readDoc(key) {
+  if (_docCache[key]) return _docCache[key];
+  await migrateLegacyOnce();
+  var result = await chrome.storage.local.get(key);
+  if (typeof JR !== "undefined" && JR.perf) JR.perf.count("storageRead");
+  var doc = result[key] || emptyDoc();
+  _docCache[key] = doc;
+  return doc;
+}
+
+function modifyDoc(key, fn) {
+  if (!isContextValid()) return Promise.resolve(null);
+  var p = _writeChain.then(async function () {
+    var t0 = performance.now();
+    var doc = await readDoc(key);
+    var out = fn(doc);
+    await chrome.storage.local.set({ [key]: doc });
+    if (typeof JR !== "undefined" && JR.perf) JR.perf.time("storageWrite", Math.round(performance.now() - t0));
+    return out;
+  });
+  _writeChain = p.catch(function (e) { console.warn("[Popup] storage write failed:", e); });
+  return p;
+}
+
+// Another tab may change the same conversation — drop our cached copy.
+try {
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== "local") return;
+    Object.keys(changes).forEach(function (k) { delete _docCache[k]; });
+  });
+} catch (e) { /* context invalidated */ }
+
+// --- Field mapping between in-memory items and stored records -----------------
+
+function statusFromHTML(responseHTML, fallback) {
+  if (responseHTML === "__TIMEOUT__") return "timeout";
+  if (responseHTML === "__PENDING__") return "pending";
+  if (responseHTML) return "done";
+  return fallback || "done";
+}
+
+/** Stored record → shape the rest of the code expects (content filled later by JR.qa). */
+function toPublic(rec) {
+  return {
+    id: rec.id,
+    quoteId: rec.quoteId,
+    text: rec.text,
+    color: rec.color || null,
+    parentId: rec.parentId || null,
+    parentItemId: rec.parentItemId || null,
+    sourceTurnKey: rec.sourceTurnKey || null,
+    turnKeys: (rec.turnKeys || []).slice(),
+    active: rec.active !== false,
+    wholeResponse: !!rec.wholeResponse,
+    createdAt: rec.createdAt,
+    legacy: rec.legacy || null,
+    question: rec.question || null,
+    sentence: null,
+    blockTypes: null,
+    // A pending item whose turn is already known was interrupted by a reload:
+    // its answer exists in ChatGPT, so it loads like a finished one.
+    responseHTML: rec.status === "timeout" ? "__TIMEOUT__"
+      : rec.status === "pending" && !(rec.turnKeys || []).length ? "__PENDING__"
+      : "__LOADING__",
   };
+}
 
-  // If adding a new active version, deactivate siblings
-  if (newHighlight.active) {
-    for (var i = 0; i < highlights.length; i++) {
-      if (highlights[i].quoteId === newQuoteId) {
-        highlights[i].active = false;
-      }
+// --- Migration from v1 (one big array with full response HTML) ----------------
+
+var _migration = null;
+
+function migrateLegacyOnce() {
+  if (_migration) return _migration;
+  _migration = (async function () {
+    if (!isContextValid()) return;
+    var meta = (await chrome.storage.local.get(META_KEY))[META_KEY] || {};
+    if (meta.migratedV2) return;
+    var old = await chrome.storage.local.get([LEGACY_KEY, LEGACY_DELETED_KEY]);
+    var list = old[LEGACY_KEY] || [];
+    var deleted = old[LEGACY_DELETED_KEY] || {};
+    var docs = {};
+    function docFor(url) {
+      var k = convKeyForUrl(url);
+      if (!docs[k]) docs[k] = emptyDoc();
+      return docs[k];
     }
-  }
+    for (var i = 0; i < list.length; i++) {
+      var h = list[i];
+      if (!h || !h.url) continue;
+      // Pre-quoteId records stored versions inline; expand them.
+      var versions = (!h.quoteId && h.versions && h.versions.length)
+        ? h.versions.map(function (v, vi) {
+            return { id: h.id + "-v" + vi, question: v.question, responseHTML: v.responseHTML,
+                     questionIndex: v.questionIndex, responseIndex: v.responseIndex,
+                     active: vi === (h.activeVersion != null ? h.activeVersion : h.versions.length - 1) };
+          })
+        : [{ id: h.id, responseHTML: h.responseHTML, questionIndex: h.questionIndex,
+             responseIndex: h.responseIndex, active: h.quoteId ? h.active !== false : true }];
+      versions.forEach(function (v) {
+        docFor(h.url).items.push({
+          id: v.id,
+          quoteId: h.quoteId || h.id,
+          text: h.text,
+          color: h.color || null,
+          parentId: h.parentId || null,
+          parentItemId: h.parentItemId || null,
+          sourceTurnKey: null,
+          turnKeys: [],
+          status: statusFromHTML(v.responseHTML),
+          active: v.active,
+          wholeResponse: !!h.wholeResponse,
+          createdAt: h.createdAt || Date.now(),
+          // Old turn numbers don't exist in ChatGPT's new DOM. Kept only so the
+          // Q&A can be re-identified by its message (see JR.adoptLegacyTurn).
+          legacy: { questionIndex: v.questionIndex, responseIndex: v.responseIndex, sourceTurnIndex: h.sourceTurnIndex },
+        });
+      });
+    }
+    // Merge into any v2 docs that already exist (another tab may have migrated
+    // and saved new highlights in the meantime) instead of overwriting them.
+    var existing = await chrome.storage.local.get(Object.keys(docs));
+    var writes = {};
+    Object.keys(docs).forEach(function (k) {
+      var cur = existing[k];
+      if (!cur) { writes[k] = docs[k]; return; }
+      var ids = new Set(cur.items.map(function (it) { return it.id; }));
+      docs[k].items.forEach(function (it) { if (!ids.has(it.id)) cur.items.push(it); });
+      writes[k] = cur;
+    });
+    if (list.length) writes[LEGACY_BACKUP_KEY] = list; // removed in a later version once v2 is proven
+    writes[META_KEY] = Object.assign(meta, { migratedV2: Date.now() });
+    await chrome.storage.local.set(writes);
+    await chrome.storage.local.remove([LEGACY_KEY, LEGACY_DELETED_KEY]);
+  })().catch(function (e) {
+    console.warn("[Popup] storage migration failed:", e);
+  });
+  return _migration;
+}
 
-  highlights.push(newHighlight);
-  await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
-  return newHighlight;
+// --- Public API (names kept from v1) -------------------------------------------
+
+/**
+ * Save a new highlight item (one version). Content fields in opts are accepted
+ * for call-site compatibility but NOT stored.
+ */
+async function saveHighlight(opts) {
+  var rec = {
+    id: opts.id || crypto.randomUUID(),
+    quoteId: opts.quoteId || crypto.randomUUID(),
+    text: opts.text,
+    color: opts.color || null,
+    parentId: opts.parentId || null,
+    parentItemId: opts.parentItemId || null,
+    sourceTurnKey: opts.sourceTurnKey || null,
+    turnKeys: (opts.turnKeys || []).filter(Boolean),
+    status: statusFromHTML(opts.responseHTML),
+    // The question is kept only until the answer exists (needed to show and
+    // resend a pending/failed question); finished items keep keys only.
+    question: statusFromHTML(opts.responseHTML) === "done" ? undefined : (opts.question || undefined),
+    active: opts.active !== false,
+    wholeResponse: !!opts.wholeResponse,
+    createdAt: Date.now(),
+  };
+  await modifyDoc(convKeyForUrl(opts.url), function (doc) {
+    if (rec.active) {
+      doc.items.forEach(function (it) { if (it.quoteId === rec.quoteId) it.active = false; });
+    }
+    doc.items.push(rec);
+  });
+  return rec;
 }
 
 /**
- * Link a highlight item to its Q&A message indices in the chat flow.
- * @param {string} id - The item id
- * @param {number} questionIndex
- * @param {number} responseIndex
+ * Update fields on an item. Accepts: responseHTML (only its status is kept),
+ * turnKeys, sourceTurnKey, color, active, parentItemId. Optional third arg: url.
  */
-/**
- * Get active child highlights (chained popups) for a given parent quoteId.
- * If parentItemId is provided, only returns children created in that specific version.
- * Returns only the active item for each child quoteId.
- * @param {string} parentQuoteId
- * @param {string} [parentItemId] - Optional: filter to children of this specific parent item
- */
+function updateHighlightFields(id, fields, url) {
+  // url: the conversation the item belongs to. Pass it from async flows (a
+  // capture can finish after the user navigated to another conversation).
+  return modifyDoc(convKeyForUrl(url), function (doc) {
+    var rec = doc.items.find(function (it) { return it.id === id; });
+    if (!rec) return;
+    if ("responseHTML" in fields) rec.status = statusFromHTML(fields.responseHTML, rec.status);
+    if ("question" in fields && rec.status !== "done") rec.question = fields.question || undefined;
+    if (rec.status === "done") delete rec.question;
+    if (fields.turnKeys) rec.turnKeys = fields.turnKeys.filter(Boolean);
+    if ("sourceTurnKey" in fields) rec.sourceTurnKey = fields.sourceTurnKey;
+    if ("color" in fields) rec.color = fields.color;
+    if ("active" in fields) rec.active = fields.active;
+    if ("parentItemId" in fields) rec.parentItemId = fields.parentItemId;
+    if (rec.legacy && rec.turnKeys.length) delete rec.legacy;
+  });
+}
+
+/** All items of the conversation at url (public shape, content not filled). */
+async function getHighlightsByUrl(url) {
+  if (!isContextValid()) return [];
+  var doc = await readDoc(convKeyForUrl(url));
+  return doc.items.map(toPublic);
+}
+
+/** Active children of a parent highlight (optionally only those made in one parent version). */
 async function getChildHighlights(parentQuoteId, parentItemId) {
-  const highlights = await getHighlights();
-  return highlights.filter(function (h) {
+  var items = await getHighlightsByUrl();
+  return items.filter(function (h) {
     if (h.parentId !== parentQuoteId || !h.active) return false;
     if (parentItemId && h.parentItemId !== parentItemId) return false;
     return true;
   });
 }
 
-/**
- * Get highlights for a specific URL.
- * @param {string} url
- */
-async function getHighlightsByUrl(url) {
-  const highlights = await getHighlights();
-  return highlights.filter((h) => h.url === url);
-}
-
-/**
- * Delete all items with a given quoteId and all their descendants.
- * @param {string} quoteId
- */
-async function deleteHighlight(quoteId) {
-  if (!isContextValid()) return;
-  let highlights = await getHighlights();
-  const quoteIdsToDelete = new Set();
-
-  function collectDescendants(parentQuoteId) {
-    quoteIdsToDelete.add(parentQuoteId);
-    // Find all unique child quoteIds whose parentId matches
-    var childQuoteIds = new Set();
-    for (var i = 0; i < highlights.length; i++) {
-      if (highlights[i].parentId === parentQuoteId) {
-        childQuoteIds.add(highlights[i].quoteId);
-      }
-    }
-    childQuoteIds.forEach(function (cqid) {
-      collectDescendants(cqid);
-    });
-  }
-
-  collectDescendants(quoteId);
-  highlights = highlights.filter(function (h) {
-    return !quoteIdsToDelete.has(h.quoteId);
-  });
-  await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
-}
-
-/**
- * Update multiple fields on an existing highlight item by id.
- * @param {string} id - The item id
- * @param {object} fields - Key-value pairs to update
- */
-async function updateHighlightFields(id, fields) {
-  if (!isContextValid()) return;
-  const highlights = await getHighlights();
-  const highlight = highlights.find(function (h) { return h.id === id; });
-  if (!highlight) return;
-  var keys = Object.keys(fields);
-  for (var i = 0; i < keys.length; i++) {
-    highlight[keys[i]] = fields[keys[i]];
-  }
-  await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
-}
-
-/**
- * Update the color of all items sharing a quoteId.
- * @param {string} quoteId
- * @param {string} color - The color name
- */
-async function updateHighlightColor(quoteId, color) {
-  if (!isContextValid()) return;
-  var highlights = await getHighlights();
-  for (var i = 0; i < highlights.length; i++) {
-    if (highlights[i].quoteId === quoteId) {
-      highlights[i].color = color;
-    }
-  }
-  await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
-}
-
-/**
- * Count total descendant highlights (unique quoteIds) under a quoteId.
- * @param {string} quoteId
- * @returns {Promise<number>}
- */
-async function countDescendants(quoteId) {
-  var highlights = await getHighlights();
-  var visited = new Set();
-  function walk(parentQuoteId) {
-    var childQuoteIds = new Set();
-    for (var i = 0; i < highlights.length; i++) {
-      if (highlights[i].parentId === parentQuoteId) {
-        childQuoteIds.add(highlights[i].quoteId);
-      }
-    }
-    childQuoteIds.forEach(function (cqid) {
-      if (!visited.has(cqid)) {
-        visited.add(cqid);
-        walk(cqid);
-      }
-    });
-  }
-  walk(quoteId);
-  return visited.size;
-}
-
-/**
- * Get all items for a quoteId (for collecting turn indices during delete).
- * @param {string} quoteId
- */
 async function getHighlightsByQuoteId(quoteId) {
-  var highlights = await getHighlights();
-  return highlights.filter(function (h) { return h.quoteId === quoteId; });
+  var items = await getHighlightsByUrl();
+  return items.filter(function (h) { return h.quoteId === quoteId; });
 }
 
 /**
- * Set the active item for a quoteId. Deactivates all others.
- * @param {string} quoteId
- * @param {string} itemId - The item id to make active
+ * Delete a highlight and all its descendants. Their Q&A turn keys move to the
+ * conversation's hidden list so the turns stay out of the main chat.
  */
-async function setActiveItem(quoteId, itemId) {
-  if (!isContextValid()) return;
-  var highlights = await getHighlights();
-  for (var i = 0; i < highlights.length; i++) {
-    if (highlights[i].quoteId === quoteId) {
-      highlights[i].active = (highlights[i].id === itemId);
-    }
-  }
-  await chrome.storage.local.set({ [STORAGE_KEY]: highlights });
+function deleteHighlight(quoteId) {
+  return modifyDoc(convKeyForUrl(), function (doc) {
+    var del = new Set();
+    (function collect(q) {
+      del.add(q);
+      doc.items.forEach(function (it) { if (it.parentId === q && !del.has(it.quoteId)) collect(it.quoteId); });
+    })(quoteId);
+    var keep = [];
+    doc.items.forEach(function (it) {
+      if (del.has(it.quoteId)) {
+        (it.turnKeys || []).forEach(function (k) { if (doc.hidden.indexOf(k) === -1) doc.hidden.push(k); });
+      } else {
+        keep.push(it);
+      }
+    });
+    doc.items = keep;
+  });
 }
 
-/**
- * Save turn indices that should stay hidden after a highlight is deleted.
- * Stored per-URL so they only apply to the correct conversation.
- * @param {string} url - The conversation URL
- * @param {number[]} turnIndices - Turn indices to keep hidden
- */
-async function addDeletedTurns(url, turnIndices) {
-  if (!isContextValid()) return;
-  var result = await chrome.storage.local.get(DELETED_TURNS_KEY);
-  var all = result[DELETED_TURNS_KEY] || {};
-  if (!all[url]) all[url] = [];
-  for (var i = 0; i < turnIndices.length; i++) {
-    if (turnIndices[i] > 0 && all[url].indexOf(turnIndices[i]) === -1) {
-      all[url].push(turnIndices[i]);
-    }
-  }
-  await chrome.storage.local.set({ [DELETED_TURNS_KEY]: all });
+function updateHighlightColor(quoteId, color) {
+  return modifyDoc(convKeyForUrl(), function (doc) {
+    doc.items.forEach(function (it) { if (it.quoteId === quoteId) it.color = color; });
+  });
 }
 
-/**
- * Get turn indices that should stay hidden for a given URL.
- * @param {string} url
- * @returns {Promise<number[]>}
- */
-async function getDeletedTurns(url) {
+/** Number of distinct descendant highlights under a quoteId. */
+async function countDescendants(quoteId) {
+  var items = await getHighlightsByUrl();
+  var seen = new Set();
+  (function walk(q) {
+    items.forEach(function (it) {
+      if (it.parentId === q && !seen.has(it.quoteId)) { seen.add(it.quoteId); walk(it.quoteId); }
+    });
+  })(quoteId);
+  return seen.size;
+}
+
+/** Make itemId the active version of quoteId. */
+function setActiveItem(quoteId, itemId) {
+  return modifyDoc(convKeyForUrl(), function (doc) {
+    doc.items.forEach(function (it) { if (it.quoteId === quoteId) it.active = (it.id === itemId); });
+  });
+}
+
+/** Keep these Q&A turns hidden in this conversation (orphaned / deleted Q&A). */
+function addDeletedTurns(url, turnKeys) {
+  return modifyDoc(convKeyForUrl(url), function (doc) {
+    (turnKeys || []).forEach(function (k) { if (k && doc.hidden.indexOf(k) === -1) doc.hidden.push(k); });
+  });
+}
+
+/** Every turn key that must be hidden in the conversation at url. */
+async function getHiddenTurnKeys(url) {
   if (!isContextValid()) return [];
-  var result = await chrome.storage.local.get(DELETED_TURNS_KEY);
-  var all = result[DELETED_TURNS_KEY] || {};
-  return all[url] || [];
+  var doc = await readDoc(convKeyForUrl(url));
+  var keys = doc.hidden.slice();
+  doc.items.forEach(function (it) {
+    (it.turnKeys || []).forEach(function (k) { if (keys.indexOf(k) === -1) keys.push(k); });
+  });
+  return keys;
 }
 
+/** Forget cached docs (on SPA navigation). */
+function resetStorageCache() {
+  _docCache = {};
+}
+
+/** Undo addDeletedTurns for these keys (a send the user cancelled before it finished). */
+function removeHiddenTurns(url, turnKeys) {
+  if (!turnKeys || !turnKeys.length) return Promise.resolve();
+  return modifyDoc(convKeyForUrl(url), function (doc) {
+    doc.hidden = doc.hidden.filter(function (k) { return turnKeys.indexOf(k) === -1; });
+  });
+}

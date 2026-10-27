@@ -11,8 +11,7 @@
       return st.navWidget.getBoundingClientRect().left - NAV_WIDGET_GAP;
     }
     // When right sidebar is open, use the chat column's right edge
-    var chatCol = document.querySelector('[class*="react-scroll-to-bottom"]')
-      || document.querySelector('main');
+    var chatCol = JR.site.chatColumn();
     if (chatCol) {
       var cr = chatCol.getBoundingClientRect();
       if (window.innerWidth - cr.right > 200) {
@@ -25,8 +24,7 @@
 
   /** True when ChatGPT's right sidebar (research/canvas) is visible. [LAYOUT-LOCKED] */
   JR.isRightSidebarOpen = function () { // [LAYOUT-LOCKED]
-    var chatCol = document.querySelector('[class*="react-scroll-to-bottom"]')
-      || document.querySelector('main');
+    var chatCol = JR.site.chatColumn();
     if (!chatCol) return false;
     var rightGap = window.innerWidth - chatCol.getBoundingClientRect().right;
     return rightGap > 200;
@@ -36,8 +34,7 @@
   function getPopupMinLeft() {
     // Use the chat column's left edge — it shifts automatically
     // when the sidebar expands/collapses
-    var chatCol = document.querySelector('[class*="react-scroll-to-bottom"]')
-      || document.querySelector('main');
+    var chatCol = JR.site.chatColumn();
     if (chatCol) {
       var cr = chatCol.getBoundingClientRect();
       if (cr.left > 0) return cr.left + 20;
@@ -773,7 +770,7 @@
       if (!e.target.closest(".jr-popup-response")) return;
       // Don't interfere with link/entity clicks — let the click handler handle them
       if (e.target.closest("a")) return;
-      if (e.target.closest("span.cursor-pointer[class*='entity-underline'], span.cursor-pointer[class*='entity-accent']")) return;
+      if (e.target.closest(JR.site.entitySelector)) return;
       if (e.target.closest("button") && !e.target.closest(".jr-code-block")) return;
       var hlSpan = e.target.closest(".jr-source-highlight");
       if (hlSpan && st.activeSourceHighlights.indexOf(hlSpan) !== -1) {
@@ -1030,12 +1027,18 @@
       st.navWidget = buildNavWidget();
       document.body.appendChild(st.navWidget);
       // Listen for scroll to update disabled state dynamically
-      var scrollEl = document.querySelector('[class*="react-scroll-to-bottom"]') ||
-                     document.querySelector('[data-testid="conversation-turn-2"]');
-      var scrollParent = scrollEl ? JR.getScrollParent(scrollEl) : window;
+      var scrollParent = JR.site.scrollContainer() || window;
+      // At most once per frame: this used to run layout reads on every scroll
+      // event, including ChatGPT's own scrolling while it streams.
+      var navRaf = 0;
       var scrollHandler = function () {
-        if (!st.navWidget) return;
-        JR.updateNavDisabled();
+        if (navRaf) return;
+        navRaf = requestAnimationFrame(function () {
+          navRaf = 0;
+          if (!st.navWidget) return;
+          if (JR.perf) JR.perf.count("navScroll");
+          JR.updateNavDisabled();
+        });
       };
       (scrollParent === window ? window : scrollParent)
         .addEventListener("scroll", scrollHandler, { passive: true });

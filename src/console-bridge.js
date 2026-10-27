@@ -12,6 +12,16 @@
   window.JR.open = function (quoteId, itemIndex) {
     document.dispatchEvent(new CustomEvent("jr-open", { detail: { quoteId: quoteId, itemIndex: itemIndex } }));
   };
+  /**
+   * Self-check: which ChatGPT hooks Popup can find, plus perf counters.
+   * The report is logged by the content script and kept in #jr-diagnostics[data-json].
+   * Usage: JR.diagnose()  |  JR.diagnose({break: "composer"})  |  JR.diagnose({unbreak: true})
+   */
+  window.JR.diagnose = function (opts) {
+    document.dispatchEvent(new CustomEvent("jr-diagnose", { detail: opts ? JSON.stringify(opts) : null }));
+    var el = document.getElementById("jr-diagnostics");
+    return el ? JSON.parse(el.getAttribute("data-json")) : null;
+  };
   window.JR.locate = function (hlId) {
     document.dispatchEvent(new CustomEvent("jr-locate", { detail: hlId || null }));
   };

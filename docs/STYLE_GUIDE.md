@@ -39,10 +39,11 @@ Defined on `:root` and overridden for dark mode.
 | `--jr-icon-btn-circle` | `36px` | `36px` | Circle button diameter (trigger, search, trash) |
 
 ## Dark Mode
-Dark mode activates when the `<html>` element has class `dark` or any class containing `"dark"`:
+Dark mode activates when the `<html>` element has class `dark`, any class containing `"dark"`, or (current ChatGPT) `data-theme="dark"`:
 ```css
 html.dark,
-html[class*="dark"] { ... }
+html[class*="dark"],
+html[data-theme="dark"] { ... }
 ```
 Dark mode uses neutral-cool dark backgrounds with a subtle blue undertone (not purple). The brand blue `#1944f1` is used directly for highlights; a lighter `#5a7af7` is used for interactive elements to maintain WCAG AA contrast.
 

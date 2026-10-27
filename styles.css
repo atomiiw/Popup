@@ -28,7 +28,8 @@
 }
 
 html.dark,
-html[class*="dark"] {
+html[class*="dark"],
+html[data-theme="dark"] {
   --jr-bg: #1a1c22;
   --jr-border: #2e3038;
   --jr-text: #e4e4e7;
@@ -178,7 +179,8 @@ html[class*="dark"] {
 }
 
 html.dark .jr-popup--chained,
-html[class*="dark"] .jr-popup--chained {
+html[class*="dark"] .jr-popup--chained,
+html[data-theme="dark"] .jr-popup--chained {
   box-shadow: 0 0 0 1px var(--jr-border), 0 2px 8px rgba(0, 0, 0, 0.55), 0 0.5px 3px rgba(0, 0, 0, 0.35);
 }
 
@@ -1049,7 +1051,8 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-confirm-icon-btn--danger:active { transform: scale(1.35); }
 
 html.dark .jr-popup-confirm-icon-btn--danger:hover,
-html[class*="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f87171; }
+html[class*="dark"] .jr-popup-confirm-icon-btn--danger:hover,
+html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f87171; }
 
 /* ==========================================================================
    Navigation widget
@@ -1274,4 +1277,82 @@ html[class*="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f87171; }
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* --- Health banner: Popup can't hook into ChatGPT's page (site-adapter.js) --- */
+.jr-health-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 340px;
+  padding: 10px 12px;
+  background: var(--jr-bg);
+  color: var(--jr-text);
+  border: 1px solid var(--jr-border);
+  border-left: 3px solid var(--jr-action);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  font-family: var(--jr-font);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.jr-health-banner-close {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--jr-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.jr-health-banner-close:hover {
+  color: var(--jr-action);
+  transform: scale(1.3);
+}
+
+/* --- Popup response animations ---
+   While an answer streams (.jr-popup--streaming) the popup mirrors ChatGPT's
+   DOM incrementally (chat.js syncAnswerInto), so each new word keeps
+   ChatGPT's own one-time fade-in — the same word-by-word feel as the main chat.
+   Otherwise (finished answers, reopened popups) the content is rebuilt in one
+   go, and those animations would replay or leave words invisible: turn them off. */
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response *,
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response *::before,
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response [data-streaming-word],
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response [data-streaming-block],
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response [data-streaming-list-marker],
+.jr-popup:not(.jr-popup--streaming) .jr-popup-response [class*="Reveal"] {
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  mask-image: none !important;
+}
+
+.jr-popup-response [data-streaming-dot],
+.jr-popup-response [data-streaming-placeholder-dot] {
+  display: none !important;
+}
+
+/* --- Reserved space after a hidden Popup Q&A ---
+   After a send, ChatGPT adds a spacer after the turn list (height = viewport
+   minus the new turn) so the new message can scroll to the top. Our Q&A turn is
+   hidden, so the spacer would be a blank screen. Hidden only while the newest
+   turn is a Popup Q&A (html.jr-tail-hidden, set by qa-content.js / chat.js).
+   DOM: [data-thread-find-target=conversation] > div.relative (turn list) + div.shrink-0 (spacer). */
+html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(.relative)[style*="height"] {
+  display: none !important;
 }

@@ -4,18 +4,7 @@
 
   window.JR = {
     // --- Constants ---
-    SELECTORS: {
-      aiTurn: '[data-testid^="conversation-turn-"]',
-      // Language-independent role markers — present on chatgpt.com regardless
-      // of UI locale. data-message-author-role is the primary signal; data-turn
-      // is a secondary fallback for older/varying ChatGPT DOMs.
-      assistantMsg: '[data-message-author-role="assistant"], [data-turn="assistant"]',
-      userMsg: '[data-message-author-role="user"], [data-turn="user"]',
-      chatInput: '#prompt-textarea',
-      sendButton: 'button[data-testid="send-button"]',
-      stopButton: 'button[data-testid="stop-button"]',
-      responseContent: ".markdown",
-    },
+    // ChatGPT DOM selectors live in src/site-adapter.js (JR.site / JR.SEL) — nowhere else.
 
     MAX_DISPLAY_CHARS: 120,
 
@@ -45,7 +34,8 @@
       navWidget: null,                  // floating highlight navigation widget element
       askBtnHidden: false,              // session flag — hides ChatGPT's native "Ask ChatGPT" button
       messageQueue: [],                  // queued messages waiting for generation to finish
-      hiddenTurnIndices: new Set(),       // turn indices that must stay hidden (enforced by observer)
+      watchingTurnKey: null,              // turn key of the Q&A currently being captured
+      lastSendReport: null,               // outcome of the last injection (for JR.diagnose)
     },
   };
 })();

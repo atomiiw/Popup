@@ -2,7 +2,6 @@
 (function () {
   "use strict";
 
-  var S = JR.SELECTORS;
   var BLOCK_TAGS = JR.BLOCK_TAGS;
   var SENTENCE_TERMINATORS = JR.SENTENCE_TERMINATORS;
 
@@ -29,7 +28,7 @@
       }
       if (n.nodeType !== Node.ELEMENT_NODE) return;
       // Citation pill — capture as a unit, record position
-      if (n.getAttribute && n.getAttribute("data-testid") === "webpage-citation-pill") {
+      if (n.matches && n.matches(JR.site.citationSelector)) {
         var start = raw.length;
         raw += n.textContent;
         pills.push({ start: start, end: raw.length });
@@ -91,10 +90,12 @@
     var selectedBlocks = [];
     var leafWalker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, {
       acceptNode: function (node) {
+        if (isCodeBlock(node)) return NodeFilter.FILTER_ACCEPT; // a code block is one unit
+        if (node.closest && node.closest(JR.site.codeBlockSelector)) return NodeFilter.FILTER_SKIP;
         if (!BLOCK_TAGS.has(node.tagName)) return NodeFilter.FILTER_SKIP;
         var child = node.firstElementChild;
         while (child) {
-          if (BLOCK_TAGS.has(child.tagName)) return NodeFilter.FILTER_SKIP;
+          if (BLOCK_TAGS.has(child.tagName) || isCodeBlock(child) || child.querySelector(JR.site.codeBlockSelector)) return NodeFilter.FILTER_SKIP;
           child = child.nextElementSibling;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -147,7 +148,7 @@
         var blockBolds = extracted.bolds;
         var isFirstSent = true;
 
-        if (node === startBlock && node.tagName !== "PRE" && node.contains(range.startContainer)) {
+        if (node === startBlock && !isCodeBlock(node) && node.contains(range.startContainer)) {
           var rawOffS = JR.getOffsetInBlock(node, range.startContainer, range.startOffset);
           var leadWSS = node.textContent.length - node.textContent.trimStart().length;
           var trimOffS = Math.max(0, rawOffS - leadWSS);
@@ -165,7 +166,7 @@
           }
         }
 
-        if (node === endBlock && node.tagName !== "PRE" && node.contains(range.endContainer)) {
+        if (node === endBlock && !isCodeBlock(node) && node.contains(range.endContainer)) {
           var rawOffE = JR.getOffsetInBlock(node, range.endContainer, range.endOffset);
           var leadWSE = node.textContent.length - node.textContent.trimStart().length;
           var trimOffE = Math.min(blockText.length, Math.max(0, rawOffE - leadWSE));
@@ -246,7 +247,7 @@
     var blockText = startBlock.textContent;
     if (!blockText) return null;
 
-    if (startBlock.tagName === "PRE") return blockText.trim();
+    if (isCodeBlock(startBlock)) return codeBlockText(startBlock).trim();
 
     var startOffset = JR.getOffsetInBlock(startBlock, range.startContainer, range.startOffset);
     var endOffset = Math.min(
@@ -442,6 +443,17 @@
     return { text: text, sentence: null, blockTypes: null, rect: rect, article: anchorArticle, range: clonedRange };
   };
 
+  /** A code block counts as one block for sentence extraction (old <pre> or current [data-code-block]). */
+  function isCodeBlock(node) {
+    return node.tagName === "PRE" || !!(node.matches && node.matches(JR.site.codeBlockSelector));
+  }
+
+  /** Code text of a block, without its toolbar (language label, Copy button). */
+  function codeBlockText(block) {
+    var src = block.tagName === "PRE" ? block : block.querySelector(JR.site.codeSourceSelector);
+    return (src || block).textContent || "";
+  }
+
   /**
    * Check if a text node is inside a ChatGPT code block toolbar
    * (the bar with language label, copy, run buttons).
@@ -450,6 +462,9 @@
   function isToolbarTextNode(textNode) {
     var parent = textNode.parentElement;
     if (!parent) return false;
+    // Current ChatGPT: code lives in [data-code-block-source]; the rest of the block is toolbar
+    var cb = parent.closest(JR.site.codeBlockSelector);
+    if (cb && cb.tagName !== "PRE") return !parent.closest(JR.site.codeSourceSelector);
     // If inside <pre> or <code>, it's actual code — keep it
     if (parent.closest("pre") || parent.closest("code")) return false;
     // If inside .contain-inline-size but NOT inside pre/code, it's toolbar

@@ -2,7 +2,6 @@
 (function () {
   "use strict";
 
-  var S = JR.SELECTORS;
   var st = JR.state;
 
   /**
@@ -228,295 +227,323 @@
   };
 
   /**
-   * Restore a single highlight by text-matching within a root element.
-   * Shared by restoreHighlights (level 1, page reload) and
-   * createPopup with completedId (chained highlights inside popup response).
-   *
-   * @param {Element} root - DOM element to search for the text
-   * @param {object} hl - Highlight data. Uses hl.quoteId (or hl.id) as the map key
-   *   and DOM data attribute. Must have: text, sentence, blockTypes, responseHTML,
-   *   question, color, parentId, responseIndex. May have: items (array of versions).
-   * @param {Element} contentContainer
+   * Turn stored/in-memory item data into the entry shape used everywhere.
    */
-  JR.restoreHighlightInElement = function (root, hl, contentContainer) {
-    var hlKey = hl.quoteId || hl.id;
-    var range = JR.findTextRange(root, hl.text);
-    if (!range) {
-      console.warn("[JR restore] findTextRange failed for:", hl.text.slice(0, 60), "id:", hlKey);
-      return false;
-    }
-    var wrappers = JR.highlightRange(range);
-    if (wrappers.length === 0) {
-      console.warn("[JR restore] highlightRange returned 0 wrappers for:", hl.text.slice(0, 60), "id:", hlKey);
-      return false;
-    }
-    for (var k = 0; k < wrappers.length; k++) {
-      wrappers[k].setAttribute("data-jr-highlight-id", hlKey);
-      wrappers[k].classList.add("jr-source-highlight-done");
-    }
-    var entry = {
+  function makeEntry(hlKey, hl, wrappers, contentContainer) {
+    return {
       quoteId: hlKey,
       spans: wrappers,
       responseHTML: hl.responseHTML,
       text: hl.text,
-      sentence: hl.sentence,
-      blockTypes: hl.blockTypes,
+      sentence: hl.sentence || null,
+      blockTypes: hl.blockTypes || null,
       question: hl.question || null,
       color: hl.color || null,
       contentContainer: contentContainer,
       parentId: hl.parentId || null,
       parentItemId: hl.parentItemId || null,
-      responseIndex: hl.responseIndex || -1,
-      items: hl.items || [{ id: hl.id, question: hl.question || null, responseHTML: hl.responseHTML, questionIndex: hl.questionIndex || -1, responseIndex: hl.responseIndex || -1 }],
+      sourceTurnKey: hl.sourceTurnKey || null,
+      wholeResponse: !!hl.wholeResponse,
+      items: hl.items || [{ id: hl.id, question: hl.question || null, responseHTML: hl.responseHTML, turnKeys: hl.turnKeys || [] }],
       activeItemIndex: hl.activeItemIndex != null ? hl.activeItemIndex : 0,
     };
-    st.completedHighlights.set(hlKey, entry);
+  }
+
+  /**
+   * Restore a single highlight by text-matching within a root element.
+   * Shared by level-1 restore (turn mounted) and createPopup with completedId
+   * (chained highlights inside a popup response).
+   *
+   * @param {Element} root - DOM element to search for the text
+   * @param {object} hl - Highlight data (quoteId, text, color, parentId, items, ...)
+   * @param {Element} contentContainer
+   */
+  JR.restoreHighlightInElement = function (root, hl, contentContainer) {
+    var hlKey = hl.quoteId || hl.id;
+    var range = JR.findTextRange(root, hl.text);
+    if (!range) return false;
+    var wrappers = JR.highlightRange(range);
+    if (wrappers.length === 0) return false;
+    for (var k = 0; k < wrappers.length; k++) {
+      wrappers[k].setAttribute("data-jr-highlight-id", hlKey);
+      wrappers[k].classList.add("jr-source-highlight-done");
+    }
+    var existing = st.completedHighlights.get(hlKey);
+    if (existing) {
+      // Re-applied after ChatGPT remounted the turn: keep the entry, swap in the new spans.
+      existing.spans = wrappers;
+      existing.contentContainer = contentContainer;
+    } else {
+      st.completedHighlights.set(hlKey, makeEntry(hlKey, hl, wrappers, contentContainer));
+    }
     return true;
   };
 
-  /**
-   * Hide turns from previously deleted highlights.
-   * Polls the DOM since ChatGPT renders turns asynchronously.
-   */
-  JR.hideDeletedTurns = function (url) {
-    getDeletedTurns(url).then(function (indices) {
-      if (indices.length === 0) return;
-      var attempts = 0;
-      var maxAttempts = 30;
-      var remaining = indices.slice();
+  // --- Level-1 restore (event-driven) ---
+  // ChatGPT virtualizes the thread: a turn's DOM exists only while it is near
+  // the viewport and is rebuilt from scratch when scrolled back, dropping our
+  // spans. JR.reapplyHighlights() runs whenever turns mount (qa-content.js
+  // observer) and re-wraps any level-1 highlight whose source turn is present.
 
-      function tryHide() {
-        var stillRemaining = [];
-        for (var i = 0; i < remaining.length; i++) {
-          var turn = document.querySelector(
-            '[data-testid="conversation-turn-' + remaining[i] + '"]'
-          );
-          if (turn) {
-            turn.classList.add("jr-hidden");
-          } else {
-            stillRemaining.push(remaining[i]);
-          }
-        }
-        remaining = stillRemaining;
-        attempts++;
-        if (remaining.length > 0 && attempts < maxAttempts) {
-          setTimeout(tryHide, 500);
-        }
+  var pendingL1 = [];   // grouped highlights whose source turn hasn't been seen yet
+  var restoreGen = 0;
+
+  JR.pendingRestoreCount = function () { return pendingL1.length; };
+
+  /** Fill an item's content from JR.qa (cache or mounted turn). Returns true if filled. */
+  function fillFromQA(item) {
+    if (item.responseHTML !== "__LOADING__") return false;
+    var c = JR.qa.get(item.turnKeys);
+    if (!c) return false;
+    item.responseHTML = c.responseHTML;
+    if (c.question) item.question = c.question;
+    if (c.sentence) item.sentence = c.sentence;
+    return true;
+  }
+
+  function syncActive(q) {
+    var it = q.items[q.activeItemIndex] || q.items[q.items.length - 1];
+    if (!it) return;
+    q.question = it.question;
+    q.responseHTML = it.responseHTML;
+    if (it.sentence) q.sentence = it.sentence;
+  }
+
+  /** Group stored version records by quoteId. */
+  function groupByQuote(records) {
+    var map = {};
+    records.forEach(function (r) {
+      var q = map[r.quoteId];
+      if (!q) {
+        q = map[r.quoteId] = {
+          quoteId: r.quoteId, text: r.text, color: r.color, parentId: r.parentId,
+          parentItemId: r.parentItemId, sourceTurnKey: r.sourceTurnKey, wholeResponse: r.wholeResponse,
+          items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null, responseHTML: null,
+        };
       }
-      tryHide();
+      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, legacy: r.legacy, createdAt: r.createdAt };
+      fillFromQA(item);
+      q.items.push(item);
+      if (r.active) { q.activeItemIndex = q.items.length - 1; q.color = r.color; }
+      if (!q.sourceTurnKey && r.sourceTurnKey) q.sourceTurnKey = r.sourceTurnKey;
     });
-  };
+    Object.keys(map).forEach(function (k) {
+      var q = map[k];
+      if (q.activeItemIndex < 0) q.activeItemIndex = q.items.length - 1;
+      syncActive(q);
+    });
+    return map;
+  }
+
+  /** Assistant markdown roots to search for a highlight's text. */
+  function rootsFor(q) {
+    if (q.sourceTurnKey) {
+      var turn = JR.site.findTurnByKey(q.sourceTurnKey);
+      return turn ? JR.site.assistantBodies(turn) : [];
+    }
+    // Migrated data has no turn key yet: look in every mounted answer, except
+    // Popup Q&A answers (they often quote the highlighted text themselves).
+    var roots = [];
+    JR.site.turns().forEach(function (t) {
+      if (st.hiddenTurnKeys.has(JR.site.turnKey(t))) return;
+      var ut = JR.site.userText(t);
+      if (ut && JR.isPopupMessage(ut)) return;
+      roots = roots.concat(JR.site.assistantBodies(t));
+    });
+    return roots;
+  }
+
+  function tryRestoreL1(q) {
+    var roots = rootsFor(q);
+    for (var i = 0; i < roots.length; i++) {
+      var turn = JR.site.turnOf(roots[i]);
+      if (JR.restoreHighlightInElement(roots[i], q, JR.site.popupHost(turn))) {
+        if (!q.sourceTurnKey) {
+          var key = JR.site.turnKey(turn);
+          q.sourceTurnKey = key;
+          var entry = st.completedHighlights.get(q.quoteId);
+          if (entry) entry.sourceTurnKey = key;
+          q.items.forEach(function (it) { updateHighlightFields(it.id, { sourceTurnKey: key }); });
+        }
+        return true;
+      }
+    }
+    return false;
+  }
 
   /**
-   * Restore saved highlights for the current conversation URL.
-   * Polls the DOM for the required turns to appear, then wraps the source text,
-   * hides Q&A turns, and populates completedHighlights.
+   * Re-wrap level-1 highlights whose source turn is mounted but whose spans
+   * are missing (first load, or ChatGPT rebuilt the turn after a scroll).
    */
-  JR.restoreHighlights = function () {
-    if (st.restoreTimer) {
-      clearTimeout(st.restoreTimer);
-      st.restoreTimer = null;
+  JR.reapplyHighlights = function () {
+    if (JR.perf) JR.perf.count("reapplyHighlights");
+    var changed = false;
+
+    // Entries we already know, whose spans ChatGPT threw away.
+    st.completedHighlights.forEach(function (entry, qid) {
+      if (entry.parentId || entry.wholeResponse || !entry.sourceTurnKey) return;
+      if (entry.spans.length && entry.spans[0].isConnected) return;
+      if (!JR.site.findTurnByKey(entry.sourceTurnKey)) return;
+      if (tryRestoreL1(entry)) changed = true;
+    });
+
+    // Highlights from storage not restored yet. Shorter (inner) ones first so a
+    // longer (outer) one can wrap around them.
+    if (pendingL1.length) {
+      var still = [];
+      pendingL1.sort(function (a, b) { return (a.text || "").length - (b.text || "").length; });
+      pendingL1.forEach(function (q) {
+        if (st.completedHighlights.has(q.quoteId)) return;
+        if (tryRestoreL1(q)) changed = true;
+        else still.push(q);
+      });
+      pendingL1 = still;
     }
 
+    if (changed) {
+      if (st.activeHighlightId) JR.syncHighlightActive(st.activeHighlightId);
+      JR.updateNavWidget();
+    }
+  };
+
+  /**
+   * Restore saved highlights for the current conversation: hide its Q&A turns
+   * (CSS rules by turn key) and queue level-1 highlights for re-wrapping.
+   */
+  JR.restoreHighlights = function () {
+    var gen = ++restoreGen;
     var url = location.href;
+    pendingL1 = [];
+    st.restoreReady = false; // qa-content's self-heal waits for this (it needs the stored items)
 
-    // Hide turns from previously deleted highlights
-    JR.hideDeletedTurns(url);
+    getHiddenTurnKeys(url).then(function (keys) {
+      if (gen !== restoreGen) return;
+      JR.hideTurnKeys(keys);
+    });
 
-    getHighlightsByUrl(url).then(function (highlights) {
-      if (highlights.length === 0) return;
-
-      // Collect all turn indices to hide (every item, every quoteId)
-      var allTurnIndices = [];
-      for (var hi = 0; hi < highlights.length; hi++) {
-        var h = highlights[hi];
-        if (h.questionIndex > 0) { allTurnIndices.push(h.questionIndex); st.hiddenTurnIndices.add(h.questionIndex); }
-        if (h.responseIndex > 0) { allTurnIndices.push(h.responseIndex); st.hiddenTurnIndices.add(h.responseIndex); }
-      }
-
-      // Group items by quoteId, then build restorable list for level-1 highlights
-      var quoteMap = {};
-      for (var gi = 0; gi < highlights.length; gi++) {
-        var item = highlights[gi];
-        var qid = item.quoteId;
-        if (!quoteMap[qid]) {
-          quoteMap[qid] = {
-            quoteId: qid,
-            text: item.text,
-            sentence: item.sentence,
-            blockTypes: item.blockTypes,
-            color: item.color,
-            parentId: item.parentId,
-            parentItemId: item.parentItemId || null,
-            sourceTurnIndex: item.sourceTurnIndex,
-            items: [],
-            activeItemIndex: 0,
-            // Convenience — will be set from active item below
-            question: null,
-            responseHTML: null,
-            responseIndex: -1,
-          };
-        }
-        var itemObj = {
-          id: item.id,
-          question: item.question,
-          responseHTML: item.responseHTML,
-          questionIndex: item.questionIndex,
-          responseIndex: item.responseIndex,
-        };
-        quoteMap[qid].items.push(itemObj);
-        if (item.active) {
-          quoteMap[qid].activeItemIndex = quoteMap[qid].items.length - 1;
-          quoteMap[qid].question = item.question;
-          quoteMap[qid].responseHTML = item.responseHTML;
-          quoteMap[qid].responseIndex = item.responseIndex;
-          quoteMap[qid].color = item.color;
-        }
-      }
-      // If no item was marked active, default to the last one
-      var quoteIds = Object.keys(quoteMap);
-      for (var qi = 0; qi < quoteIds.length; qi++) {
-        var qEntry = quoteMap[quoteIds[qi]];
-        if (!qEntry.question && qEntry.items.length > 0) {
-          var lastItem = qEntry.items[qEntry.items.length - 1];
-          qEntry.activeItemIndex = qEntry.items.length - 1;
-          qEntry.question = lastItem.question;
-          qEntry.responseHTML = lastItem.responseHTML;
-          qEntry.responseIndex = lastItem.responseIndex;
-        }
-      }
-
-      // Only level-1 highlights (no parentId) with source and response get visually restored
-      var restorable = [];
-      for (var ri2 = 0; ri2 < quoteIds.length; ri2++) {
-        var qe = quoteMap[quoteIds[ri2]];
-        if (!qe.parentId && qe.sourceTurnIndex > 0 && qe.responseHTML) {
-          restorable.push(qe);
-        }
-      }
-
-      if (allTurnIndices.length === 0 && restorable.length === 0) return;
-
-      // Restore shorter (inner) highlights first so that when longer
-      // (outer) highlights restore, the filter in highlightRange can
-      // detect the inner and wrap around it instead of covering it.
-      restorable.sort(function (a, b) {
-        return (a.text || "").length - (b.text || "").length;
+    getHighlightsByUrl(url).then(function (records) {
+      if (gen !== restoreGen) return;
+      var map = groupByQuote(records);
+      Object.keys(map).forEach(function (qid) {
+        var q = map[qid];
+        if (!q.parentId && !q.wholeResponse) pendingL1.push(q);
       });
-
-      var attempts = 0;
-      var maxAttempts = 30;
-      var remaining = restorable.slice();
-      var turnsRemaining = allTurnIndices.slice();
-
-      function tryRestore() {
-        // Hide all Q&A turns (level-1 + chained, every attempt until found)
-        var turnsStillRemaining = [];
-        for (var ti = 0; ti < turnsRemaining.length; ti++) {
-          var turn = document.querySelector(
-            '[data-testid="conversation-turn-' + turnsRemaining[ti] + '"]'
-          );
-          if (turn) {
-            turn.classList.add("jr-hidden");
-          } else {
-            turnsStillRemaining.push(turnsRemaining[ti]);
-          }
-        }
-        turnsRemaining = turnsStillRemaining;
-
-        // Restore level-1 highlights visually
-        var stillRemaining = [];
-        for (var i = 0; i < remaining.length; i++) {
-          var hl = remaining[i];
-
-          if (st.completedHighlights.has(hl.quoteId)) continue;
-
-          var sourceArticle = document.querySelector(
-            '[data-testid="conversation-turn-' + hl.sourceTurnIndex + '"]'
-          );
-          if (!sourceArticle) {
-            stillRemaining.push(hl);
-            continue;
-          }
-
-          var markdown = sourceArticle.querySelector(S.responseContent);
-          if (!markdown) {
-            stillRemaining.push(hl);
-            continue;
-          }
-
-          var contentContainer = sourceArticle.parentElement;
-          if (!JR.restoreHighlightInElement(markdown, hl, contentContainer)) {
-            // Retry on next attempt — DOM may not be settled yet
-            stillRemaining.push(hl);
-            continue;
-          }
-        }
-
-        remaining = stillRemaining;
-        attempts++;
-
-        JR.updateNavWidget();
-
-        if ((remaining.length > 0 || turnsRemaining.length > 0) && attempts < maxAttempts) {
-          st.restoreTimer = setTimeout(tryRestore, 500);
-        } else if (remaining.length > 0) {
-          console.warn("[JR restore] gave up on " + remaining.length + " highlights after " + maxAttempts + " attempts:",
-            remaining.map(function (h) { return h.text.slice(0, 40) + "…"; }));
-        }
-      }
-
-      tryRestore();
+      st.restoreReady = true;
+      JR.watchTurnMounts();
+      JR.reapplyHighlights();
+      JR.recheckTurns(); // run the mount pass (self-heal / adoption) now that items are known
+      readBackFromConversation(records, gen);
     });
   };
 
   /**
-   * Enforce hidden state on all turns in hiddenTurnIndices.
-   * Called by MutationObserver when React remounts turn elements.
+   * Answers whose turns aren't in the DOM: read them from ChatGPT's conversation
+   * data (JR.qa.ensure). Items with no turn key yet (saved before the redesign,
+   * or whose turn never mounted) are matched to Popup questions found there.
    */
-  function enforceHiddenTurns() {
-    if (st.hiddenTurnIndices.size === 0) return;
-    st.hiddenTurnIndices.forEach(function (idx) {
-      var turn = document.querySelector(
-        '[data-testid="conversation-turn-' + idx + '"]'
-      );
-      if (turn && !turn.classList.contains("jr-hidden")) {
-        turn.classList.add("jr-hidden");
-      }
+  function readBackFromConversation(records, gen) {
+    var loadingKeys = [];
+    var unlinked = false;
+    records.forEach(function (r) {
+      if (!(r.turnKeys || []).length) { unlinked = true; return; }
+      if (r.responseHTML === "__LOADING__") loadingKeys = loadingKeys.concat(r.turnKeys);
+    });
+    var missing = loadingKeys.filter(function (k) { return !JR.qa.get([k]); });
+    if (missing.length) JR.qa.ensure(missing);
+    if (!unlinked) return;
+    JR.qa.popupTurnsFromApi().then(function (turns) {
+      if (gen !== restoreGen) return;
+      var linked = new Set();
+      records.forEach(function (r) { (r.turnKeys || []).forEach(function (k) { linked.add(k); }); });
+      turns.forEach(function (t) {
+        if (linked.has(t.turnKey)) return;
+        // A Popup question nothing points to: keep it out of the main chat, and
+        // link it to the item with the same highlighted text, if any.
+        JR.hideTurnKeys([t.turnKey]);
+        addDeletedTurns(location.href, [t.turnKey]);
+        JR.adoptPopupTurn(t.turnKey, t.parsed);
+      });
     });
   }
 
   /**
-   * Start a MutationObserver that re-hides turns whenever React remounts them.
-   * Called once from content.js after initial restore.
+   * Content of hidden Q&A turns became available (turn mounted): fill entries
+   * that were showing "loading", and refresh the open popup if it is one of them.
    */
-  JR.startHiddenTurnEnforcer = function () {
-    if (st._hiddenTurnObserver) return;
-    var debounceTimer = null;
-    st._hiddenTurnObserver = new MutationObserver(function () {
-      if (st.hiddenTurnIndices.size === 0) return;
-      if (debounceTimer) return;
-      debounceTimer = setTimeout(function () {
-        debounceTimer = null;
-        enforceHiddenTurns();
-      }, 100);
+  JR.onQAContentLoaded = function (turnKeys) {
+    var refresh = null;
+    st.completedHighlights.forEach(function (entry, qid) {
+      var touched = false;
+      (entry.items || []).forEach(function (it) {
+        if (it.responseHTML !== "__LOADING__") return;
+        if (!(it.turnKeys || []).some(function (k) { return turnKeys.indexOf(k) !== -1; })) return;
+        if (fillFromQA(it)) touched = true;
+      });
+      if (touched) {
+        syncActive(entry);
+        if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid) refresh = qid;
+      }
     });
-    // Observe the conversation container for child additions (React remounts)
-    var target = document.querySelector('[role="presentation"]') || document.body;
-    st._hiddenTurnObserver.observe(target, { childList: true, subtree: true });
+    pendingL1.forEach(function (q) {
+      q.items.forEach(function (it) {
+        if ((it.turnKeys || []).some(function (k) { return turnKeys.indexOf(k) !== -1; })) fillFromQA(it);
+      });
+      syncActive(q);
+    });
+    // Don't rebuild under the user while they're editing the question.
+    if (refresh && !st.activePopup.querySelector(".jr-popup-question--editing")) {
+      JR.rebuildPopupAfterEdit(st.activePopup, refresh);
+    }
   };
 
   /**
-   * Add a turn index to the enforced hidden set (used by chat.js on capture).
+   * A Popup Q&A turn showed up that no stored item points to: data saved before
+   * ChatGPT's redesign, or a send whose turn was never mounted while it was
+   * answered (the item then shows "failed"). Link it to the stored item with the
+   * same highlighted text (any nesting level), oldest unlinked first; reply-to-all
+   * questions carry no quote and match reply-to-all items.
    */
-  JR.addHiddenTurnIndex = function (idx) {
-    if (idx > 0) st.hiddenTurnIndices.add(idx);
-  };
+  var claimed = new Set(); // record ids already being linked (adoption is async)
 
-  /**
-   * Clear enforced hidden turns (used on SPA navigation).
-   */
-  JR.clearHiddenTurnIndices = function () {
-    st.hiddenTurnIndices.clear();
+  function findInMemory(id) {
+    var hit = null;
+    st.completedHighlights.forEach(function (entry) {
+      (entry.items || []).forEach(function (it) { if (it.id === id) hit = { entry: entry, item: it }; });
+    });
+    pendingL1.forEach(function (q) {
+      q.items.forEach(function (it) { if (it.id === id) hit = { entry: q, item: it }; });
+    });
+    return hit;
+  }
+
+  JR.adoptPopupTurn = function (turnKey, parsed) {
+    if (!parsed) return;
+    getHighlightsByUrl().then(function (records) {
+      if (records.some(function (r) { return (r.turnKeys || []).indexOf(turnKey) !== -1; })) return;
+      var cands = records.filter(function (r) {
+        if ((r.turnKeys || []).length || claimed.has(r.id)) return false;
+        return parsed.wholeResponse ? r.wholeResponse : (!r.wholeResponse && r.text === parsed.text);
+      });
+      if (!cands.length) return;
+      cands.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+      var rec = cands[0];
+      claimed.add(rec.id);
+      updateHighlightFields(rec.id, { turnKeys: [turnKey], responseHTML: "__LOADING__" });
+
+      JR.qa.ensure([turnKey]); // read the answer (DOM cache or conversation data)
+      var mem = findInMemory(rec.id);
+      if (!mem) return; // not loaded in this session; the stored key is enough
+      mem.item.turnKeys = [turnKey];
+      if (mem.item.responseHTML === "__TIMEOUT__" || JR.isPlaceholderHTML(mem.item.responseHTML)) {
+        mem.item.responseHTML = "__LOADING__";
+        fillFromQA(mem.item);
+        syncActive(mem.entry);
+        var qid = mem.entry.quoteId;
+        if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid &&
+            !st.activePopup.querySelector(".jr-popup-question--editing")) {
+          JR.rebuildPopupAfterEdit(st.activePopup, qid);
+        }
+      }
+    });
   };
 })();

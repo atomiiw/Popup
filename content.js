@@ -339,8 +339,7 @@
     if (!posParent) {
       posParent = entry.contentContainer;
       if (!posParent || !posParent.isConnected) {
-        var turnEl = entry.spans[0].closest(JR.SELECTORS.aiTurn);
-        posParent = turnEl ? turnEl.parentElement : document.body;
+        posParent = JR.site.popupHost(JR.site.turnOf(entry.spans[0]));
       }
     }
     var pRect = posParent.getBoundingClientRect();
@@ -866,50 +865,6 @@
 
   // --- SPA navigation ---
 
-  /**
-   * Update the early-hide <style> tag for the current URL so turns stay hidden
-   * during SPA navigation (the document_start script only fires on full loads).
-   */
-  function refreshEarlyHideStyle() {
-    var url = location.href;
-    try {
-    chrome.storage.local.get(["jumpreturn_highlights", "jumpreturn_deleted_turns"], function (result) {
-      var highlights = result.jumpreturn_highlights || [];
-      var deletedAll = result.jumpreturn_deleted_turns || {};
-      var deletedTurns = deletedAll[url] || [];
-      var turnSet = {};
-      for (var i = 0; i < highlights.length; i++) {
-        var h = highlights[i];
-        if (h.url !== url) continue;
-        if (h.questionIndex > 0) turnSet[h.questionIndex] = true;
-        if (h.responseIndex > 0) turnSet[h.responseIndex] = true;
-      }
-      for (var d = 0; d < deletedTurns.length; d++) {
-        if (deletedTurns[d] > 0) turnSet[deletedTurns[d]] = true;
-      }
-      var existing = document.getElementById("jr-early-hide");
-      var indices = Object.keys(turnSet);
-      if (indices.length === 0) {
-        if (existing) existing.remove();
-        return;
-      }
-      var rules = [];
-      for (var r = 0; r < indices.length; r++) {
-        rules.push('[data-testid="conversation-turn-' + indices[r] + '"]');
-      }
-      var css = rules.join(",\n") + " { display: none !important; }";
-      if (existing) {
-        existing.textContent = css;
-      } else {
-        var style = document.createElement("style");
-        style.id = "jr-early-hide";
-        style.textContent = css;
-        (document.head || document.documentElement).appendChild(style);
-      }
-    });
-    } catch (e) { /* extension context invalidated after reload */ }
-  }
-
   function onNavigate() {
     var currentUrl = location.href;
     if (currentUrl === st.lastKnownUrl) return;
@@ -918,7 +873,15 @@
     JR.removeAllPopups();
     JR.hideSearchBar();
     JR.hideToolbar();
-    JR.clearHiddenTurnIndices();
+    JR.unfreezeChat();
+    document.documentElement.removeAttribute("data-jr-scroll-lock");
+    JR.setTailHidden(false);
+    JR.clearHiddenTurnKeys();
+    JR.qa.clear();
+    JR.qa.resetApi();
+    resetStorageCache();
+    var early = document.getElementById("jr-early-hide");
+    if (early) early.remove();
     st.messageQueue.length = 0;
     if (st.navWidget) {
       if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
@@ -942,8 +905,10 @@
       }
     });
     st.completedHighlights.clear();
-    refreshEarlyHideStyle();
-    setTimeout(JR.restoreHighlights, 1000);
+    // Hide rules are applied by restoreHighlights (CSS by turn key), so turns
+    // that render before it runs are hidden the moment the rules land.
+    JR.restoreHighlights();
+    JR.scheduleHealthCheck();
     setTimeout(JR.initSearchBar, 1500);
   }
 
@@ -969,11 +934,11 @@
   }, 500);
 
   // --- Inject disable × on ChatGPT's native "Ask ChatGPT" selection button ---
+  // Located via JR.site.nativeAskButton() (site-adapter.js). Checked only
+  // briefly after the selection changes — never by watching the whole page.
 
-  function hideAskBtn(askBtn) {
-    // Hide the native "Ask ChatGPT" popover container
-    var container = askBtn.closest('[popover], [style*="position"]') || askBtn.parentElement;
-    if (container) container.style.display = "none";
+  function hideAskBtn(hit) {
+    if (hit && hit.layer) hit.layer.style.display = "none";
   }
 
   var activeDisableBtn = null;
@@ -985,8 +950,9 @@
     }
   }
 
-  function showDisableBtn(askBtn) {
+  function showDisableBtn(hit) {
     removeDisableBtn();
+    var askBtn = hit.button;
 
     var btn = document.createElement("span");
     btn.className = "jr-popup-disable-btn";
@@ -1024,69 +990,48 @@
       if (tooltip.parentNode) tooltip.remove();
       removeDisableBtn();
       st.askBtnHidden = true;
-      hideAskBtn(askBtn);
+      hideAskBtn(hit);
     });
 
     document.body.appendChild(btn);
   }
 
-  // Known localized labels for ChatGPT's selection-toolbar "Ask" button.
-  // Normalized form: lowercased, whitespace collapsed.
-  var ASK_BTN_LABELS = [
-    "ask chatgpt",        // English
-    "询问 chatgpt",       // Simplified Chinese (with space)
-    "询问chatgpt",        // Simplified Chinese (no space)
-    "詢問 chatgpt",       // Traditional Chinese
-    "詢問chatgpt",
-  ];
-
-  function isAskChatGPTButton(btn) {
-    if (btn.closest(".jr-popup")) return false;
-    var raw = (btn.textContent || "").trim();
-    if (!raw || raw.length > 40) return false;
-    var norm = raw.toLowerCase().replace(/\s+/g, " ");
-    if (ASK_BTN_LABELS.indexOf(norm) !== -1) return true;
-    if (ASK_BTN_LABELS.indexOf(norm.replace(/\s+/g, "")) !== -1) return true;
-    // Structural fallback for unknown locales: short button containing the
-    // un-translated brand "ChatGPT", inside a popover-like floating container.
-    if (norm.indexOf("chatgpt") !== -1 && btn.closest("[popover]")) return true;
-    return false;
+  // ChatGPT shows its button shortly after the selection settles, so look a
+  // few times (≤ 600 ms) after each selection change, then stop.
+  var askCheckTimer = null;
+  function checkAskButton(triesLeft) {
+    askCheckTimer = null;
+    if (JR.perf) JR.perf.count("askButtonCheck");
+    var hit = JR.site.nativeAskButton();
+    if (hit) {
+      if (st.askBtnHidden) hideAskBtn(hit);
+      else if (!activeDisableBtn) showDisableBtn(hit);
+      return;
+    }
+    if (triesLeft > 0) askCheckTimer = setTimeout(function () { checkAskButton(triesLeft - 1); }, 100);
   }
 
-  // Observer handles both: show × when Ask ChatGPT appears, remove × when
-  // it disappears, and auto-hide if user previously dismissed.
-  // Deferred to rAF so it never blocks trigger button paint.
-  var askBtnObserverPending = false;
-  var askBtnObserver = new MutationObserver(function () {
-    if (askBtnObserverPending) return;
-    askBtnObserverPending = true;
-    requestAnimationFrame(function () {
-      askBtnObserverPending = false;
-      var candidates = document.querySelectorAll('button');
-      var found = null;
-      for (var i = 0; i < candidates.length; i++) {
-        if (isAskChatGPTButton(candidates[i])) {
-          found = candidates[i];
-          break;
-        }
-      }
-
-      if (found) {
-        if (st.askBtnHidden) {
-          hideAskBtn(found);
-        } else if (!activeDisableBtn) {
-          showDisableBtn(found);
-        }
-      } else {
-        removeDisableBtn();
-      }
-    });
+  document.addEventListener("selectionchange", function () {
+    if (askCheckTimer) clearTimeout(askCheckTimer);
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      askCheckTimer = setTimeout(function () {
+        askCheckTimer = null;
+        if (!JR.site.nativeAskButton()) removeDisableBtn();
+      }, 150);
+      return;
+    }
+    askCheckTimer = setTimeout(function () { checkAskButton(5); }, 100);
   });
-  askBtnObserver.observe(document.body, { childList: true, subtree: true });
+
 
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
-  JR.startHiddenTurnEnforcer();
+  JR.watchTurnMounts();
+  JR.scheduleHealthCheck();
+  // ChatGPT can replace its scroll container (e.g. after navigation); re-attach
+  // the turn-mount observer if so. Cheap: one querySelector, no-op if unchanged.
+  setInterval(JR.watchTurnMounts, 3000);
 
   // Init the search bar (delay for DOM to be ready)
   setTimeout(JR.initSearchBar, 1500);
@@ -1098,9 +1043,7 @@
   (function () {
     if (typeof ResizeObserver === "undefined") return;
     function findChatColumn() {
-      return document.querySelector('[class*="react-scroll-to-bottom"]')
-        || document.querySelector("main")
-        || null;
+      return JR.site.chatColumn();
     }
     var lastW = 0;
     var observedEl = null;
@@ -1138,6 +1081,10 @@
   document.addEventListener("jr-open", function (e) {
     if (!e.detail) return;
     JR.openHighlight(e.detail.quoteId, e.detail.itemIndex);
+  });
+  document.addEventListener("jr-diagnose", function (e) {
+    var report = JR.diagnose(e.detail ? JSON.parse(e.detail) : undefined);
+    console.log("[Popup] diagnose", report);
   });
   document.addEventListener("jr-locate", function (e) {
     JR.locate(e.detail || null);

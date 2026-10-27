@@ -1,41 +1,32 @@
-// early-hide.js — Runs at document_start to hide Q&A turns before they paint.
-// Reads stored highlights + deleted turns for the current URL and injects a
-// <style> element with display:none rules so turns are never visible.
+// early-hide.js — Runs at document_start to hide Popup Q&A turns before they paint.
+// Reads this conversation's stored turn keys and injects display:none rules.
+// Must stay in sync with JR.site.turnSelector() (site-adapter.js) and the
+// storage key format in storage.js.
 (function () {
   "use strict";
 
-  var STORAGE_KEY = "jumpreturn_highlights";
-  var DELETED_TURNS_KEY = "jumpreturn_deleted_turns";
-  var url = location.href;
+  var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(location.pathname);
+  if (!m) return;
+  var key = "popup:conv:" + m[1];
 
-  chrome.storage.local.get([STORAGE_KEY, DELETED_TURNS_KEY], function (result) {
-    var highlights = result[STORAGE_KEY] || [];
-    var deletedAll = result[DELETED_TURNS_KEY] || {};
-    var deletedTurns = deletedAll[url] || [];
-
-    var turnSet = {};
-
-    // Collect turn indices from highlights matching this URL
-    for (var i = 0; i < highlights.length; i++) {
-      var h = highlights[i];
-      if (h.url !== url) continue;
-      if (h.questionIndex > 0) turnSet[h.questionIndex] = true;
-      if (h.responseIndex > 0) turnSet[h.responseIndex] = true;
-    }
-
-    // Collect deleted turns for this URL
-    for (var d = 0; d < deletedTurns.length; d++) {
-      if (deletedTurns[d] > 0) turnSet[deletedTurns[d]] = true;
-    }
-
-    var indices = Object.keys(turnSet);
-    if (indices.length === 0) return;
+  chrome.storage.local.get(key, function (result) {
+    var doc = result[key];
+    if (!doc) return;
+    var keys = (doc.hidden || []).slice();
+    (doc.items || []).forEach(function (it) {
+      (it.turnKeys || []).forEach(function (k) { keys.push(k); });
+    });
+    if (keys.length === 0) return;
 
     var rules = [];
-    for (var r = 0; r < indices.length; r++) {
-      rules.push('[data-testid="conversation-turn-' + indices[r] + '"]');
-    }
-
+    keys.forEach(function (k) {
+      var legacy = /^legacy-(\d+)$/.exec(k);
+      if (legacy) { rules.push('[data-testid="conversation-turn-' + legacy[1] + '"]'); return; }
+      var key = String(k).replace(/["\\]/g, "");
+      rules.push('[data-turn-key="' + key + '"]');
+      // its virtualizer slot, only if the slot holds no other turn (see turnSlotSelector)
+      rules.push('[style*="height"]:has(> [data-turn-key="' + key + '"]):not(:has(> [data-turn-key]:not([data-turn-key="' + key + '"])))');
+    });
     var style = document.createElement("style");
     style.id = "jr-early-hide";
     style.textContent = rules.join(",\n") + " { display: none !important; }";
