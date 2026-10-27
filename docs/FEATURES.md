@@ -186,8 +186,7 @@
 - Works in both light and dark mode
 
 ### Highlight Hover & Active States (Step 7b)
-- Completed highlights change shade on hover (`--jr-mark-bg-hover`: darker in light mode, lighter in dark) with a 0.12s transition
-- Highlights of the open popup stack get `.jr-source-highlight-active` (`--jr-mark-bg-active`) from `JR.syncHighlightActive()` (popup open/close, answer arrival, turn remount); it wins over hover
+- One highlight color everywhere (page highlights and popup quote marks): no hover or open-popup shades; the open popup is shown by the underline
 - Works for both level-1 highlights in the chat and chained highlights inside popup responses
 - Light and dark mode have independently tuned alpha values
 

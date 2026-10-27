@@ -466,7 +466,6 @@
     report.missing = missing;
 
     writeDiagnostics(report);
-    JR.showHealthBanner(report.ok ? null : missing);
     return report;
   };
 
@@ -497,51 +496,4 @@
       });
     } catch (e) { /* extension context invalidated */ }
   }
-
-  // --- Health banner (shown only when Popup can't hook into the page) ---
-
-  var bannerDismissed = false;
-  JR.showHealthBanner = function (missing, message) {
-    var existing = document.querySelector(".jr-health-banner");
-    if (!missing || missing.length === 0) {
-      if (existing && !message) existing.remove();
-      if (!message) return;
-    }
-    if (bannerDismissed && !message) return;
-    var text = message || ("Popup can\u2019t find ChatGPT\u2019s " + missing.join(", ") +
-      " on this page \u2014 ChatGPT may have changed its layout. Highlights and follow-ups may not work.");
-    if (!existing) {
-      existing = document.createElement("div");
-      existing.className = "jr-health-banner";
-      existing.setAttribute("role", "status");
-      var span = document.createElement("span");
-      span.className = "jr-health-banner-text";
-      existing.appendChild(span);
-      var close = document.createElement("button");
-      close.type = "button";
-      close.className = "jr-health-banner-close";
-      close.setAttribute("aria-label", "Dismiss");
-      close.textContent = "\u00d7";
-      close.addEventListener("click", function () {
-        bannerDismissed = true;
-        existing.remove();
-      });
-      existing.appendChild(close);
-      document.body.appendChild(existing);
-    }
-    existing.querySelector(".jr-health-banner-text").textContent = text;
-  };
-
-  // Health check after load / navigation: wait for ChatGPT to render, then check twice
-  // (a single early check would false-alarm while React is still mounting).
-  var healthTimer = null;
-  JR.scheduleHealthCheck = function () {
-    if (healthTimer) clearTimeout(healthTimer);
-    healthTimer = setTimeout(function () {
-      var r = JR.diagnose();
-      if (!r.ok) {
-        healthTimer = setTimeout(function () { JR.diagnose(); }, 4000);
-      }
-    }, 3000);
-  };
 })();

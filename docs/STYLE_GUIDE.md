@@ -27,9 +27,7 @@ Defined on `:root` and overridden for dark mode.
 | `--jr-highlight-border` | `#d7d5d5` | `#383b45` | Blockquote borders, question underline |
 | `--jr-radius` | `8px` | `8px` | Border radius for cards, popups, dropdowns |
 | `--jr-radius-pill` | `12px` | `12px` | Border radius for pill shapes |
-| `--jr-mark-bg` | `#1944f1` | `#a9bfd8` | Highlight color on page text (light: white text on blue; dark: dark text on ice blue) |
-| `--jr-mark-bg-hover` | `#1539cc` | `#bccde2` | Highlight hover (darker in light, lighter in dark) |
-| `--jr-mark-bg-active` | `#112fa8` | `#93abc9` | Highlight active (popup open) |
+| `--jr-mark-bg` | `#1944f1` | `#a9bfd8` | The only highlight color — page highlights and quote marks, no hover/open shades (light: white text on blue; dark: dark text on ice blue) |
 | `--jr-mark-text` | `#fff` | `#111821` | Text on a highlight |
 | `--jr-shadow` | `0 2px 8px rgba(0,0,0,0.12), 0 0.5px 4px rgba(0,0,0,0.06)` | `0 2px 8px rgba(0,0,0,0.4), 0 0.5px 4px rgba(0,0,0,0.2)` | Two-layer elevation shadow |
 | `--jr-focus-ring` | `rgba(25,68,241,0.25)` | `rgba(157,183,213,0.35)` | Focus-visible outline glow |
@@ -100,8 +98,8 @@ All hover transitions use `0.15s ease`. Press/active states use `scale(1.35)` fo
 ### `.jr-source-highlight`
 - Inline `<span>` wrapping highlighted text on the page
 - `background: var(--jr-mark-bg)`, `color: #fff`, `user-select: text`
-- `.jr-source-highlight-done`: persists after popup close, `cursor: pointer`, `transition: background 0.12s ease`
-- Hover: `--jr-mark-bg-hover`, Active (popup open): `--jr-mark-bg-active`
+- `.jr-source-highlight-done`: persists after popup close, `cursor: pointer`
+- No hover or active shade: always `--jr-mark-bg`, the same color as the quote mark
 
 ### `.jr-highlight-underline`
 - 1.5px line under highlighted text, `background: var(--jr-action)` (blue)

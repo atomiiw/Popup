@@ -483,7 +483,6 @@
     // Hide rules are applied by restoreHighlights (CSS by turn key), so turns
     // that render before it runs are hidden the moment the rules land.
     JR.restoreHighlights();
-    JR.scheduleHealthCheck();
   }
 
   window.addEventListener("popstate", onNavigate);
@@ -502,7 +501,6 @@
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
   JR.watchTurnMounts();
-  JR.scheduleHealthCheck();
   // ChatGPT can replace its scroll container (e.g. after navigation); re-attach
   // the turn-mount observer if so. Cheap: one querySelector, no-op if unchanged.
   setInterval(JR.watchTurnMounts, 3000);

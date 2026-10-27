@@ -257,7 +257,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 
 ## Step 9: ChatGPT 2026-10 Redesign Migration — DONE (1.2.0-dev, not yet released)
 - ChatGPT's redesign broke every DOM hook; Popup silently did nothing. Full diagnosis and plan: `collab/PLAN.md`; current state and next steps: **`collab/HANDOFF.md`**.
-- 9a DOM migration: all ChatGPT selectors in `src/site-adapter.js`; turn identity = `data-turn-key` UUID; self-check `JR.diagnose()` + health banner; send failures say which step failed — DONE
+- 9a DOM migration: all ChatGPT selectors in `src/site-adapter.js`; turn identity = `data-turn-key` UUID; self-check `JR.diagnose()` (for testing; no banner shown to users since 1.2.1); send failures say which step failed — DONE
 - 9b Keys-only storage (`popup:conv:<id>`), content read back from ChatGPT (DOM / session cache / conversation data), removed per-frame page-wide observers — DONE
 - 9c Network-stream capture for answers whose turn is never mounted (`src/net-tap.js`), scroll guard (`src/scroll-guard.js`), word-by-word streaming — DONE
 - 9e Removed the search bar + transition API; ponytail simplicity pass (~1,900 lines deleted) — DONE
