@@ -265,4 +265,4 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - 9g Removed the × on ChatGPT's native "Ask ChatGPT" button (user request) — DONE
 - 9h ponytail-audit fixes, version memory, dark-mode ice blue, hover/open highlight shades — DONE (DEBUG #51–#53)
 - 9i Formulas: exact TeX in questions, rendered formulas in quotes, partial-formula highlights, \\boxed selection — DONE (DEBUG #54)
-- 9d Release: version 1.2.0, store zip, upload — TODO (see HANDOFF "Next steps")
+- 9d Release: version 1.2.0, store zip built (`dist/Popup-1.2.0.zip`, not in git) — upload to the Chrome Web Store is the user's step
