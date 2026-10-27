@@ -187,7 +187,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - Support placing the popup on the right side of the highlight (not only left)
 - Automatically choose whichever side has more room; allow the user to toggle if needed
 
-### Step 8c: Popup Transition Functions — DONE
+### Step 8c: Popup Transition Functions — REMOVED in 1.2.0 (only search used them)
 - **Goal:** Provide reusable primitives for navigating between any two popup items, with step-by-step animated transitions. Other code (Cmd+F search, future features) composes these instead of building ad-hoc open/close logic.
 - **Storage model (quoteId):** Each version of a highlight is an independent storage record `{id, quoteId, text, question, responseHTML, parentId, parentItemId, active, ...}`. Records sharing the same `quoteId` are versions of the same highlight. `parentId` references the parent's `quoteId`. `parentItemId` tracks which specific parent version the child was created in, so `restoreChainedHighlights` only restores children belonging to the active version.
 - **Reusable functions:**
@@ -209,7 +209,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
   - Bridge script (`src/console-bridge.js`) runs in MAIN world via manifest `"world": "MAIN"`, exposing `JR.go()` and `JR.open()` to the browser console. Communicates with the content script via CustomEvents on `document`.
 - **Popup open logging:** Every `createPopup` call logs the active item id, quoteId, and question to the console for easy debugging.
 
-### Step 8d: Cmd+F Search Through Hidden Content — DONE
+### Step 8d: Cmd+F Search Through Hidden Content — REMOVED in 1.2.0 (user request: keep popups + nav widget only)
 *Previously Step 8c. Renumbered to make room for Step 8c (Popup Transition Functions).*
 - **Goal:** User can Cmd+F to find text inside popup responses (which are hidden Q&A turns). Chrome navigates to the match, and the corresponding popup auto-opens showing both question and response.
 - **Built from reusable primitives:**
@@ -243,7 +243,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - Accessible from the extension popup or a toolbar button
 - Not urgent — lower priority than other polish items
 
-### Step 8h: Hide Native "Ask ChatGPT" Button — DONE
+### Step 8h: Hide Native "Ask ChatGPT" Button — DONE (removed in 1.2.0)
 - Small ✕ injected at the top-left edge of ChatGPT's native "Ask ChatGPT" selection button
 - MutationObserver detects when the native button appears and injects the ✕
 - Clicking it hides the native "Ask ChatGPT" button for the session; JR popups still work normally
@@ -260,4 +260,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - 9a DOM migration: all ChatGPT selectors in `src/site-adapter.js`; turn identity = `data-turn-key` UUID; self-check `JR.diagnose()` + health banner; send failures say which step failed — DONE
 - 9b Keys-only storage (`popup:conv:<id>`), content read back from ChatGPT (DOM / session cache / conversation data), removed per-frame page-wide observers — DONE
 - 9c Network-stream capture for answers whose turn is never mounted (`src/net-tap.js`), scroll guard (`src/scroll-guard.js`), word-by-word streaming — DONE
+- 9e Removed the search bar + transition API; ponytail simplicity pass (~1,900 lines deleted) — DONE
+- 9f Scroll smoothness with many hidden Q&As — DONE: per-mount work sliced into idle time (reapply ≤ ~35 ms per slice, mount pass ~1 ms); gaps removed at the root by filtering Popup turns out of the page's conversation data and fixing the parent of the user's next message (`src/net-tap.js`, DEBUG #52). Live-session Popup Q&As keep a 13 px CSS-hidden row until the next reload.
+- 9g Removed the × on ChatGPT's native "Ask ChatGPT" button (user request) — DONE
 - 9d Release: version 1.2.0, store zip, upload — TODO (see HANDOFF "Next steps")

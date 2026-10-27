@@ -18,9 +18,7 @@ The AI sees every popup Q&A as real messages in the thread, so it keeps full con
 
 **Nested popups.** Follow-ups inside follow-ups, unlimited depth.
 
-**Persistent.** Highlights and popup chains survive page reload, rebuilt via DOM text-matching.
-
-**Search.** Full-text search across all popup content including hidden Q&A. Results return in reading order and auto-open the matching popup chain.
+**Persistent.** Highlights and popup chains survive page reload. Only keys are stored; questions and answers are read back from ChatGPT's own conversation.
 
 **Version history.** Edit a question to get a new response. Previous versions are preserved and navigable.
 
@@ -43,16 +41,19 @@ The AI sees every popup Q&A as real messages in the thread, so it keeps full con
 ```
 manifest.json          Extension config and permissions (Manifest V3)
 content.js             Event listeners, popup transitions, initialization
-storage.js             chrome.storage.local, persist/query highlights and Q&A
+storage.js             chrome.storage.local, one keys-only record per conversation
 styles.css             All styles (no inline styles in JS)
 src/
+  site-adapter.js      All ChatGPT DOM selectors + JR.diagnose() self-check
+  qa-content.js        Message format, hiding Q&A turns, reading answers back
+  scroll-guard.js      (page world) blocks ChatGPT auto-scroll during a send
+  net-tap.js           (page world) reads the answer stream for Popup questions
   jr-namespace.js      Shared state: global registry (completedHighlights Map),
                        popup stack, constants
   chat.js              Inject questions into ChatGPT's input, message queue
   popup.js             Popup creation, positioning, version nav, delete, resize
   popup-helpers.js     Stack push/pop, positioning helpers, highlight nav widget
   highlight.js         Highlight wrapping, restore on reload, cascade delete
-  search.js            Custom search: tree index, DFS collection, mark insertion
   text-extraction.js   Sentence extraction, block detection, context formatting
   dom-helpers.js       Scroll, layout, DOM utilities
   console-bridge.js    Debug helpers (JR.go, JR.state inspection)

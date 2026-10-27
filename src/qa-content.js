@@ -95,10 +95,11 @@
   function renderHideStyle() {
     var rules = [];
     st.hiddenTurnKeys.forEach(function (k) {
+      // Only the turn. Its virtualizer slot keeps ~1px + 12px gap; hiding or
+      // shrinking the slot makes ChatGPT's list disagree with the page, and
+      // correcting that made the thread jump while scrolling (1.2.0-dev.15–21).
       var sel = JR.site.turnSelector(k);
       if (sel) rules.push(sel);
-      var slot = JR.site.turnSlotSelector(k);
-      if (slot) rules.push(slot);
     });
     if (!hideStyle || !hideStyle.isConnected) {
       hideStyle = document.getElementById("jr-hide-turns") || document.createElement("style");
@@ -133,7 +134,6 @@
   // space after it (meant to scroll a new message to the top) would show as a
   // blank area. html.jr-tail-hidden hides that spacer (styles.css).
   JR.setTailHidden = function (on) {
-    st.tailHidden = !!on;
     document.documentElement.classList.toggle("jr-tail-hidden", !!on);
   };
 
@@ -199,7 +199,6 @@
       if (turnKey && content) cache.set(turnKey, content);
     },
 
-    harvest: harvest,
   };
 
   // ---------------------------------------------------------------------------
@@ -314,7 +313,32 @@
     });
   };
 
-  JR.qa.resetApi = function () { convFetch = null; JR.qa.apiStatus = "unused"; };
+  /**
+   * Turn keys of the conversation in order (current branch), from the
+   * conversation data: a turn's key is its user message id. Cached in
+   * JR.qa.turnOrderCache once loaded; resolves to [] if unavailable.
+   */
+  JR.qa.turnOrderCache = null;
+  JR.qa.turnOrder = function () {
+    return fetchConversation().then(function (conv) {
+      // Cache the empty result too: callers re-render when this resolves, and an
+      // uncached [] made them fetch again forever (home page, API failure).
+      // resetApi() clears the cache on navigation.
+      if (!conv) { JR.qa.turnOrderCache = []; return []; }
+      var order = [];
+      var node = conv.mapping[conv.current_node];
+      for (var guard = 0; node && guard < 100000; guard++) {
+        var m = node.message;
+        if (m && m.author && m.author.role === "user") order.push(node.id);
+        node = node.parent ? conv.mapping[node.parent] : null;
+      }
+      order.reverse();
+      JR.qa.turnOrderCache = order;
+      return order;
+    });
+  };
+
+  JR.qa.resetApi = function () { convFetch = null; JR.qa.apiStatus = "unused"; JR.qa.turnOrderCache = null; };
 
   // ---------------------------------------------------------------------------
   // Turn mount observer: ChatGPT adds/removes turns as the user scrolls.
@@ -539,7 +563,57 @@
       return out;
     },
     reset: function () { counters = {}; since = Date.now(); },
+    /** Wrap fn so each call's duration is recorded under name (ms: n/total/max). */
+    timed: function (name, fn) {
+      return function () {
+        var t0 = performance.now();
+        try { return fn.apply(this, arguments); }
+        finally { JR.perf.time(name, Math.round((performance.now() - t0) * 10) / 10); }
+      };
+    },
   };
+
+  // Measurement mode (URL contains #jr-perf; off for normal use): records every
+  // frame while the user scrolls — frame gap, scroll position, list height,
+  // into #jr-perflog[data-json] for DOM-only test tools.
+  (function perfMode() {
+    var frames = [], scrollUntil = 0, last = 0, running = false, lastTop = null;
+    function on() { return location.hash.indexOf("jr-perf") !== -1; }
+    function log() {
+      var el = document.getElementById("jr-perflog");
+      if (!el) { el = document.createElement("div"); el.id = "jr-perflog"; el.hidden = true; document.body.appendChild(el); }
+      var gaps = frames.map(function (f) { return f.gap; });
+      el.setAttribute("data-json", JSON.stringify({
+        frames: frames.length,
+        gapsOver50: gaps.filter(function (g) { return g > 50; }).length,
+        gapsOver100: gaps.filter(function (g) { return g > 100; }).length,
+        maxGap: gaps.length ? Math.max.apply(null, gaps) : 0,
+        perf: JR.perf.snapshot(),
+        log: frames.slice(-1500),
+      }));
+    }
+    function frame(t) {
+      var sc = JR.site.scrollContainer();
+      if (sc) {
+        var top = Math.round(sc.scrollTop);
+        frames.push({
+          t: Math.round(t), gap: last ? Math.round(t - last) : 0, top: top,
+          dTop: lastTop == null ? 0 : top - lastTop, sh: sc.scrollHeight,
+          turns: JR.site.turns().length,
+        });
+        lastTop = top;
+        if (frames.length > 3000) frames.shift();
+      }
+      last = t;
+      if (performance.now() < scrollUntil) { requestAnimationFrame(frame); return; }
+      running = false; last = 0; log();
+    }
+    document.addEventListener("scroll", function () {
+      if (!on()) return;
+      scrollUntil = performance.now() + 1500;
+      if (!running) { running = true; requestAnimationFrame(frame); }
+    }, { capture: true, passive: true });
+  })();
 
   // Main-thread long tasks (>50 ms) on the page, whoever caused them — the
   // number users feel as "the page got slow".
@@ -548,4 +622,8 @@
       list.getEntries().forEach(function (e) { JR.perf.time("longTask", Math.round(e.duration)); });
     }).observe({ type: "longtask", buffered: false });
   } catch (e) { /* longtask not supported */ }
+
+  // Time the per-mount work (needs JR.perf, defined above).
+  onTurnsMounted = JR.perf.timed("mountPass", onTurnsMounted);
+  harvest = JR.perf.timed("harvest", harvest);
 })();

@@ -870,8 +870,6 @@
   var TRASH_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM192,208H64V64H192ZM80,24a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,24Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a12,12,0,0,0,0,24h4V208a20,20,0,0,0,20,20H192a20,20,0,0,0,20-20V72h4a12,12,0,0,0,0-24ZM188,204H68V72H188ZM76,20A12,12,0,0,1,88,8h80a12,12,0,0,1,0,24H88A12,12,0,0,1,76,20Z"/></svg>';
 
   // Toolbar no-ops kept for callers.
-  JR.showToolbar = function () {};
-  JR.hideToolbar = function () {};
   JR.positionToolbar = function () {};
 
 
@@ -1081,31 +1079,8 @@
 
     updateNav();
 
-    // Expose a direct-jump function so external code (Cmd+F search)
-    // can switch to any version in one shot without clicking arrows.
-    nav._jrSwitchTo = switchVersion;
-    nav._jrUpdateNav = updateNav;
-
     return nav;
   }
-
-  /**
-   * Public: jump the currently-open popup to a specific version index.
-   * Uses the version nav's internal switchVersion — single DOM update,
-   * no flickering from repeated button clicks.
-   */
-  JR.switchPopupToVersion = function (hlId, targetVersion) {
-    if (!st.activePopup) return;
-    var entry = st.completedHighlights.get(hlId);
-    if (!entry || !entry.items || entry.items.length <= 1) return;
-    var current = entry.activeItemIndex != null ? entry.activeItemIndex : entry.items.length - 1;
-    if (current === targetVersion) return;
-
-    var nav = st.activePopup.querySelector(".jr-popup-version-nav");
-    if (nav && nav._jrSwitchTo) {
-      nav._jrSwitchTo(targetVersion);
-    }
-  };
 
   function restoreChainedHighlights(responseDiv, parentQuoteId, contentContainer, activeParentItemId) {
     // Restore from in-memory entries — only children belonging to this version
@@ -1157,12 +1132,7 @@
   /** A stored record with its question/answer read back from ChatGPT (JR.qa), when available. */
   function withContent(rec) {
     var out = Object.assign({}, rec);
-    var c = JR.qa.get(rec.turnKeys);
-    if (c && rec.responseHTML === "__LOADING__") {
-      out.responseHTML = c.responseHTML;
-      out.question = c.question;
-      out.sentence = c.sentence;
-    }
+    JR.fillFromQA(out);
     return out;
   }
 
@@ -1606,7 +1576,6 @@
    *  - Chained: text selected in popup response   { text, range, parentId }
    *  - Completed: reopening a saved highlight      { completedId }
    */
-  JR.wireCopyButtons = rebuildCodeBlocks;
   JR.wireResponseClicks = wireResponseClicks;
   JR.processResponseLinks = processResponseLinks;
   JR.processResponseImages = processResponseImages; // [CAROUSEL-LOCKED]

@@ -58,9 +58,6 @@ html[data-theme="dark"] {
 .jr-popup-version-prev,
 .jr-popup-version-next,
 .jr-popup-confirm-icon-btn,
-.jr-popup-disable-btn,
-.jr-search-prev,
-.jr-search-next,
 .jr-nav-up,
 .jr-nav-down {
   display: flex;
@@ -80,8 +77,6 @@ html[data-theme="dark"] {
 .jr-popup-version-prev svg,
 .jr-popup-version-next svg,
 .jr-popup-confirm-icon-btn svg,
-.jr-search-prev svg,
-.jr-search-next svg,
 .jr-reply-whole-btn svg {
   width: 14px;
   height: 14px;
@@ -109,8 +104,6 @@ html[data-theme="dark"] {
 .jr-nav-down:focus-visible,
 .jr-popup-send:focus-visible,
 .jr-popup-send-toggle:focus-visible,
-.jr-search-prev:focus-visible,
-.jr-search-next:focus-visible,
 .jr-send-mode-item:focus-visible,
 .jr-highlight-trigger-btn:focus-visible,
 .jr-reply-whole-btn:focus-visible {
@@ -123,6 +116,7 @@ html[data-theme="dark"] {
    ========================================================================== */
 
 .jr-highlight-trigger-btn {
+  position: absolute; /* inside the scrolling content, so it scrolls with the text */
   z-index: 999999;
   display: flex;
   align-items: center;
@@ -182,40 +176,6 @@ html.dark .jr-popup--chained,
 html[class*="dark"] .jr-popup--chained,
 html[data-theme="dark"] .jr-popup--chained {
   box-shadow: 0 0 0 1px var(--jr-border), 0 2px 8px rgba(0, 0, 0, 0.55), 0 0.5px 3px rgba(0, 0, 0, 0.35);
-}
-
-/* Disable × button on ChatGPT's "Ask ChatGPT" */
-.jr-popup-disable-btn {
-  position: fixed;
-  z-index: 2147483647;
-  padding: 2px;
-  cursor: pointer;
-}
-
-.jr-popup-disable-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.jr-popup-disable-btn:hover {
-  color: var(--jr-action);
-  transform: scale(1.3);
-}
-
-/* Tooltip */
-.jr-disable-tooltip {
-  position: fixed;
-  transform: translateY(-50%);
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 4px 10px;
-  border-radius: var(--jr-radius);
-  background: rgba(25, 20, 20, 0.8);
-  color: #fff;
-  pointer-events: none;
-  z-index: 2147483647;
-  font-family: var(--jr-font);
 }
 
 /* ==========================================================================
@@ -1096,134 +1056,6 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
   user-select: none;
   white-space: nowrap;
 }
-
-/* ==========================================================================
-   Search bar
-   ========================================================================== */
-
-/* Spacing: input [12px] count [14px] sep [10px] prev [4px] next */
-
-.jr-search-bar {
-  position: fixed;
-  top: 0;
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  background: var(--jr-bg);
-  border: none;
-  border-radius: var(--jr-radius-pill);
-  box-shadow: 0 0 0 1px var(--jr-border), var(--jr-shadow);
-  font: 16px/1.6 var(--jr-font);
-  color: var(--jr-text);
-  z-index: 999999;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.jr-search-active-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--jr-text-muted);
-  flex-shrink: 0;
-  transition: color 0.15s ease;
-}
-
-.jr-search-active-icon svg {
-  width: var(--jr-icon-btn-size);
-  height: var(--jr-icon-btn-size);
-}
-
-/* Ready state (circle) */
-.jr-search-bar--ready {
-  width: var(--jr-icon-btn-circle);
-  height: var(--jr-icon-btn-circle);
-  max-width: var(--jr-icon-btn-circle);
-  border-radius: 50%;
-  justify-content: center;
-  transition: scale 0.15s ease;
-}
-
-.jr-search-bar--ready .jr-search-input,
-.jr-search-bar--ready .jr-search-count,
-.jr-search-bar--ready .jr-search-sep,
-.jr-search-bar--ready .jr-search-prev,
-.jr-search-bar--ready .jr-search-next { display: none; }
-
-.jr-search-bar--ready:hover { scale: 1.08; }
-.jr-search-bar--ready:hover .jr-search-active-icon { color: var(--jr-action); }
-
-/* Active state (expanded bar) */
-.jr-search-bar--active {
-  width: 317px;
-  height: 40px;
-  border-radius: var(--jr-radius);
-  cursor: default;
-  max-width: none;
-  padding: 0 6px 0 14px;
-  font-size: 14px;
-  line-height: 1.4;
-  animation: jr-fade-in 0.15s ease-out;
-}
-
-.jr-search-bar--active .jr-search-active-icon { display: none; }
-
-.jr-search-bar--active .jr-search-input,
-.jr-search-bar--active .jr-search-count,
-.jr-search-bar--active .jr-search-sep { display: block; }
-
-.jr-search-bar--active .jr-search-prev,
-.jr-search-bar--active .jr-search-next { display: flex; }
-
-.jr-search-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-}
-
-.jr-search-input:focus { outline: none; box-shadow: none; }
-.jr-search-input::placeholder { color: var(--jr-text-muted); }
-
-.jr-search-count {
-  font-size: 12px;
-  color: var(--jr-text-muted);
-  white-space: nowrap;
-  user-select: none;
-  flex-shrink: 0;
-  margin-left: 12px;
-}
-
-.jr-search-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--jr-separator);
-  flex-shrink: 0;
-  margin: 0 10px 0 14px;
-}
-
-.jr-search-prev, .jr-search-next {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border-radius: var(--jr-radius);
-}
-
-.jr-search-next { margin-left: 4px; }
-
-.jr-search-prev--enabled, .jr-search-next--enabled { color: var(--jr-text); cursor: pointer; }
-.jr-search-prev--enabled:hover, .jr-search-next--enabled:hover { color: var(--jr-action); transform: scale(1.2); }
-
-/* ==========================================================================
-   Search match highlights
-   ========================================================================== */
-
-.jr-search-mark { background: #fff500; color: #000000; border-radius: 0; }
-.jr-search-mark-active { background: #e07b00; color: #ffffff; border-radius: 0; }
 
 /* ==========================================================================
    Reduced motion

@@ -119,6 +119,19 @@
     return null;
   }
 
+  /** Visible matches of the first candidate selector that has any (hidden SPA copies don't count). */
+  function allVisible(hook, root) {
+    if (broken[hook]) return [];
+    var list = C[hook];
+    for (var i = 0; i < list.length; i++) {
+      var els = root.querySelectorAll(list[i]);
+      var visible = [];
+      for (var j = 0; j < els.length; j++) if (isVisible(els[j])) visible.push(els[j]);
+      if (visible.length) { used[hook] = list[i]; return visible; }
+    }
+    return [];
+  }
+
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
     if (el.closest("[hidden], [inert], [aria-hidden='true']")) return false;
@@ -175,13 +188,9 @@
   // Combined selector strings for code that needs closest()/matches() on any DOM generation.
   JR.SEL = {
     turn: C.turn.join(", "),
-    assistantUnit: C.assistantUnit.join(", "),
-    assistantBody: C.assistantBody.join(", "),
-    stopButton: C.stopButton.join(", "),
   };
 
   JR.site = {
-    candidates: C,
 
     // --- Turns ---
     /** Turns of the conversation on screen (ChatGPT keeps hidden copies of other pages in the DOM). */
@@ -203,19 +212,6 @@
       var m = /^legacy-(\d+)$/.exec(key);
       if (m) return '[data-testid="conversation-turn-' + m[1] + '"]';
       return '[data-turn-key="' + key.replace(/["\\]/g, "") + '"]';
-    },
-
-    /**
-     * CSS selector for the virtualizer slot wrapping ONLY this turn (new DOM).
-     * The slot carries an inline height and can hold reserved space while the
-     * answer streams, so hiding just the turn would leave a blank gap. The
-     * :not() part guarantees we never hide a parent that also holds other turns.
-     */
-    turnSlotSelector: function (key) {
-      if (!key || /^legacy-/.test(key)) return null;
-      var k = key.replace(/["\\]/g, "");
-      // [style*=height]: only a virtualizer slot (it carries an inline height), never a plain wrapper.
-      return '[style*="height"]:has(> [data-turn-key="' + k + '"]):not(:has(> [data-turn-key]:not([data-turn-key="' + k + '"])))';
     },
 
     findTurnByKey: function (key) {
@@ -271,19 +267,9 @@
 
     // --- Composer ---
     composer: function () {
-      if (broken.composer) return null;
-      var list = C.composer;
-      for (var i = 0; i < list.length; i++) {
-        var els = document.querySelectorAll(list[i]);
-        var visible = [];
-        for (var j = 0; j < els.length; j++) if (isVisible(els[j])) visible.push(els[j]);
-        if (visible.length) {
-          used.composer = list[i];
-          for (var f = 0; f < visible.length; f++) if (visible[f].contains(document.activeElement)) return visible[f];
-          return visible[visible.length - 1];
-        }
-      }
-      return null;
+      var visible = allVisible("composer", document);
+      for (var f = 0; f < visible.length; f++) if (visible[f].contains(document.activeElement)) return visible[f];
+      return visible.length ? visible[visible.length - 1] : null;
     },
 
     composerText: function (composer) {
@@ -292,29 +278,12 @@
     },
 
     sendButton: function (composer) {
-      if (broken.sendButton) return null;
       var form = composer ? composer.closest("form") : null;
-      var root = form || document;
-      var list = C.sendButton;
-      for (var i = 0; i < list.length; i++) {
-        var els = root.querySelectorAll(list[i]);
-        for (var j = 0; j < els.length; j++) {
-          if (isVisible(els[j])) { used.sendButton = list[i]; return els[j]; }
-        }
-      }
-      return null;
+      return allVisible("sendButton", form || document)[0] || null;
     },
 
     stopButton: function () {
-      if (broken.stopButton) return null;
-      var list = C.stopButton;
-      for (var i = 0; i < list.length; i++) {
-        var els = document.querySelectorAll(list[i]);
-        for (var j = 0; j < els.length; j++) {
-          if (isVisible(els[j])) { used.stopButton = list[i]; return els[j]; }
-        }
-      }
-      return null;
+      return allVisible("stopButton", document)[0] || null;
     },
 
     isStopButton: function (node) { return !!closest("stopButton", node); },
@@ -374,28 +343,6 @@
     },
 
     /**
-     * ChatGPT's own "Ask ChatGPT" selection button (T4: plain button in a
-     * position:fixed z-50 layer, no [popover]). Brand name "ChatGPT" is never
-     * translated, so match short buttons containing it inside a fixed layer.
-     * Returns { button, layer } or null. Only call while a selection exists.
-     */
-    nativeAskButton: function () {
-      var buttons = document.querySelectorAll("body > div button, [popover] button");
-      for (var i = buttons.length - 1; i >= 0; i--) {
-        var b = buttons[i];
-        if (b.closest(".jr-popup, form, nav, header, [data-turn-key]")) continue;
-        var t = (b.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-        if (!t || t.length > 40 || t.indexOf("chatgpt") === -1) continue;
-        var layer = b.closest("[popover]");
-        for (var el = b.parentElement; !layer && el && el !== document.body; el = el.parentElement) {
-          if (getComputedStyle(el).position === "fixed") layer = el;
-        }
-        if (layer && isVisible(b)) return { button: b, layer: layer };
-      }
-      return null;
-    },
-
-    /**
      * New-DOM code blocks inside root (no <pre>; T4):
      * [data-code-block] > [data-code-block-source] > code, controls in [data-code-block-controls].
      * Returns [{ block, code, lang }]. Legacy <pre> blocks are handled by the caller.
@@ -433,11 +380,6 @@
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
-
-    isDarkTheme: function () {
-      var h = document.documentElement;
-      return h.getAttribute("data-theme") === "dark" || /\bdark\b/.test(h.className);
-    },
 
     /** Conversation id from the URL (/c/<id> or /g/<gpt>/c/<id>), or null on a new chat. */
     conversationId: function (url) {

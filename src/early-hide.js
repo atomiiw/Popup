@@ -23,9 +23,7 @@
       var legacy = /^legacy-(\d+)$/.exec(k);
       if (legacy) { rules.push('[data-testid="conversation-turn-' + legacy[1] + '"]'); return; }
       var key = String(k).replace(/["\\]/g, "");
-      rules.push('[data-turn-key="' + key + '"]');
-      // its virtualizer slot, only if the slot holds no other turn (see turnSlotSelector)
-      rules.push('[style*="height"]:has(> [data-turn-key="' + key + '"]):not(:has(> [data-turn-key]:not([data-turn-key="' + key + '"])))');
+      rules.push('[data-turn-key="' + key + '"]'); // the turn only, never its slot (see qa-content.js)
     });
     var style = document.createElement("style");
     style.id = "jr-early-hide";

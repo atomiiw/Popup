@@ -11,7 +11,7 @@
 //     v: 2,
 //     items: [{ id, quoteId, text, color, parentId, parentItemId, sourceTurnKey,
 //               turnKeys: [..], status: "done"|"pending"|"timeout", active,
-//               wholeResponse, createdAt, legacy? }],
+//               wholeResponse, createdAt }],
 //     hidden: [turnKey, ...]   // Q&A turns of deleted highlights (stay hidden)
 //   }
 // Each item = one version of a highlight; items sharing a quoteId are versions
@@ -110,7 +110,6 @@ function toPublic(rec) {
     active: rec.active !== false,
     wholeResponse: !!rec.wholeResponse,
     createdAt: rec.createdAt,
-    legacy: rec.legacy || null,
     question: rec.question || null,
     sentence: null,
     blockTypes: null,
@@ -167,9 +166,6 @@ function migrateLegacyOnce() {
           active: v.active,
           wholeResponse: !!h.wholeResponse,
           createdAt: h.createdAt || Date.now(),
-          // Old turn numbers don't exist in ChatGPT's new DOM. Kept only so the
-          // Q&A can be re-identified by its message (see JR.adoptLegacyTurn).
-          legacy: { questionIndex: v.questionIndex, responseIndex: v.responseIndex, sourceTurnIndex: h.sourceTurnIndex },
         });
       });
     }
@@ -245,7 +241,6 @@ function updateHighlightFields(id, fields, url) {
     if ("color" in fields) rec.color = fields.color;
     if ("active" in fields) rec.active = fields.active;
     if ("parentItemId" in fields) rec.parentItemId = fields.parentItemId;
-    if (rec.legacy && rec.turnKeys.length) delete rec.legacy;
   });
 }
 
@@ -264,11 +259,6 @@ async function getChildHighlights(parentQuoteId, parentItemId) {
     if (parentItemId && h.parentItemId !== parentItemId) return false;
     return true;
   });
-}
-
-async function getHighlightsByQuoteId(quoteId) {
-  var items = await getHighlightsByUrl();
-  return items.filter(function (h) { return h.quoteId === quoteId; });
 }
 
 /**
@@ -291,12 +281,6 @@ function deleteHighlight(quoteId) {
       }
     });
     doc.items = keep;
-  });
-}
-
-function updateHighlightColor(quoteId, color) {
-  return modifyDoc(convKeyForUrl(), function (doc) {
-    doc.items.forEach(function (it) { if (it.quoteId === quoteId) it.color = color; });
   });
 }
 

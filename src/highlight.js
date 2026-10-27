@@ -290,8 +290,11 @@
 
   JR.pendingRestoreCount = function () { return pendingL1.length; };
 
+  /** Level-1 highlights of this conversation not restored yet (turn not mounted). */
+  JR.pendingL1Quotes = function () { return pendingL1.slice(); };
+
   /** Fill an item's content from JR.qa (cache or mounted turn). Returns true if filled. */
-  function fillFromQA(item) {
+  var fillFromQA = JR.fillFromQA = function (item) {
     if (item.responseHTML !== "__LOADING__") return false;
     var c = JR.qa.get(item.turnKeys);
     if (!c) return false;
@@ -299,7 +302,7 @@
     if (c.question) item.question = c.question;
     if (c.sentence) item.sentence = c.sentence;
     return true;
-  }
+  };
 
   function syncActive(q) {
     var it = q.items[q.activeItemIndex] || q.items[q.items.length - 1];
@@ -321,7 +324,7 @@
           items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null, responseHTML: null,
         };
       }
-      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, legacy: r.legacy, createdAt: r.createdAt };
+      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, createdAt: r.createdAt };
       fillFromQA(item);
       q.items.push(item);
       if (r.active) { q.activeItemIndex = q.items.length - 1; q.color = r.color; }
@@ -353,20 +356,30 @@
     return roots;
   }
 
+  // Text matching is the expensive part of a mount pass. If a highlight's text
+  // wasn't found in a rendered answer, don't search that same element again on
+  // every later mount (ChatGPT rebuilds the element when it re-renders it).
+  var noMatch = new WeakMap(); // answer root element → Set of quoteIds not found in it
+
   function tryRestoreL1(q) {
     var roots = rootsFor(q);
     for (var i = 0; i < roots.length; i++) {
+      var missed = noMatch.get(roots[i]);
+      if (missed && missed.has(q.quoteId)) continue;
       var turn = JR.site.turnOf(roots[i]);
-      if (JR.restoreHighlightInElement(roots[i], q, JR.site.popupHost(turn))) {
-        if (!q.sourceTurnKey) {
-          var key = JR.site.turnKey(turn);
-          q.sourceTurnKey = key;
-          var entry = st.completedHighlights.get(q.quoteId);
-          if (entry) entry.sourceTurnKey = key;
-          q.items.forEach(function (it) { updateHighlightFields(it.id, { sourceTurnKey: key }); });
-        }
-        return true;
+      if (!JR.restoreHighlightInElement(roots[i], q, JR.site.popupHost(turn))) {
+        if (!missed) noMatch.set(roots[i], missed = new Set());
+        missed.add(q.quoteId);
+        continue;
       }
+      if (!q.sourceTurnKey) {
+        var key = JR.site.turnKey(turn);
+        q.sourceTurnKey = key;
+        var entry = st.completedHighlights.get(q.quoteId);
+        if (entry) entry.sourceTurnKey = key;
+        q.items.forEach(function (it) { updateHighlightFields(it.id, { sourceTurnKey: key }); });
+      }
+      return true;
     }
     return false;
   }
@@ -375,36 +388,57 @@
    * Re-wrap level-1 highlights whose source turn is mounted but whose spans
    * are missing (first load, or ChatGPT rebuilt the turn after a scroll).
    */
-  JR.reapplyHighlights = function () {
-    if (JR.perf) JR.perf.count("reapplyHighlights");
-    var changed = false;
+  // Re-wrapping text in highlight spans forces layout; doing it in the same
+  // frame as a scroll made scrolling stutter (up to ~170 ms per mount). Run it
+  // in idle time instead, a few ms per slice, continuing in the next idle slice.
+  var reapplyQueued = false;
+  var whenIdle = window.requestIdleCallback
+    ? function (fn) { window.requestIdleCallback(fn, { timeout: 500 }); }
+    : function (fn) { setTimeout(function () { fn({ timeRemaining: function () { return 8; }, didTimeout: true }); }, 16); };
 
-    // Entries we already know, whose spans ChatGPT threw away.
-    st.completedHighlights.forEach(function (entry, qid) {
+  JR.reapplyHighlights = function () {
+    if (reapplyQueued) return;
+    reapplyQueued = true;
+    whenIdle(runReapply);
+  };
+
+  function runReapply(deadline) {
+    reapplyQueued = false;
+    if (JR.perf) JR.perf.count("reapplyHighlights");
+    var t0 = performance.now();
+
+    // Entries we already know, whose spans ChatGPT threw away, then highlights
+    // from storage not restored yet (shorter/inner ones first so a longer/outer
+    // one can wrap around them). Only those whose turn is in the DOM now.
+    var work = [];
+    st.completedHighlights.forEach(function (entry) {
       if (entry.parentId || entry.wholeResponse || !entry.sourceTurnKey) return;
       if (entry.spans.length && entry.spans[0].isConnected) return;
-      if (!JR.site.findTurnByKey(entry.sourceTurnKey)) return;
-      if (tryRestoreL1(entry)) changed = true;
+      if (JR.site.findTurnByKey(entry.sourceTurnKey)) work.push(entry);
+    });
+    pendingL1.sort(function (a, b) { return (a.text || "").length - (b.text || "").length; });
+    pendingL1.forEach(function (q) {
+      if (!q.sourceTurnKey || JR.site.findTurnByKey(q.sourceTurnKey)) work.push(q);
     });
 
-    // Highlights from storage not restored yet. Shorter (inner) ones first so a
-    // longer (outer) one can wrap around them.
-    if (pendingL1.length) {
-      var still = [];
-      pendingL1.sort(function (a, b) { return (a.text || "").length - (b.text || "").length; });
-      pendingL1.forEach(function (q) {
-        if (st.completedHighlights.has(q.quoteId)) return;
-        if (tryRestoreL1(q)) changed = true;
-        else still.push(q);
-      });
-      pendingL1 = still;
+    var changed = false;
+    for (var i = 0; i < work.length; i++) {
+      if (i > 0 && !deadline.didTimeout && deadline.timeRemaining() < 3) {
+        JR.reapplyHighlights(); // out of idle time: continue in the next slice
+        break;
+      }
+      var q = work[i];
+      if (pendingL1.indexOf(q) !== -1 && st.completedHighlights.has(q.quoteId)) continue;
+      if (tryRestoreL1(q)) changed = true;
     }
+    pendingL1 = pendingL1.filter(function (q) { return !st.completedHighlights.has(q.quoteId); });
 
     if (changed) {
       if (st.activeHighlightId) JR.syncHighlightActive(st.activeHighlightId);
       JR.updateNavWidget();
     }
-  };
+    if (JR.perf) JR.perf.time("reapplySlice", Math.round((performance.now() - t0) * 10) / 10);
+  }
 
   /**
    * Restore saved highlights for the current conversation: hide its Q&A turns

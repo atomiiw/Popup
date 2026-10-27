@@ -365,49 +365,6 @@
   };
 
   /**
-   * Get selected text and validate it's inside a single AI response.
-   * Returns { text, sentence, blockTypes, rect, article, range } or null.
-   */
-  JR.getSelectedTextInAIResponse = function () {
-    var selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
-
-    var text = selection.toString().trim();
-    if (!text) return null;
-
-    var range = selection.getRangeAt(0);
-    var anchorEl =
-      selection.anchorNode.nodeType === Node.TEXT_NODE
-        ? selection.anchorNode.parentElement
-        : selection.anchorNode;
-    var focusEl =
-      selection.focusNode.nodeType === Node.TEXT_NODE
-        ? selection.focusNode.parentElement
-        : selection.focusNode;
-
-    if (!anchorEl || !focusEl) return null;
-
-    if (JR.isInsideChatInput(anchorEl) || JR.isInsideChatInput(focusEl)) return null;
-    if (JR.isInsidePopup(anchorEl) || JR.isInsidePopup(focusEl)) return null;
-
-    var anchorArticle = JR.getAIResponseArticle(anchorEl);
-    var focusArticle = JR.getAIResponseArticle(focusEl);
-    if (!anchorArticle || !focusArticle) return null;
-    if (anchorArticle !== focusArticle) return null;
-
-    var rect = range.getBoundingClientRect();
-    var blockTypes = [];
-    var sentence = null;
-    try {
-      sentence = JR.extractSentence(range, blockTypes);
-    } catch (ex) {
-      console.warn("[JR] extractSentence threw:", ex);
-    }
-    var clonedRange = range.cloneRange();
-    return { text: text, sentence: sentence, blockTypes: blockTypes.length > 0 ? blockTypes : null, rect: rect, article: anchorArticle, range: clonedRange };
-  };
-
-  /**
    * Quick selection check — returns basic selection info without expensive
    * sentence extraction. Used to show the trigger button instantly.
    * Sentence extraction is deferred to when the trigger is clicked.

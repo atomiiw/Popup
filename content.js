@@ -12,15 +12,10 @@
 
   // --- Trigger button helpers ---
 
-  var triggerScrollHandler = null;
   var triggerResizeHandler = null;
   var triggerSelChangeHandler = null;
 
   function removeTriggerBtn() {
-    if (triggerScrollHandler) {
-      document.removeEventListener("scroll", triggerScrollHandler, true);
-      triggerScrollHandler = null;
-    }
     if (triggerResizeHandler) {
       window.removeEventListener("resize", triggerResizeHandler);
       triggerResizeHandler = null;
@@ -34,7 +29,6 @@
       triggerBtn = null;
       triggerData = null;
     }
-    removeDisableBtn();
   }
   JR.removeTriggerBtn = removeTriggerBtn;
 
@@ -54,7 +48,15 @@
     triggerBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,36H40A20,20,0,0,0,20,56V184a20,20,0,0,0,20,20H98.11l12.52,21.92a20,20,0,0,0,34.74,0L157.89,204H216a20,20,0,0,0,20-20V56A20,20,0,0,0,216,36Zm-4,144H150.93a12,12,0,0,0-10.42,6.05L128,207.94l-12.51-21.89A12,12,0,0,0,105.07,180H44V60H212Z"/></svg>';
     triggerBtn.title = "Follow up";
     triggerBtn.setAttribute("aria-label", "Follow up on selection");
-    triggerBtn.style.position = "fixed";
+
+    // The button lives inside the content that scrolls (the popup response for a
+    // selection in a popup, else the full-height conversation list), so it moves
+    // with the text natively — no scroll handler, no lag.
+    var startNode = result.range ? result.range.startContainer : null;
+    var startEl = startNode && (startNode.nodeType === Node.TEXT_NODE ? startNode.parentElement : startNode);
+    var inPopup = startEl && startEl.closest(".jr-popup");
+    var host = (inPopup && startEl.closest(".jr-popup-response")) ||
+      JR.site.popupHost(startEl ? JR.site.turnOf(startEl) : null);
 
     function positionBtn() {
       var sel = window.getSelection();
@@ -83,8 +85,10 @@
         var popupRect = parentPopup.getBoundingClientRect();
         rightLimit = popupRect.right - btnSize - 6;
       }
-      triggerBtn.style.left = Math.min(maxRight + 6, rightLimit) + "px";
-      triggerBtn.style.top = (r.top + r.height / 2 - (triggerBtn.offsetHeight || 32) / 2) + "px";
+      // Viewport coords → host coords (+ the host's own scroll for a popup response)
+      var hr = host.getBoundingClientRect();
+      triggerBtn.style.left = (Math.min(maxRight + 6, rightLimit) - hr.left + host.scrollLeft) + "px";
+      triggerBtn.style.top = (r.top + r.height / 2 - (triggerBtn.offsetHeight || 32) / 2 - hr.top + host.scrollTop) + "px";
     }
 
     triggerBtn.addEventListener("click", function (e) {
@@ -124,23 +128,27 @@
       }
     });
 
+    // Inside a popup response the popup's own mouseup handler would re-create
+    // the button (selection still exists) before this click lands.
     triggerBtn.addEventListener("mousedown", function (e) {
       e.stopPropagation();
     });
+    triggerBtn.addEventListener("mouseup", function (e) {
+      e.stopPropagation();
+    });
 
-    document.body.appendChild(triggerBtn);
+    host.appendChild(triggerBtn);
     positionBtn();
 
-    // Reposition on scroll/resize, remove when selection disappears
-    triggerScrollHandler = function () { if (triggerBtn) positionBtn(); };
-    triggerResizeHandler = triggerScrollHandler;
+    // Reposition when the layout changes (not on scroll: it scrolls with the text);
+    // remove when the selection disappears.
+    triggerResizeHandler = function () { if (triggerBtn) positionBtn(); };
     triggerSelChangeHandler = function () {
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) {
         removeTriggerBtn();
       }
     };
-    document.addEventListener("scroll", triggerScrollHandler, true);
     window.addEventListener("resize", triggerResizeHandler);
     document.addEventListener("selectionchange", triggerSelChangeHandler);
   }
@@ -158,8 +166,6 @@
   }
 
   document.addEventListener("mouseup", function (e) {
-    if (e.target.closest(".jr-popup-disable-btn")) return;
-    if (e.target.closest(".jr-search-bar")) return;
     if (e.target.closest(".jr-highlight-trigger-btn")) return;
     if (st.navWidget && st.navWidget.contains(e.target)) return;
     if (st.activePopup && st.activePopup.contains(e.target)) return;
@@ -178,9 +184,7 @@
   // --- Dismissal ---
 
   document.addEventListener("mousedown", function (e) {
-    // Ignore clicks on the "Ask ChatGPT" dismiss button, search bar, or trigger button
-    if (e.target.closest(".jr-popup-disable-btn")) return;
-    if (e.target.closest(".jr-search-bar")) return;
+    // Ignore clicks on the trigger button
     if (e.target.closest(".jr-highlight-trigger-btn")) return;
     // Dismiss trigger button on click outside
     if (triggerBtn && !triggerBtn.contains(e.target)) {
@@ -433,436 +437,6 @@
   };
 
 
-  // --- Helper functions for popup navigation ---
-
-  /**
-   * Figure out which L1 ancestor and deepest nested highlight this
-   * hlId belongs to.  Returns { chain: [L1, …, hlId], l1Id }.
-   */
-  function buildChain(hlId) {
-    var chain = [hlId];
-    var entry = st.completedHighlights.get(hlId);
-    while (entry && entry.parentId) {
-      chain.unshift(entry.parentId);
-      entry = st.completedHighlights.get(entry.parentId);
-    }
-    return chain;
-  }
-
-  /**
-   * Scroll the chat scroll parent so that the popup is vertically
-   * centered in the viewport.
-   */
-  function scrollPopupToCenter() {
-    if (!st.activePopup) return;
-    var popup = st.activePopup;
-    var scrollParent = JR.getScrollParent(popup);
-    if (!scrollParent) return;
-
-    function doScroll() {
-      if (!popup.isConnected) return;
-      var popupRect = popup.getBoundingClientRect();
-      var vpH = scrollParent === document.documentElement
-        ? window.innerHeight
-        : scrollParent.clientHeight;
-      var popupCenter = popupRect.top + popupRect.height / 2;
-      var vpCenter = vpH / 2;
-      scrollParent.scrollTop += popupCenter - vpCenter;
-    }
-
-    // Scroll now, and again next frame to override Chrome's find-in-page
-    // scroll which fires asynchronously after the observer callback.
-    doScroll();
-    requestAnimationFrame(doScroll);
-  }
-
-  /**
-   * Scroll the currently-open popup's response area so that a child
-   * highlight's spans are centered within it.
-   */
-  function scrollResponseToChild(childHlId) {
-    var childEntry = st.completedHighlights.get(childHlId);
-    if (!childEntry) return;
-
-    // Reply-to-all: scroll parent response to bottom to reveal the Reply button
-    if (childEntry.wholeResponse) {
-      if (st.activePopup) {
-        var respDiv = st.activePopup.querySelector(".jr-popup-response");
-        if (respDiv) respDiv.scrollTop = respDiv.scrollHeight;
-      }
-      return;
-    }
-
-    if (!childEntry.spans || childEntry.spans.length === 0) return;
-    var responseDiv = childEntry.spans[0].closest(".jr-popup-response");
-    if (!responseDiv) return;
-    var spanRect = childEntry.spans[0].getBoundingClientRect();
-    var respRect = responseDiv.getBoundingClientRect();
-    var offset = spanRect.top - respRect.top + responseDiv.scrollTop;
-    responseDiv.scrollTop = offset - responseDiv.clientHeight / 2;
-  }
-
-  // --- Popup open / transition API ---
-
-  /**
-   * Get the current item id from the active popup state.
-   * Returns null if no popup is open or no items.
-   */
-  function getCurrentItemId() {
-    if (!st.activeHighlightId) return null;
-    var entry = st.completedHighlights.get(st.activeHighlightId);
-    if (!entry || !entry.items || entry.items.length === 0) return null;
-    var idx = entry.activeItemIndex != null ? entry.activeItemIndex : 0;
-    return entry.items[idx] ? entry.items[idx].id : null;
-  }
-
-  /**
-   * Find quoteId and item index for a given item id.
-   * Searches all in-memory entries.
-   * Returns { quoteId, entry, itemIndex } or null.
-   */
-  function findItemById(itemId) {
-    var result = null;
-    st.completedHighlights.forEach(function (entry, quoteId) {
-      if (result) return;
-      if (!entry.items) return;
-      for (var i = 0; i < entry.items.length; i++) {
-        if (entry.items[i].id === itemId) {
-          result = { quoteId: quoteId, entry: entry, itemIndex: i };
-          return;
-        }
-      }
-    });
-    return result;
-  }
-
-  /**
-   * Open a highlight popup by quoteId. Handles L1 and nested highlights.
-   * Scrolls the page to center the popup. For nested highlights, opens
-   * the full parent chain first, scrolling within each popup response.
-   *
-   * @param {string} quoteId - The highlight's quoteId
-   * @param {number} [itemIndex] - Optional item index to show (version)
-   * @param {object} [opts] - Options: { _skipScroll: true } to suppress scrollIntoView
-   */
-  JR.openHighlight = function (quoteId, itemIndex, opts) {
-    opts = opts || {};
-    var entry = st.completedHighlights.get(quoteId);
-    if (!entry) return;
-
-    // Build the chain from L1 root to this quoteId
-    var chain = buildChain(quoteId);
-    var l1Id = chain[0];
-
-    // Switch to desired item index before opening
-    if (itemIndex != null && entry.items && entry.items[itemIndex]) {
-      entry.activeItemIndex = itemIndex;
-      var v = entry.items[itemIndex];
-      entry.question = v.question;
-      entry.responseHTML = v.responseHTML;
-      setActiveItem(quoteId, v.id);
-    }
-
-    // Close everything and open the L1
-    JR.removeAllPopups();
-    var l1Entry = st.completedHighlights.get(l1Id);
-    if (!l1Entry) return;
-    if (!opts._skipScroll && l1Entry.spans && l1Entry.spans.length > 0) {
-      l1Entry.spans[0].scrollIntoView({ block: "center" });
-    }
-    JR.createPopup({ completedId: l1Id });
-    if (!st.activePopup) return;
-
-    if (chain.length === 1) {
-      scrollPopupToCenter();
-      return;
-    }
-
-    // Open nested chain after chained highlights have been restored
-    var remaining = chain.slice(1);
-    setTimeout(function () {
-      for (var i = 0; i < remaining.length; i++) {
-        scrollResponseToChild(remaining[i]);
-        JR.pushPopupState();
-        JR.createPopup({ completedId: remaining[i] });
-      }
-      scrollPopupToCenter();
-    }, 120);
-  };
-
-  /**
-   * Close one popup layer (peel back). Returns the quoteId that is
-   * now active after peeling, or null if everything is closed.
-   */
-  function peelOne() {
-    JR.removePopup();
-    return st.activeHighlightId || null;
-  }
-
-  /**
-   * Open one nested popup layer on top of the current one.
-   * The child quoteId must be a child of the currently active quoteId.
-   * Scrolls the parent's response to center the child highlight first.
-   */
-  function openChildLayer(childQuoteId) {
-    scrollResponseToChild(childQuoteId);
-    JR.pushPopupState();
-    JR.createPopup({ completedId: childQuoteId });
-  }
-
-  /**
-   * Flip through versions one step at a time with animation delay.
-   * Goes from currentIdx to targetIdx on the given entry, stepping ±1.
-   * Calls callback when done.
-   */
-  function flipVersions(quoteId, entry, currentIdx, targetIdx, delay, callback) {
-    if (currentIdx === targetIdx) {
-      if (callback) callback();
-      return;
-    }
-    var step = currentIdx < targetIdx ? 1 : -1;
-    var nextIdx = currentIdx + step;
-
-    // Use the version nav's switchVersion if popup is open
-    var nav = st.activePopup ? st.activePopup.querySelector(".jr-popup-version-nav") : null;
-    if (nav && nav._jrSwitchTo) {
-      nav._jrSwitchTo(nextIdx);
-    } else {
-      // Fallback: update in-memory
-      entry.activeItemIndex = nextIdx;
-      var v = entry.items[nextIdx];
-      entry.question = v.question;
-      entry.responseHTML = v.responseHTML;
-      setActiveItem(quoteId, v.id);
-    }
-
-    if (nextIdx === targetIdx) {
-      if (callback) callback();
-    } else {
-      setTimeout(function () {
-        flipVersions(quoteId, entry, nextIdx, targetIdx, delay, callback);
-      }, delay);
-    }
-  }
-
-  /**
-   * Transition from the current popup state to a target item.
-   *
-   * If same quoteId (same highlight, different version): flip through
-   * versions one by one to reach the target.
-   *
-   * If different quoteIds: find closest common parent, peel back to it
-   * step by step, then open popups one by one down to the target.
-   *
-   * @param {string} targetItemId - The target item's id
-   */
-  JR.transitionTo = function (targetItemId, onDone) {
-    // Every transition ends by centering the popup, then calling onDone.
-    function done() {
-      scrollPopupToCenter();
-      if (onDone) onDone();
-    }
-
-    if (!targetItemId) {
-      JR.removeAllPopups();
-      done();
-      return;
-    }
-    var target = findItemById(targetItemId);
-    if (!target) {
-      console.warn("[JR] transitionTo: item not found:", targetItemId);
-      done();
-      return;
-    }
-
-    var currentItemId = getCurrentItemId();
-    if (currentItemId === targetItemId) {
-      done();
-      return;
-    }
-
-    var currentQuoteId = st.activeHighlightId;
-    var targetQuoteId = target.quoteId;
-    var STEP_DELAY = 350;
-
-    // --- Case 1: Same quoteId, different version ---
-    if (currentQuoteId === targetQuoteId) {
-      var entry = target.entry;
-      var currentIdx = entry.activeItemIndex != null ? entry.activeItemIndex : 0;
-      flipVersions(targetQuoteId, entry, currentIdx, target.itemIndex, STEP_DELAY, done);
-      return;
-    }
-
-    // --- Case 2: Different quoteIds — find common ancestor and navigate ---
-
-    // Build ancestor chains (quoteId chains from root to leaf)
-    var currentChain = currentQuoteId ? buildChain(currentQuoteId) : [];
-    var targetChain = buildChain(targetQuoteId);
-
-    // Find the longest common prefix
-    var commonLen = 0;
-    var minLen = Math.min(currentChain.length, targetChain.length);
-    for (var i = 0; i < minLen; i++) {
-      if (currentChain[i] === targetChain[i]) {
-        commonLen = i + 1;
-      } else {
-        break;
-      }
-    }
-
-    // Steps to peel: close from current depth down to commonLen
-    var peelCount = currentChain.length - commonLen;
-    // Steps to open: open from commonLen up to target depth
-    var openSteps = targetChain.slice(commonLen);
-
-    // --- Pre-compute version switches needed along the open path ---
-    // Each child in openSteps may require its parent to be at a specific
-    // version (identified by parentItemId). For entries that will be freshly
-    // created (not yet a popup), set activeItemIndex in-memory so createPopup
-    // renders the right version. For the common ancestor (already displayed),
-    // we must call switchPopupToVersion after peeling to update the DOM.
-    var ancestorSwitch = null; // { quoteId, version } — for the already-open common ancestor
-    for (var osi = 0; osi < openSteps.length; osi++) {
-      var childEnt = st.completedHighlights.get(openSteps[osi]);
-      if (!childEnt || !childEnt.parentItemId) continue;
-      var parentQid = childEnt.parentId;
-      var parentEnt = st.completedHighlights.get(parentQid);
-      if (!parentEnt || !parentEnt.items || parentEnt.items.length <= 1) continue;
-      for (var pvi = 0; pvi < parentEnt.items.length; pvi++) {
-        if (parentEnt.items[pvi].id !== childEnt.parentItemId) continue;
-        var curIdx = parentEnt.activeItemIndex != null ? parentEnt.activeItemIndex : 0;
-        if (curIdx === pvi) break; // already correct
-        if (commonLen > 0 && parentQid === targetChain[commonLen - 1]) {
-          // Parent is the common ancestor (popup already open) — need DOM switch after peeling
-          ancestorSwitch = { quoteId: parentQid, version: pvi };
-        } else {
-          // Parent will be freshly opened — set in-memory so createPopup uses the right version
-          parentEnt.activeItemIndex = pvi;
-          parentEnt.question = parentEnt.items[pvi].question;
-          parentEnt.responseHTML = parentEnt.items[pvi].responseHTML;
-        }
-        break;
-      }
-    }
-
-    // Execute step by step with delays
-    var stepIndex = 0;
-    var totalPeelSteps = peelCount;
-
-    function doNextStep() {
-      if (stepIndex < totalPeelSteps) {
-        // Peel one layer
-        peelOne();
-        stepIndex++;
-        // Only delay if there are more peels to animate;
-        // otherwise fall through immediately to open/finish.
-        if (stepIndex < totalPeelSteps) {
-          setTimeout(doNextStep, STEP_DELAY);
-          return;
-        }
-      }
-      if (openSteps.length > 0) {
-        // Switch the common ancestor's version if needed (after peeling, before opening children).
-        // This rebuilds its response div and restores child highlight spans via restoreChainedHighlights.
-        if (ancestorSwitch) {
-          if (JR.switchPopupToVersion) JR.switchPopupToVersion(ancestorSwitch.quoteId, ancestorSwitch.version);
-          ancestorSwitch = null;
-        }
-
-        // Open layers one by one
-        var childId = openSteps.shift();
-        // First open step: if nothing is open (commonLen === 0),
-        // we need to do a full L1 open with scroll
-        if (!st.activePopup) {
-          var childEntry = st.completedHighlights.get(childId);
-          if (childEntry && childEntry.spans && childEntry.spans.length > 0) {
-            childEntry.spans[0].scrollIntoView({ block: "center" });
-          }
-          JR.createPopup({ completedId: childId });
-        } else {
-          // Wait a tick for chained highlights to restore in the response div
-          setTimeout(function () {
-            openChildLayer(childId);
-            if (openSteps.length > 0) {
-              setTimeout(doNextStep, STEP_DELAY);
-            } else {
-              finishWithVersion();
-            }
-          }, 120);
-          return;
-        }
-
-        if (openSteps.length > 0) {
-          setTimeout(doNextStep, STEP_DELAY);
-        } else {
-          finishWithVersion();
-        }
-      } else {
-        finishWithVersion();
-      }
-    }
-
-    function finishWithVersion() {
-      var entry2 = st.completedHighlights.get(targetQuoteId);
-      if (!entry2) { done(); return; }
-      var currentIdx2 = entry2.activeItemIndex != null ? entry2.activeItemIndex : 0;
-      if (currentIdx2 !== target.itemIndex) {
-        flipVersions(targetQuoteId, entry2, currentIdx2, target.itemIndex, STEP_DELAY, done);
-      } else {
-        done();
-      }
-    }
-
-    doNextStep();
-  };
-
-  /**
-   * Console shortcut: transition to a target item by its id.
-   * Logs available item ids when called with no argument.
-   */
-  JR.go = function (targetItemId) {
-    if (targetItemId === null) {
-      JR.transitionTo(null);
-      return;
-    }
-    if (targetItemId === undefined || targetItemId === "") {
-      // Print all available items
-      console.log("[JR] Available items:");
-      st.completedHighlights.forEach(function (entry, quoteId) {
-        if (!entry.items || entry.items.length === 0) return;
-        var depth = 0;
-        var e = entry;
-        while (e && e.parentId) { depth++; e = st.completedHighlights.get(e.parentId); }
-        var indent = "  ".repeat(depth);
-        for (var i = 0; i < entry.items.length; i++) {
-          var item = entry.items[i];
-          var active = (i === entry.activeItemIndex) ? " ← active" : "";
-          var current = (quoteId === st.activeHighlightId && i === entry.activeItemIndex) ? " ★ current" : "";
-          console.log(indent + "id: " + item.id + "  q: \"" + (item.question || "").slice(0, 40) + "\"  quote: \"" + (entry.text || "").slice(0, 30) + "\"" + active + current);
-        }
-      });
-      return;
-    }
-    JR.transitionTo(targetItemId);
-  };
-
-  // --- Log item id when popup opens ---
-  var _origCreatePopup = JR.createPopup;
-  JR.createPopup = function (opts) {
-    _origCreatePopup(opts);
-    // After popup is created, log the active item
-    if (st.activeHighlightId) {
-      var entry = st.completedHighlights.get(st.activeHighlightId);
-      if (entry && entry.items && entry.items.length > 0) {
-        var idx = entry.activeItemIndex != null ? entry.activeItemIndex : 0;
-        var item = entry.items[idx];
-        if (item) {
-          console.log("[JR] popup opened — item: " + item.id + "  quoteId: " + st.activeHighlightId + "  question: \"" + (item.question || "(none)").slice(0, 50) + "\"");
-        }
-      }
-    }
-  };
-
   // --- SPA navigation ---
 
   function onNavigate() {
@@ -871,8 +445,6 @@
     st.lastKnownUrl = currentUrl;
 
     JR.removeAllPopups();
-    JR.hideSearchBar();
-    JR.hideToolbar();
     JR.unfreezeChat();
     document.documentElement.removeAttribute("data-jr-scroll-lock");
     JR.setTailHidden(false);
@@ -887,10 +459,6 @@
       if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
       st.navWidget.remove();
       st.navWidget = null;
-    }
-    if (st.restoreTimer) {
-      clearTimeout(st.restoreTimer);
-      st.restoreTimer = null;
     }
     st.completedHighlights.forEach(function (entry) {
       for (var i = 0; i < entry.spans.length; i++) {
@@ -909,121 +477,20 @@
     // that render before it runs are hidden the moment the rules land.
     JR.restoreHighlights();
     JR.scheduleHealthCheck();
-    setTimeout(JR.initSearchBar, 1500);
   }
 
   window.addEventListener("popstate", onNavigate);
 
-  var origPushState = history.pushState;
-  history.pushState = function () {
-    origPushState.apply(this, arguments);
-    onNavigate();
-  };
-
-  var origReplaceState = history.replaceState;
-  history.replaceState = function () {
-    origReplaceState.apply(this, arguments);
-    onNavigate();
-  };
-
-  // Fallback navigation detection
+  // Navigation detection: content scripts can't hook the page's history.pushState
+  // (isolated world), so poll the URL.
   setInterval(function () {
     if (location.href !== st.lastKnownUrl) {
       onNavigate();
     }
   }, 500);
 
-  // --- Inject disable × on ChatGPT's native "Ask ChatGPT" selection button ---
-  // Located via JR.site.nativeAskButton() (site-adapter.js). Checked only
-  // briefly after the selection changes — never by watching the whole page.
-
-  function hideAskBtn(hit) {
-    if (hit && hit.layer) hit.layer.style.display = "none";
-  }
-
-  var activeDisableBtn = null;
-
-  function removeDisableBtn() {
-    if (activeDisableBtn) {
-      activeDisableBtn.remove();
-      activeDisableBtn = null;
-    }
-  }
-
-  function showDisableBtn(hit) {
-    removeDisableBtn();
-    var askBtn = hit.button;
-
-    var btn = document.createElement("span");
-    btn.className = "jr-popup-disable-btn";
-    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z"/></svg>';
-    activeDisableBtn = btn;
-
-    var r = askBtn.getBoundingClientRect();
-    btn.style.top = (r.top - 8) + "px";
-    btn.style.left = (r.right - 2) + "px";
-
-    // Tooltip
-    var tooltip = document.createElement("div");
-    tooltip.className = "jr-disable-tooltip";
-    tooltip.textContent = "Hide until reload";
-
-    btn.addEventListener("mouseenter", function () {
-      var br = btn.getBoundingClientRect();
-      tooltip.style.top = (br.top + br.height / 2) + "px";
-      tooltip.style.left = (br.right + 6) + "px";
-      document.body.appendChild(tooltip);
-    });
-    btn.addEventListener("mouseleave", function () {
-      if (tooltip.parentNode) tooltip.remove();
-    });
-
-    btn.addEventListener("mousedown", function (ev) {
-      // Prevent selection from being cleared so the highlight persists
-      ev.preventDefault();
-      ev.stopPropagation();
-    });
-
-    btn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      ev.preventDefault();
-      if (tooltip.parentNode) tooltip.remove();
-      removeDisableBtn();
-      st.askBtnHidden = true;
-      hideAskBtn(hit);
-    });
-
-    document.body.appendChild(btn);
-  }
-
-  // ChatGPT shows its button shortly after the selection settles, so look a
-  // few times (≤ 600 ms) after each selection change, then stop.
-  var askCheckTimer = null;
-  function checkAskButton(triesLeft) {
-    askCheckTimer = null;
-    if (JR.perf) JR.perf.count("askButtonCheck");
-    var hit = JR.site.nativeAskButton();
-    if (hit) {
-      if (st.askBtnHidden) hideAskBtn(hit);
-      else if (!activeDisableBtn) showDisableBtn(hit);
-      return;
-    }
-    if (triesLeft > 0) askCheckTimer = setTimeout(function () { checkAskButton(triesLeft - 1); }, 100);
-  }
-
-  document.addEventListener("selectionchange", function () {
-    if (askCheckTimer) clearTimeout(askCheckTimer);
-    var sel = window.getSelection();
-    if (!sel || sel.isCollapsed) {
-      askCheckTimer = setTimeout(function () {
-        askCheckTimer = null;
-        if (!JR.site.nativeAskButton()) removeDisableBtn();
-      }, 150);
-      return;
-    }
-    askCheckTimer = setTimeout(function () { checkAskButton(5); }, 100);
-  });
-
+  // Time the per-mount work that runs while the user scrolls (JR.diagnose perf).
+  JR.diagnose = JR.perf.timed("diagnose", JR.diagnose);
 
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
@@ -1033,8 +500,6 @@
   // the turn-mount observer if so. Cheap: one querySelector, no-op if unchanged.
   setInterval(JR.watchTurnMounts, 3000);
 
-  // Init the search bar (delay for DOM to be ready)
-  setTimeout(JR.initSearchBar, 1500);
 
   // --- Layout change observer [LAYOUT-LOCKED] — Do not modify ---
   // ChatGPT sidebar open/close doesn't fire window.resize — it only changes
@@ -1072,24 +537,11 @@
   // --- Expose console API to page's main world ---
   // Content scripts run in an isolated world; the browser console
   // runs in the main world. Bridge via CustomEvents on document.
-  document.addEventListener("jr-go", function (e) {
-    var itemId = e.detail;
-    if (itemId === "__LIST__") itemId = undefined;
-    else if (!itemId) itemId = null;
-    JR.go(itemId);
-  });
-  document.addEventListener("jr-open", function (e) {
-    if (!e.detail) return;
-    JR.openHighlight(e.detail.quoteId, e.detail.itemIndex);
-  });
   document.addEventListener("jr-diagnose", function (e) {
     var report = JR.diagnose(e.detail ? JSON.parse(e.detail) : undefined);
     console.log("[Popup] diagnose", report);
   });
-  document.addEventListener("jr-locate", function (e) {
-    JR.locate(e.detail || null);
-  });
 
   // Bridge script (src/console-bridge.js) runs in MAIN world via manifest,
-  // exposing JR.go() and JR.open() to the browser console.
+  // exposing JR.diagnose() to the browser console.
 })();

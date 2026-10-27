@@ -413,7 +413,6 @@
 
   // --- Response capture ---
 
-  /** Copy a turn's assistant answer (all markdown roots) into a popup's response div. */
   // --- Incremental streaming mirror ---
   // Copying the whole answer every frame recreated every word, which restarted
   // ChatGPT's per-word fade-in and made text appear in jumps. Instead, patch the
@@ -470,41 +469,10 @@
     return true;
   }
 
-  function cloneAnswerInto(responseDiv, turn) {
-    var bodies = JR.site.assistantBodies(turn);
-    if (!bodies.length) return false;
-    var nodes = [];
-    for (var i = 0; i < bodies.length; i++) {
-      var c = bodies[i].cloneNode(true);
-      while (c.firstChild) nodes.push(c.removeChild(c.firstChild));
-    }
-    responseDiv.replaceChildren.apply(responseDiv, nodes);
-    return true;
-  }
-
   /**
-   * Display the AI response content inside the popup.
-   * Reuses an existing .jr-popup-response div if streaming already created one.
-   */
-  JR.showResponseInPopup = function (popup, responseTurn) {
-    var loading = popup.querySelector(".jr-popup-loading");
-    if (loading) loading.remove();
-
-    var responseDiv = popup.querySelector(".jr-popup-response");
-    if (!responseDiv) {
-      responseDiv = document.createElement("div");
-      responseDiv.className = "jr-popup-response";
-      popup.appendChild(responseDiv);
-    }
-    cloneAnswerInto(responseDiv, responseTurn);
-    if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
-    if (JR.processResponseLinks) JR.processResponseLinks(responseDiv);
-    if (JR.processResponseImages) JR.processResponseImages(responseDiv); // [CAROUSEL-LOCKED]
-    JR.wireCopyButtons(responseDiv);  // rebuildCodeBlocks
-  };
-
-  /**
-   * Block programmatic auto-scrolling on a container. Returns an unlock function.
+   * Keep the user's place while ChatGPT answers: every frame, undo any drift
+   * of the anchor (ChatGPT's own scroll calls are blocked by scroll-guard.js).
+   * Returns an unlock function.
    */
   JR.lockScroll = function (container, anchorEl) {
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
@@ -548,13 +516,8 @@
         var fresh = JR.site.scrollContainer();
         if (!fresh) return;
         removeListeners(container);
-        container.scrollTo = origScrollTo;
-        container.scrollBy = origScrollBy;
         container = fresh;
         savedTop = container.scrollTop;
-        origScrollTo = container.scrollTo;
-        origScrollBy = container.scrollBy;
-        patchScroll();
         addListeners(container);
       }
 
@@ -580,30 +543,11 @@
     }
     rafId = requestAnimationFrame(enforce);
 
-    var origScrollTo = container.scrollTo;
-    var origScrollBy = container.scrollBy;
-    function patchScroll() {
-      container.scrollTo = function () {
-        if (userScrolling) {
-          origScrollTo.apply(container, arguments);
-          savedTop = container.scrollTop;
-        }
-      };
-      container.scrollBy = function () {
-        if (userScrolling) {
-          origScrollBy.apply(container, arguments);
-          savedTop = container.scrollTop;
-        }
-      };
-    }
-    patchScroll();
     addListeners(container);
 
     return function unlock() {
       if (rafId) cancelAnimationFrame(rafId);
       removeListeners(container);
-      container.scrollTo = origScrollTo;
-      container.scrollBy = origScrollBy;
       if (wheelTimer) clearTimeout(wheelTimer);
     };
   };
@@ -628,14 +572,7 @@
    */
   JR.waitForResponse = function (popup, snap, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts, preRegisteredHlId, preRegisteredItemId, message, wholeResponse, wholeResponseFull) {
     // Resolve the parent's active item id at call time (for parentItemId tracking)
-    var parentItemId = null;
-    if (parentId) {
-      var parentEntry = st.completedHighlights.get(parentId);
-      if (parentEntry && parentEntry.items && parentEntry.items.length > 0) {
-        var pidx = parentEntry.activeItemIndex != null ? parentEntry.activeItemIndex : 0;
-        parentItemId = parentEntry.items[pidx] ? parentEntry.items[pidx].id : null;
-      }
-    }
+    var parentItemId = resolveParentItemId(null, parentId);
     st.responseWatchActive = true;
     var convUrl = location.href; // storage writes go to this conversation even if the user navigates away
     var startTime = Date.now();
@@ -714,67 +651,6 @@
 
     function unhideTurns() {
       JR.unhideTurnKeys(qaKeys);
-    }
-
-    function showTimeoutUI(targetPopup) {
-      if (!targetPopup || !targetPopup.isConnected) return;
-      var streamDiv = targetPopup.querySelector(".jr-popup-response");
-      if (streamDiv) streamDiv.remove();
-      var existingLoading = targetPopup.querySelector(".jr-popup-loading");
-      if (existingLoading) existingLoading.remove();
-
-      var timeoutDiv = document.createElement("div");
-      timeoutDiv.className = "jr-popup-loading";
-
-      var msg = document.createElement("div");
-      msg.textContent = failureText();
-      timeoutDiv.appendChild(msg);
-
-      var retryBtn = document.createElement("button");
-      retryBtn.type = "button";
-      retryBtn.className = "jr-retry-btn";
-      retryBtn.title = "Try again";
-      retryBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
-      retryBtn.addEventListener("click", function (ev) {
-        ev.stopPropagation();
-        timeoutDiv.remove();
-
-        var retryMessage = JR.buildMessage({
-          question: question, text: text, sentence: sentence, mode: st.responseMode,
-          wholeResponse: !!wholeResponse, wholeResponseFull: wholeResponseFull,
-        });
-
-        // Reset item to __PENDING__ so captureResponse overwrites in-place
-        var retryHlId = editOpts ? editOpts.hlId : (preRegisteredHlId || detachedHlId);
-        var retryItemId = null;
-        if (retryHlId) {
-          var retryEntry = st.completedHighlights.get(retryHlId);
-          if (retryEntry) {
-            retryEntry.responseHTML = "__PENDING__";
-            var retryIdx = retryEntry.activeItemIndex || 0;
-            if (retryEntry.items && retryEntry.items[retryIdx]) {
-              retryEntry.items[retryIdx].responseHTML = "__PENDING__";
-              retryItemId = retryEntry.items[retryIdx].id;
-            }
-          }
-        }
-
-        targetPopup.appendChild(JR.createLoadingDiv());
-
-        JR.enqueueMessage({
-          force: true,
-          message: retryMessage,
-          waitOpts: {
-            popup: targetPopup, text: text, sentence: sentence,
-            blockTypes: blockTypes, parentId: parentId, question: question,
-            wholeResponse: wholeResponse, wholeResponseFull: wholeResponseFull,
-            preRegisteredHlId: retryHlId, preRegisteredItemId: retryItemId
-          },
-          beforeSend: function (w) { JR.prepareSend(w, null); },
-        });
-      });
-      timeoutDiv.appendChild(retryBtn);
-      targetPopup.appendChild(timeoutDiv);
     }
 
     /**
@@ -1251,7 +1127,7 @@
         }
         if (!responseKey) {
           for (var ri = fresh.length - 1; ri >= 0; ri--) {
-            if (JR.isAssistantTurn(fresh[ri])) {
+            if (JR.site.hasAssistant(fresh[ri])) {
               responseTurn = fresh[ri];
               responseKey = JR.site.turnKey(responseTurn);
               startStreaming();
@@ -1363,7 +1239,6 @@
         injectionFailed = true;
         if (timerId) clearTimeout(timerId);
         cleanup();
-        unhideTurns();
         saveTimeoutVersion();
         st.cancelResponseWatch = null;
         JR.drainQueue();

@@ -26,13 +26,11 @@
       completedHighlights: new Map(),   // quoteId → { quoteId, spans, text, sentence, items: [{id, question, responseHTML, ...}], activeItemIndex, ... }
       activeHighlightId: null,          // current popup's highlight id (for chaining)
       popupStack: [],                   // saved parent popup states for nested chains
-      restoreTimer: null,
       lastKnownUrl: location.href,
       customPopupWidthL1: null,         // session-persisted width for level-1 popups
       customPopupWidthChained: null,    // session-persisted width for chained (level 2+) popups
       confirmingDelete: false,          // true while delete confirmation is showing
       navWidget: null,                  // floating highlight navigation widget element
-      askBtnHidden: false,              // session flag — hides ChatGPT's native "Ask ChatGPT" button
       messageQueue: [],                  // queued messages waiting for generation to finish
       watchingTurnKey: null,              // turn key of the Q&A currently being captured
       lastSendReport: null,               // outcome of the last injection (for JR.diagnose)

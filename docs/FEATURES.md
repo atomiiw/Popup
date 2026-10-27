@@ -216,18 +216,11 @@
 - Cleaned up on SPA navigation and re-created after highlights are restored for the new conversation
 - `position: fixed`, vertically centered, no background/border — just arrows and indicator
 
-### Popup Transition Functions (Step 8c)
-- Reusable primitives for navigating between any two popup items with step-by-step animated transitions
-- `JR.openHighlight(quoteId, itemIndex)` — opens any highlight (L1 or nested) by building the full parent chain, scrolling the page, and opening popups layer by layer
-- `JR.transitionTo(targetItemId)` — animated transition from current popup to any target:
-  - Same highlight, different version: flips through intermediate versions one by one (350ms per step)
-  - Different highlights: finds closest common ancestor, peels back to it, then opens down to the target — each step animated
-  - Null target: closes all popups
-  - Already on target: scrolls to center
-- Storage model uses `quoteId` to group versions of the same highlight, and `parentItemId` to track which parent version a child was created in — ensures chained highlights only restore in the correct parent version
-- Console API: `JR.go()` lists items, `JR.go("id")` transitions, `JR.go(null)` closes all
-- Bridge script (`src/console-bridge.js`) runs in MAIN world via manifest so console commands work despite content script isolation
-- Every popup open logs item id and quoteId to console for debugging
+### Removed in 1.2.0
+- Custom search bar (Step 8d) and the popup transition API it relied on (Step 8c: `JR.openHighlight`, `JR.transitionTo`, `JR.go`), removed at the user's request to keep Popup to popups + the highlight navigation widget. The storage model notes from 8c (`quoteId` groups versions, `parentItemId` scopes children to a parent version) still apply.
+- The × that hid ChatGPT's own "Ask ChatGPT" selection button (Step 8h): removed at the user's request; Popup no longer touches that button.
+- Console API is now only `JR.diagnose()` (hook self-check, see `src/site-adapter.js`).
+- The nav widget counts every level-1 highlight in the conversation (including turns ChatGPT has virtualized away) and scrolls to unmounted ones.
 
 ## Planned
-- **Debugging & polish** (Step 8) — right-side popup placement, Cmd+F through hidden content, delete confirmation refinements, nav widget fix, export highlights, disable toggle, public release prep
+- **Debugging & polish** (Step 8) — right-side popup placement, delete confirmation refinements, nav widget fix, export highlights, disable toggle, public release prep

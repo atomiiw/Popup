@@ -59,10 +59,6 @@
     return div;
   };
 
-  JR.getPopupWidth = function () {
-    return st.customPopupWidthL1 || 360;
-  };
-
   /**
    * Render sentence context inside a container element.
    * Single-block: inline text with highlighted mark.
@@ -879,19 +875,67 @@
    * Get all level-1 (non-chained) highlight IDs, ordered by DOM position.
    */
   JR.getLevel1HighlightIds = function () {
+    // Every level-1 highlight of the conversation, mounted or not: ChatGPT
+    // virtualizes the thread, so counting only highlights in the DOM made the
+    // total change while scrolling. Order: conversation turn order (from the
+    // conversation data), then position inside the turn.
+    var order = JR.qa.turnOrderCache;
+    if (!order && JR.qa.apiStatus !== "loading") JR.qa.turnOrder().then(function () { JR.updateNavWidget(); });
+    var turnIdx = {};
+    (order || []).forEach(function (k, i) { turnIdx[k] = i; });
+
     var items = [];
+    var seen = {};
     st.completedHighlights.forEach(function (entry, id) {
-      if (!entry.parentId && !entry._jrTemp && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected) {
-        items.push({ id: id, span: entry.spans[0] });
-      }
+      if (entry.parentId || entry._jrTemp || entry.wholeResponse) return;
+      seen[id] = true;
+      var span = entry.spans && entry.spans[0] && entry.spans[0].isConnected ? entry.spans[0] : null;
+      if (!span && !entry.sourceTurnKey) return; // can't place it anywhere
+      items.push({ id: id, span: span, turn: entry.sourceTurnKey });
     });
+    JR.pendingL1Quotes().forEach(function (q) {
+      if (seen[q.quoteId] || !q.sourceTurnKey) return;
+      items.push({ id: q.quoteId, span: null, turn: q.sourceTurnKey });
+    });
+
+    function rank(it) {
+      if (it.turn && turnIdx[it.turn] != null) return turnIdx[it.turn];
+      return it.span ? (order ? order.length : 0) : Infinity; // not in the loaded order: a turn added this session (after all others)
+    }
     items.sort(function (a, b) {
-      var pos = a.span.compareDocumentPosition(b.span);
-      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      var ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      if (a.span && b.span) {
+        var pos = a.span.compareDocumentPosition(b.span);
+        if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+        if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      }
       return 0;
     });
     return items.map(function (item) { return item.id; });
+  };
+
+  /**
+   * Scroll the thread until ChatGPT mounts the turn with this key, then call
+   * done(true) (done(false) after ~4 s). Direction comes from the turn order:
+   * compare the target's index with the turns that are mounted now.
+   */
+  JR.scrollToTurnKey = function (key, done) {
+    var scroller = JR.site.scrollContainer();
+    var order = JR.qa.turnOrderCache || [];
+    var target = order.indexOf(key);
+    if (!scroller || target < 0) { done(false); return; }
+    // First jump to the estimated position, then step a screen at a time.
+    scroller.scrollTop = scroller.scrollHeight * (target / Math.max(order.length, 1)) - scroller.clientHeight / 2;
+    var tries = 0;
+    (function step() {
+      if (JR.site.findTurnByKey(key)) { done(true); return; }
+      if (++tries > 40) { done(false); return; }
+      var mounted = JR.site.turns().map(function (t) { return order.indexOf(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
+      var dir = mounted.length && Math.min.apply(null, mounted) > target ? -1 : 1;
+      scroller.scrollTop += dir * scroller.clientHeight * 0.8;
+      setTimeout(step, 100);
+    })();
   };
 
   /**
@@ -1116,9 +1160,7 @@
     }
     if (nextIdx < 0 || nextIdx >= ids.length) return;
 
-    var targetId = ids[nextIdx];
-    var targetEntry = st.completedHighlights.get(targetId);
-    if (!targetEntry) return;
+    var targetId = ids[nextIdx]; // may not be in memory yet (turn not mounted); scrollToAndOpenPopup handles it
 
     // Suppress intermediate updateNavWidget calls during navigation
     navNavigating = true;
@@ -1133,11 +1175,32 @@
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
     var entry = st.completedHighlights.get(hlId);
-    if (!entry) return;
-    if (entry.spans && entry.spans.length > 0) {
+    var connected = entry && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected;
+    if (connected) {
       entry.spans[0].scrollIntoView({ block: "center" });
+      JR.createPopup({ completedId: hlId });
+      return;
     }
-    JR.createPopup({ completedId: hlId });
+    // Highlight's turn isn't in the DOM (virtualized): scroll until ChatGPT
+    // mounts it, wait for the highlight to be re-applied, then open it.
+    var q = entry || JR.pendingL1Quotes().filter(function (p) { return p.quoteId === hlId; })[0];
+    if (!q || !q.sourceTurnKey) return;
+    JR.scrollToTurnKey(q.sourceTurnKey, function (ok) {
+      if (!ok) return;
+      var waited = 0;
+      (function open() {
+        var e = st.completedHighlights.get(hlId);
+        if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
+          e.spans[0].scrollIntoView({ block: "center" });
+          JR.createPopup({ completedId: hlId });
+          JR.updateNavWidget();
+          return;
+        }
+        if ((waited += 100) > 2000) return;
+        if (JR.reapplyHighlights) JR.reapplyHighlights();
+        setTimeout(open, 100);
+      })();
+    });
   };
 
   /**

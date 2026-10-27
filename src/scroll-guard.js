@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  var SCROLLER = "[data-app-action-timeline-scroll]"; // keep in sync with site-adapter.js candidates.scrollContainer[0]
+  var SCROLLER = "[data-app-action-timeline-scroll]"; // keep in sync with site-adapter.js C.scrollContainer[0]
 
   // The attribute holds the time the lock was set; a lock older than 2 minutes
   // is ignored, so a missed unlock can never leave ChatGPT unable to scroll.
