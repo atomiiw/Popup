@@ -328,6 +328,10 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 }
 
 .jr-source-highlight-done:hover { background: var(--jr-mark-bg-hover); }
+
+/* ChatGPT's \boxed{} formulas draw their frame as a layer over the text, so
+   a drag selects nothing: let the mouse reach the characters under the frame. */
+.katex .fbox { pointer-events: none; }
 /* Highlights of the open popups (JR.syncHighlightActive) */
 .jr-source-highlight-active,
 .jr-source-highlight-active:hover { background: var(--jr-mark-bg-active); }

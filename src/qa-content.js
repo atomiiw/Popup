@@ -466,12 +466,20 @@
   function inline(t) {
     var codes = [];
     t = esc(t).replace(/`([^`]+)`/g, function (_, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
+    // Formulas stay plain TeX, written like JR.mathText (\( … \) with no inner
+    // padding) so a highlight saved on a formula is found again in this text.
+    var maths = [];
+    t = t.replace(/\\([(\[])\s*([\s\S]*?)\s*\\([)\]])/g, function (_, o, body, c) {
+      maths.push("\\" + o + body.replace(/\s+/g, " ") + "\\" + c);
+      return "\u0001" + (maths.length - 1) + "\u0001";
+    });
     t = t
       .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
       .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, function (_, a, b) { return "<strong>" + (a || b) + "</strong>"; })
       .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
       .replace(/(^|[^\w_])_([^_\s][^_]*)_(?!\w)/g, "$1<em>$2</em>")
       .replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    t = t.replace(/\u0001(\d+)\u0001/g, function (_, i) { return maths[+i]; });
     return t.replace(/\u0000(\d+)\u0000/g, function (_, i) { return "<code>" + codes[+i] + "</code>"; });
   }
 

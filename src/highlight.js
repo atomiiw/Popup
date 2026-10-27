@@ -48,7 +48,7 @@
       var node;
       var displayCache = new Map(); // cache getComputedStyle results per element
       while ((node = walker.nextNode())) {
-        if (range.intersectsNode(node)) {
+        if (range.intersectsNode(node) && !JR.isHiddenMath(node)) {
           // Skip whitespace-only text nodes between block elements
           // (they're layout-invisible; wrapping them in spans disrupts spacing)
           if (/^\s*$/.test(node.nodeValue)) {

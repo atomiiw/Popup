@@ -59,12 +59,113 @@
     return div;
   };
 
+  /** Root of the answer (or popup response) a highlight sits in. */
+  JR.quoteRoot = function (spans) {
+    var anchor = spans && spans[0];
+    if (!anchor || !anchor.isConnected) return null;
+    return anchor.closest(".jr-popup-response") || JR.site.turnOf(anchor);
+  };
+
+  /**
+   * Show formulas in the quote as they look on the page. The quote text has
+   * each formula as TeX (\( … \)); where the highlighted answer is on the page,
+   * that TeX is replaced by a copy of the rendered formula, marked on exactly
+   * the characters this highlight covers. Then any plain text of `text` the TeX
+   * quote could not mark (a selection of part of a formula plus some words) is
+   * marked too.
+   * shortcut: when inline code shows the same TeX as a formula in the same
+   * sentence, the first occurrence gets the formula (LaTeX-tutorial answers only).
+   */
+  JR.renderQuoteMath = function (container, spans, text) {
+    var root = JR.quoteRoot(spans);
+    if (!root || container.textContent.indexOf("\\") === -1) return;
+    var maths = Array.prototype.slice.call(root.querySelectorAll(JR.site.mathSelector));
+    if (!maths.length) return;
+    var texs = maths.map(JR.mathText);
+    var used = [];
+    function blockOf(el) {
+      for (var e = el; e && e !== root; e = e.parentElement) if (JR.BLOCK_TAGS.has(e.tagName)) return e;
+      return null;
+    }
+    // The formula with this TeX nearest to the highlight (the same text can appear twice).
+    function pick(tex) {
+      var best = -1, bestNear = false;
+      for (var i = 0; i < maths.length; i++) {
+        if (texs[i] !== tex || used.indexOf(i) !== -1) continue;
+        var block = blockOf(maths[i]) || maths[i];
+        var near = spans.some(function (sp) { return block.contains(sp); });
+        if (best === -1 || (near && !bestNear)) { best = i; bestNear = near; }
+      }
+      if (best !== -1) used.push(best);
+      return best === -1 ? null : maths[best];
+    }
+    // Copy a formula; only this highlight's spans become quote marks.
+    function copyOf(math) {
+      spans.forEach(function (sp) { sp.classList.add("jr-quote-own"); });
+      var copy = math.cloneNode(true);
+      spans.forEach(function (sp) { sp.classList.remove("jr-quote-own"); });
+      Array.prototype.forEach.call(copy.querySelectorAll(".jr-source-highlight"), function (sp) {
+        sp.className = sp.classList.contains("jr-quote-own") ? "jr-popup-mark" : "";
+        sp.removeAttribute("data-jr-highlight-id");
+      });
+      return copy;
+    }
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    var textNodes = [], n;
+    while ((n = walker.nextNode())) textNodes.push(n);
+    textNodes.forEach(function (tn) {
+      var re = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g, m, last = 0, frag = null;
+      while ((m = re.exec(tn.data))) {
+        var math = pick(m[0]);
+        if (!math) continue;
+        frag = frag || document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(tn.data.slice(last, m.index)));
+        frag.appendChild(copyOf(math));
+        last = m.index + m[0].length;
+      }
+      if (!frag) return;
+      frag.appendChild(document.createTextNode(tn.data.slice(last)));
+      tn.parentNode.replaceChild(frag, tn);
+    });
+    if (text && !hasMarkOutsideMath(container)) markPlainText(container, text);
+  };
+
+  function hasMarkOutsideMath(container) {
+    return Array.prototype.some.call(container.querySelectorAll(".jr-popup-mark"), function (mk) {
+      return !mk.closest(JR.site.mathSelector);
+    });
+  }
+
+  /** Mark the plain-text (non-formula) part of `text` in the quote's on-screen text. */
+  function markPlainText(container, text) {
+    var nodes = [], full = "";
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = walker.nextNode())) {
+      if (JR.isHiddenMath(n)) continue;
+      nodes.push({ node: n, start: full.length });
+      full += n.data;
+    }
+    var at = full.indexOf(text);
+    if (at === -1) return;
+    var end = at + text.length;
+    nodes.forEach(function (e) {
+      var a = Math.max(at, e.start) - e.start, b = Math.min(end, e.start + e.node.data.length) - e.start;
+      if (a >= b || e.node.parentElement.closest(JR.site.mathSelector)) return;
+      var mid = e.node.splitText(a);
+      mid.splitText(b - a);
+      var mark = document.createElement("span");
+      mark.className = "jr-popup-mark";
+      mid.parentNode.replaceChild(mark, mid);
+      mark.appendChild(mid);
+    });
+  }
+
   /**
    * Render sentence context inside a container element.
    * Single-block: inline text with highlighted mark.
    * Multi-block (contains \n): renders a list preserving bullet structure.
    */
-  JR.renderSentenceContext = function (container, sentence, text, blockTypes) {
+  JR.renderSentenceContext = function (container, sentence, text, blockTypes, hasMath) {
     var isMultiBlock = sentence.indexOf("\n") !== -1;
 
     var matchStart = -1;
@@ -80,6 +181,18 @@
       if (normIdx !== -1) {
         matchStart = normIdx;
         matchLen = normText.length;
+      }
+    }
+    // Part of a formula (e.g. one letter) is not marked in the TeX text: that
+    // would cut the formula apart; JR.renderQuoteMath shows it marked inside
+    // the copied formula instead.
+    if (matchStart !== -1 && hasMath) {
+      var texRe = /\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g, tm;
+      while ((tm = texRe.exec(sentence))) {
+        var tStart = tm.index, tEnd = tm.index + tm[0].length;
+        var overlaps = matchStart < tEnd && matchStart + matchLen > tStart;
+        var whole = matchStart <= tStart && matchStart + matchLen >= tEnd;
+        if (overlaps && !whole) { matchStart = -1; break; }
       }
     }
 
@@ -786,11 +899,12 @@
             if (srcHL && st.activeSourceHighlights.indexOf(srcHL) !== -1) return;
           }
         }
-        var selectedText = selection.toString().trim();
+        var sel = JR.selectionText(selection);
+        var range = sel.range;
+        var selectedText = sel.text;
         if (!selectedText) return;
         if (!st.activeHighlightId || !st.completedHighlights.has(st.activeHighlightId)) return;
         var hlId = st.activeHighlightId;
-        var range = selection.getRangeAt(0).cloneRange();
         // Show trigger button instead of opening popup immediately
         if (JR.removeTriggerBtn) JR.removeTriggerBtn();
         var selRect = range.getBoundingClientRect();

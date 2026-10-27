@@ -1677,11 +1677,15 @@
     highlight.className = "jr-popup-highlight";
     var highlightInner = document.createElement("div");
     highlightInner.className = "jr-popup-highlight-inner";
+    var quoteSpans = wrappers.length ? wrappers : (entry && entry.spans) || [];
+    var quoteRoot = JR.quoteRoot(quoteSpans);
+    var quoteHasMath = !!(quoteRoot && quoteRoot.querySelector(JR.site.mathSelector));
     if (sentence) {
-      JR.renderSentenceContext(highlightInner, sentence, text, blockTypes);
+      JR.renderSentenceContext(highlightInner, sentence, text, blockTypes, quoteHasMath);
     } else {
       highlightInner.textContent = JR.truncateText(text, JR.MAX_DISPLAY_CHARS);
     }
+    if (quoteHasMath) JR.renderQuoteMath(highlightInner, quoteSpans, text);
     highlight.appendChild(highlightInner);
     upper.appendChild(highlight);
 

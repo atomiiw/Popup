@@ -39,14 +39,102 @@
     return !!node.closest(".jr-popup");
   };
 
+  /** True for text inside a formula's invisible screen-reader copy. */
+  JR.isHiddenMath = function (node) {
+    var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return !!(el && el.closest && el.closest(JR.site.hiddenMathSelector));
+  };
+
   /**
-   * Get the character offset of a (container, offset) position within a block's textContent.
+   * A formula as Popup's text: its TeX source as \(…\) (\[…\] for display
+   * math) — the same form ChatGPT's own "Ask ChatGPT" quotes it in.
    */
+  JR.mathText = function (el) {
+    var tex = el.querySelector(JR.site.mathTexSelector);
+    if (!tex) return (el.querySelector(JR.site.mathVisibleSelector) || el).textContent;
+    // Line breaks in multi-line TeX would read as block breaks in the quote; TeX ignores them.
+    var src = tex.textContent.replace(/\s+/g, " ").trim();
+    return el.closest(JR.site.mathDisplaySelector) ? "\\[" + src + "\\]" : "\\(" + src + "\\)";
+  };
+
+  /**
+   * Text of a node as Popup uses it: like textContent, with each formula as
+   * its TeX source (JR.mathText). With blockBreaks, a line break separates
+   * block elements (as selection.toString() does).
+   */
+  JR.plainText = function (root, blockBreaks) {
+    return textIn(root, null, blockBreaks, false);
+  };
+
+  /**
+   * The text a selection stands for. A formula it covers whole is its TeX
+   * source; if it covers only part of some formula (one letter, a subscript),
+   * the selection is taken as shown on screen, so it stays exactly what the
+   * user picked. Returns { range, text }.
+   */
+  JR.selectionText = function (selection) {
+    var range = selection.getRangeAt(0).cloneRange();
+    var maths = touchedMath(range);
+    if (!maths.length) return { range: range, text: selection.toString().trim() };
+    var partial = maths.some(function (m) { return !coversMath(range, m); });
+    // A selection entirely inside one formula: read from the formula itself.
+    var root = range.commonAncestorContainer;
+    if (maths.length === 1 && maths[0].contains(root)) root = maths[0];
+    return { range: range, text: textIn(root, range, true, partial).trim() };
+  };
+
+  /** Formulas a range touches (including one that contains the whole range). */
+  function touchedMath(range) {
+    var root = range.commonAncestorContainer;
+    var el = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+    if (!el) return [];
+    var outer = el.closest(JR.site.mathSelector);
+    if (outer) return [outer];
+    return Array.prototype.filter.call(el.querySelectorAll(JR.site.mathSelector), function (m) { return range.intersectsNode(m); });
+  }
+
+  /**
+   * Does the selection cover the whole formula? Compared by its on-screen
+   * characters: a drag from the formula's first to last character ends inside
+   * it (on text nodes), not around the element.
+   */
+  function coversMath(range, math) {
+    var r = document.createRange();
+    r.selectNode(math);
+    if (range.compareBoundaryPoints(Range.START_TO_START, r) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, r) >= 0) return true;
+    var vis = math.querySelector(JR.site.mathVisibleSelector);
+    if (!vis) return false;
+    var squash = function (t) { return t.replace(/\s+/g, ""); };
+    return squash(textIn(vis, range, false, true)) === squash(vis.textContent);
+  }
+
+  // visibleMath: formulas as their on-screen characters (the hidden copy skipped)
+  // instead of their TeX source.
+  function textIn(root, range, blockBreaks, visibleMath) {
+    var out = "";
+    (function walk(n) {
+      if (range && !range.intersectsNode(n)) return;
+      if (n.nodeType === Node.TEXT_NODE) {
+        var a = range && n === range.startContainer ? range.startOffset : 0;
+        var b = range && n === range.endContainer ? range.endOffset : n.data.length;
+        out += n.data.slice(a, b);
+        return;
+      }
+      if (n.nodeType !== Node.ELEMENT_NODE) return;
+      if (n.matches(JR.site.mathSelector) && !visibleMath) { out += JR.mathText(n); return; }
+      if (n.matches(JR.site.hiddenMathSelector)) return;
+      if (blockBreaks && JR.BLOCK_TAGS.has(n.tagName) && out && out[out.length - 1] !== "\n") out += "\n";
+      for (var c = n.firstChild; c; c = c.nextSibling) walk(c);
+    })(root);
+    return out;
+  }
+
+  /** Offset of (container, offset) in JR.plainText(block). */
   JR.getOffsetInBlock = function (block, container, offset) {
     var r = document.createRange();
     r.setStart(block, 0);
     r.setEnd(container, offset);
-    return r.toString().length;
+    return textIn(block, r, false, false).length;
   };
 
   /**

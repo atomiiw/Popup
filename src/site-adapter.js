@@ -380,6 +380,15 @@
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
+    // KaTeX formulas: a visible copy plus an invisible one for screen readers
+    // (MathML + the TeX source). Popup reads a formula as its TeX source, so the
+    // question sent to ChatGPT is exact (10^8, not "108") and appears once.
+    mathSelector: ".katex",
+    mathTexSelector: 'annotation[encoding="application/x-tex"]',
+    mathVisibleSelector: ".katex-html",
+    mathDisplaySelector: ".katex-display",
+    mathLineSelector: ".base", // one line of a formula (inline-block, real width)
+    hiddenMathSelector: ".katex-mathml",
 
     /** Conversation id from the URL (/c/<id> or /g/<gpt>/c/<id>), or null on a new chat. */
     conversationId: function (url) {

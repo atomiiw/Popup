@@ -264,4 +264,5 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - 9f Scroll smoothness with many hidden Q&As — DONE: per-mount work sliced into idle time (reapply ≤ ~35 ms per slice, mount pass ~1 ms); gaps removed at the root by filtering Popup turns out of the page's conversation data and fixing the parent of the user's next message (`src/net-tap.js`, DEBUG #52). Live-session Popup Q&As keep a 13 px CSS-hidden row until the next reload.
 - 9g Removed the × on ChatGPT's native "Ask ChatGPT" button (user request) — DONE
 - 9h ponytail-audit fixes, version memory, dark-mode ice blue, hover/open highlight shades — DONE (DEBUG #51–#53)
+- 9i Formulas: exact TeX in questions, rendered formulas in quotes, partial-formula highlights, \\boxed selection — DONE (DEBUG #54)
 - 9d Release: version 1.2.0, store zip, upload — TODO (see HANDOFF "Next steps")

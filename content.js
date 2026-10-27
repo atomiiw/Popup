@@ -282,7 +282,14 @@
       var range = document.createRange();
       range.selectNodeContents(span);
       var rRects = range.getClientRects();
-      for (var r = 0; r < rRects.length; r++) allRects.push(rRects[r]);
+      // Inside a formula, pieces sit at different heights (fractions, sub/superscripts):
+      // put them all on the bottom of their formula line so they share one underline.
+      var mathLine = span.closest(JR.site.mathSelector) && span.closest(JR.site.mathLineSelector);
+      var lineBottom = mathLine ? mathLine.getBoundingClientRect().bottom : null;
+      for (var r = 0; r < rRects.length; r++) {
+        var rr = rRects[r];
+        allRects.push(lineBottom === null ? rr : { left: rr.left, right: rr.right, bottom: lineBottom, width: rr.width, height: rr.height });
+      }
 
       // If there's a next span, collect rects from any inner highlight spans
       // sitting between this span and the next (wrapping case).

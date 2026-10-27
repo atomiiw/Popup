@@ -5,11 +5,20 @@
      or open it in Chrome and read the page. -->
 <html><head><meta charset="utf-8"><title>dom-test</title></head><body>
 <div id="answer"><p>Read <b>the cache</b> first. Later, read the cache again; the cache wins.</p></div>
+<div id="dmath"><p>So the voltage is <span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><mrow><mn>0.5</mn></mrow><annotation encoding="application/x-tex">V = 0.5(1-\frac{1}{4})
+= 0.375V</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base">V=0.5(1−41)=0.375V</span></span></span></span> at the junction.</p></div>
+<div id="bare"><p>The length is</p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><mrow><mn>2</mn></mrow><annotation encoding="application/x-tex">\frac{2}{3}c(1\text{ ns}) = 0.2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base">32c(1 ns)=0.2</span></span></span></span><p>Done.</p></div>
+<div id="frac"><p>Let <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>a</mi></mrow><annotation encoding="application/x-tex">\frac{a}{b}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base">ab</span></span></span> be a ratio, a fraction.</p></div>
+<div id="math"><p>You do not use <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>Z</mi><mn>0</mn><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">Z_0=50</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">Z0=50</span></span> here. It is far away.</p></div>
 <pre id="out"></pre>
+<script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
 <script src="../src/jr-namespace.js"></script>
-<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code" };</script>
+<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code", mathSelector: ".katex", mathTexSelector: 'annotation[encoding="application/x-tex"]', mathVisibleSelector: ".katex-html", mathDisplaySelector: ".katex-display", hiddenMathSelector: ".katex-mathml", citationSelector: "a.citation" };</script>
+<script src="../src/dom-helpers.js"></script>
 <script src="../src/text-extraction.js"></script>
 <script src="../src/highlight.js"></script>
+<script>JR.state = JR.state || {}; </script>
+<script src="../src/popup-helpers.js"></script>
 <script>
 var out = [], failed = 0;
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
@@ -37,6 +46,89 @@ for (var want = 0; want < 3; want++) {
 root.innerHTML = html0;
 check("nth beyond the count falls back to the first", !!JR.findTextRange(root, "the cache", 7));
 check("missing text", JR.findTextRange(root, "no such words", 0) === null);
+
+// Formulas count as their TeX source, once (KaTeX also keeps a visible copy and MathML).
+var math = document.getElementById("math");
+var mathHTML0 = math.innerHTML;
+check("text reads a formula as TeX", JR.plainText(math) === "You do not use \\(Z_0=50\\) here. It is far away.", JSON.stringify(JR.plainText(math)));
+var mr = JR.findTextRange(math, "use \\(Z_0=50\\) here", 0);
+check("formula found and covered whole", !!mr && mr.toString().indexOf("Z0=50") !== -1, mr && JSON.stringify(mr.toString()));
+var sentence = mr && JR.extractSentenceInContainer(mr, null, math);
+check("sentence has the formula once, as TeX", sentence === "You do not use \\(Z_0=50\\) here.", JSON.stringify(sentence));
+function select(r) { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); return sel; }
+// Whole formula selected → TeX.
+check("selection covering a whole formula → TeX", JR.selectionText(select(mr)).text === "use \\(Z_0=50\\) here", JSON.stringify(JR.selectionText(select(mr)).text));
+// One letter of a formula selected → exactly that letter, as shown.
+var vis = math.querySelector(".katex-html").firstChild;
+var letter = document.createRange(); letter.setStart(vis, 0); letter.setEnd(vis, 1);
+check("selecting one letter of a formula → that letter", JR.selectionText(select(letter)).text === "Z", JSON.stringify(JR.selectionText(select(letter)).text));
+var part = document.createRange(); part.setStart(vis, 3); part.setEnd(math.querySelector("p").lastChild, 5);
+check("selection from inside a formula → as shown", JR.selectionText(select(part)).text === "50 here", JSON.stringify(JR.selectionText(select(part)).text));
+var found = JR.findTextRange(math, "50 here", 0);
+check("part of a formula found again after reload", !!found && !JR.isHiddenMath(found.startContainer), found && found.toString());
+window.getSelection().removeAllRanges();
+// Quote: TeX replaced by the rendered formula, with the page highlight on the selected letter.
+var hl = JR.highlightRange(JR.findTextRange(math, "Z", 0));
+var quote = document.createElement("div");
+JR.renderSentenceContext(quote, "You do not use \\(Z_0=50\\) here.", "Z", null, true);
+JR.site.turnOf = function () { return math; };
+JR.renderQuoteMath(quote, hl, "Z");
+check("quote shows the rendered formula", !!quote.querySelector(".katex") && quote.textContent.indexOf("\\(") === -1, quote.innerHTML.slice(0, 80));
+check("quote marks exactly the selected letter", quote.querySelectorAll(".jr-popup-mark").length === 1 && quote.querySelector(".jr-popup-mark").textContent === "Z", quote.innerHTML.slice(0, 120));
+check("quote copy has no highlight ids", !quote.querySelector("[data-jr-highlight-id]"));
+check("occurrence index of one letter in a formula", JR.occurrenceIndex(math, hl[0].firstChild, "Z") === 0);
+// A real drag from the formula's first to last visible character = the whole formula → TeX.
+math.innerHTML = mathHTML0;
+var visAll = math.querySelector(".katex-html").firstChild;
+var drag = document.createRange(); drag.setStart(visAll, 0); drag.setEnd(visAll, visAll.data.length);
+check("drag over a whole formula → TeX", JR.selectionText(select(drag)).text === "\\(Z_0=50\\)", JSON.stringify(JR.selectionText(select(drag)).text));
+window.getSelection().removeAllRanges();
+// Part of a formula plus words: the words are marked in the quote too; other highlights are not.
+math.innerHTML = mathHTML0;
+var other = JR.highlightRange(JR.findTextRange(math, "Z", 0)); // an older highlight in the same formula
+other.forEach(function (sp) { sp.classList.add("jr-source-highlight-done"); });
+var mine = JR.highlightRange(JR.findTextRange(math, "50 here", 0));
+var q2 = document.createElement("div");
+JR.renderSentenceContext(q2, "You do not use \\(Z_0=50\\) here.", "50 here", null, true);
+JR.renderQuoteMath(q2, mine, "50 here");
+var marks2 = Array.prototype.map.call(q2.querySelectorAll(".jr-popup-mark"), function (m) { return m.textContent; }).join("|");
+check("quote marks the formula part and the words, not other highlights", marks2 === "50| here", marks2);
+math.innerHTML = mathHTML0; // drop the test highlights
+var spans = JR.highlightRange(JR.findTextRange(math, "\\(Z_0=50\\)", 0));
+check("highlight never wraps the hidden MathML copy", spans.length > 0 && spans.every(function (sp) { return !JR.isHiddenMath(sp); }), spans.length);
+check("occurrence index of a highlighted formula", JR.occurrenceIndex(math, spans[0].firstChild, "\\(Z_0=50\\)") === 0);
+
+// A short word that also occurs in a formula's TeX is restored at the same place.
+var fr = document.getElementById("frac"), frP = fr.querySelector("p"), tail = frP.lastChild; // " be a ratio, a fraction."
+var aAt = tail.data.indexOf(", a") + 2;
+var aR = document.createRange(); aR.setStart(tail, aAt); aR.setEnd(tail, aAt + 1);
+var aSpans = JR.highlightRange(aR);
+var aNth = JR.occurrenceIndex(fr, aSpans[0].firstChild, "a");
+fr.innerHTML = fr.innerHTML.replace(/<span class="jr-source-highlight">a<\/span>/, "a");
+var aBack = JR.findTextRange(fr, "a", aNth);
+var aCtx = aBack && (aBack.startContainer.data || "").slice(Math.max(0, aBack.startOffset - 2), aBack.startOffset + 3);
+check("letter also in a formula's TeX restored in place", aCtx === ", a f", JSON.stringify(aCtx));
+
+// "\\(" in plain text (no formulas in the block) is just text: sentences still end.
+var code = document.createElement("div");
+code.innerHTML = "<p>Use <code>\\(</code> to open. Then type it. Close with <code>\\)</code>.</p>";
+document.body.appendChild(code);
+var ct = code.querySelector("p").childNodes[2]; // " to open. Then type it. Close with "
+var cr = document.createRange(); cr.setStart(ct, 15); cr.setEnd(ct, 19);
+var csent = JR.extractSentenceInContainer(cr, null, code);
+check("TeX-like text without formulas does not join sentences", csent === "Then type it.", JSON.stringify(csent));
+code.remove();
+// Decimal points inside a formula never end the sentence.
+var dm = document.getElementById("dmath"), dbase = dm.querySelector(".base").firstChild;
+var dr = document.createRange(); dr.setStart(dbase, 8); dr.setEnd(dbase, 12);
+var dsent = JR.extractSentenceInContainer(dr, null, dm);
+check("sentence keeps the whole display formula", dsent === "So the voltage is \\[V = 0.5(1-\\frac{1}{4}) = 0.375V\\] at the junction.", JSON.stringify(dsent));
+
+// A display formula with no paragraph around it is its own block.
+var bare = document.getElementById("bare"), bbase = bare.querySelector(".base").firstChild;
+var br2 = document.createRange(); br2.setStart(bbase, 9); br2.setEnd(bbase, 13);
+var bsent = JR.extractSentenceInContainer(br2, null, bare);
+check("bare display formula is the sentence", bsent === "\\[\\frac{2}{3}c(1\\text{ ns}) = 0.2\\]", JSON.stringify(bsent));
 
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");

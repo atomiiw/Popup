@@ -6,6 +6,21 @@
   var SENTENCE_TERMINATORS = JR.SENTENCE_TERMINATORS;
 
   /**
+   * Is text[i] a sentence end? Not inside a formula's TeX (\( … \), \[ … \]):
+   * "0.5" or "x." in a formula must not cut the sentence (or the formula) apart.
+   * hasMath: the block really holds formulas (plain text may contain "\(" too).
+   */
+  function endsSentence(text, i, hasMath) {
+    if (SENTENCE_TERMINATORS.indexOf(text[i]) === -1) return false;
+    if (!hasMath) return true;
+    var re = /\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g, m;
+    while ((m = re.exec(text)) && m.index <= i) {
+      if (i < m.index + m[0].length) return false;
+    }
+    return true;
+  }
+
+  /**
    * Walk a block element's DOM tree and extract its text content,
    * recording the positions of citation pill elements (data-testid="webpage-citation-pill").
    * Returns { text: string, pills: [{start, end}], bolds: [{start, end}] }.
@@ -27,6 +42,7 @@
         return;
       }
       if (n.nodeType !== Node.ELEMENT_NODE) return;
+      if (n.matches(JR.site.mathSelector)) { raw += JR.mathText(n); return; }
       // Citation pill — capture as a unit, record position
       if (n.matches && n.matches(JR.site.citationSelector)) {
         var start = raw.length;
@@ -79,6 +95,13 @@
     return { text: trimmed, pills: pills, bolds: bolds };
   };
 
+  function hasBlockAncestor(node, container) {
+    for (var el = node.parentElement; el && el !== container; el = el.parentElement) {
+      if (BLOCK_TAGS.has(el.tagName)) return true;
+    }
+    return false;
+  }
+
   /**
    * Extract the containing sentence(s) for a selection range within a container element.
    * For single-block selections, expands to sentence boundaries.
@@ -92,6 +115,8 @@
       acceptNode: function (node) {
         if (isCodeBlock(node)) return NodeFilter.FILTER_ACCEPT; // a code block is one unit
         if (node.closest && node.closest(JR.site.codeBlockSelector)) return NodeFilter.FILTER_SKIP;
+        // A display formula placed straight in the answer (no paragraph around it) is one unit too.
+        if (node.matches(JR.site.mathDisplaySelector) && !hasBlockAncestor(node, container)) return NodeFilter.FILTER_ACCEPT;
         if (!BLOCK_TAGS.has(node.tagName)) return NodeFilter.FILTER_SKIP;
         var child = node.firstElementChild;
         while (child) {
@@ -143,6 +168,7 @@
       for (var bi = 0; bi < selectedBlocks.length; bi++) {
         var node = selectedBlocks[bi];
         var extracted = JR.extractBlockText(node);
+        var nodeHasMath = !!node.querySelector(JR.site.mathSelector);
         var blockText = extracted.text;
         var blockPills = extracted.pills;
         var blockBolds = extracted.bolds;
@@ -150,11 +176,12 @@
 
         if (node === startBlock && !isCodeBlock(node) && node.contains(range.startContainer)) {
           var rawOffS = JR.getOffsetInBlock(node, range.startContainer, range.startOffset);
-          var leadWSS = node.textContent.length - node.textContent.trimStart().length;
+          var nodeTextS = JR.plainText(node);
+          var leadWSS = nodeTextS.length - nodeTextS.trimStart().length;
           var trimOffS = Math.max(0, rawOffS - leadWSS);
           var bSS = 0;
           for (var si = trimOffS - 1; si >= 0; si--) {
-            if (SENTENCE_TERMINATORS.indexOf(blockText[si]) !== -1) { bSS = si + 1; break; }
+            if (endsSentence(blockText, si, nodeHasMath)) { bSS = si + 1; break; }
           }
           if (bSS > 0) {
             isFirstSent = false;
@@ -168,11 +195,12 @@
 
         if (node === endBlock && !isCodeBlock(node) && node.contains(range.endContainer)) {
           var rawOffE = JR.getOffsetInBlock(node, range.endContainer, range.endOffset);
-          var leadWSE = node.textContent.length - node.textContent.trimStart().length;
+          var nodeTextE = JR.plainText(node);
+          var leadWSE = nodeTextE.length - nodeTextE.trimStart().length;
           var trimOffE = Math.min(blockText.length, Math.max(0, rawOffE - leadWSE));
           var bSE = blockText.length;
           for (var si2 = trimOffE; si2 < blockText.length; si2++) {
-            if (SENTENCE_TERMINATORS.indexOf(blockText[si2]) !== -1) { bSE = si2 + 1; break; }
+            if (endsSentence(blockText, si2, nodeHasMath)) { bSE = si2 + 1; break; }
           }
           if (bSE < blockText.length) {
             blockText = blockText.slice(0, bSE).trim();
@@ -244,8 +272,9 @@
     }
 
     // Single-block selection
-    var blockText = startBlock.textContent;
+    var blockText = JR.plainText(startBlock);
     if (!blockText) return null;
+    var blockHasMath = !!startBlock.querySelector(JR.site.mathSelector);
 
     if (isCodeBlock(startBlock)) return codeBlockText(startBlock).trim();
 
@@ -257,7 +286,7 @@
 
     var sentStart = 0;
     for (var i = startOffset - 1; i >= 0; i--) {
-      if (SENTENCE_TERMINATORS.indexOf(blockText[i]) !== -1) {
+      if (endsSentence(blockText, i, blockHasMath)) {
         sentStart = i + 1;
         break;
       }
@@ -265,7 +294,7 @@
 
     var sentEnd = blockText.length;
     for (var j = endOffset; j < blockText.length; j++) {
-      if (SENTENCE_TERMINATORS.indexOf(blockText[j]) !== -1) {
+      if (endsSentence(blockText, j, blockHasMath)) {
         sentEnd = j + 1;
         break;
       }
@@ -373,10 +402,11 @@
     var selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
 
-    var text = selection.toString().trim();
+    var sel = JR.selectionText(selection); // formulas once, not 3 times as in selection.toString()
+    var range = sel.range;
+    var text = sel.text;
     if (!text) return null;
 
-    var range = selection.getRangeAt(0);
     var anchorEl =
       selection.anchorNode.nodeType === Node.TEXT_NODE
         ? selection.anchorNode.parentElement
@@ -396,8 +426,7 @@
     if (anchorArticle !== focusArticle) return null;
 
     var rect = range.getBoundingClientRect();
-    var clonedRange = range.cloneRange();
-    return { text: text, sentence: null, blockTypes: null, rect: rect, article: anchorArticle, range: clonedRange };
+    return { text: text, sentence: null, blockTypes: null, rect: rect, article: anchorArticle, range: range };
   };
 
   /** A code block counts as one block for sentence extraction (old <pre> or current [data-code-block]). */
@@ -430,17 +459,29 @@
   }
 
   // Collect text nodes by simple concatenation (no block-boundary markers).
-  function collectTextNodes(walkerRoot, skipFn) {
-    var w = document.createTreeWalker(walkerRoot, NodeFilter.SHOW_TEXT, null);
+  // A formula is one entry: its element, with its TeX source as text (JR.mathText);
+  // with visibleMath, its on-screen text nodes instead (see JR.selectionText).
+  function collectTextNodes(walkerRoot, skipFn, visibleMath) {
     var nodes = [];
     var fullText = "";
-    var n2;
-    while ((n2 = w.nextNode())) {
-      if (isToolbarTextNode(n2)) continue;
-      if (skipFn && skipFn(n2)) continue;
-      nodes.push({ node: n2, start: fullText.length });
-      fullText += n2.textContent;
-    }
+    (function walk(n) {
+      for (var c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === Node.TEXT_NODE) {
+          if (isToolbarTextNode(c) || (skipFn && skipFn(c))) continue;
+          nodes.push({ node: c, start: fullText.length, text: c.data });
+          fullText += c.data;
+        } else if (c.nodeType === Node.ELEMENT_NODE) {
+          if (c.matches(JR.site.hiddenMathSelector)) continue;
+          if (c.matches(JR.site.mathSelector) && !visibleMath) {
+            var t = JR.mathText(c);
+            nodes.push({ node: c, start: fullText.length, text: t, math: true });
+            fullText += t;
+          } else {
+            walk(c);
+          }
+        }
+      }
+    })(walkerRoot);
     return { nodes: nodes, fullText: fullText };
   }
 
@@ -458,18 +499,40 @@
    */
   JR.occurrenceIndex = function (root, firstNode, text) {
     if (!root || !firstNode || !text) return 0;
-    var map = collectTextNodes(root, null);
+    // Same rule as JR.findTextRange: the TeX text first, if the nth match there
+    // is this highlight; otherwise the on-screen text (part of a formula).
+    var n = countBefore(root, firstNode, text, false);
+    var r = findTextRangeIn(root, text, n, false);
+    if (r && r.intersectsNode(firstNode)) return n;
+    return countBefore(root, firstNode, text, true);
+  };
+
+  function countBefore(root, firstNode, text, visibleMath) {
+    var map = collectTextNodes(root, null, visibleMath);
     var start = -1;
-    for (var i = 0; i < map.nodes.length; i++) if (map.nodes[i].node === firstNode) { start = map.nodes[i].start; break; }
+    for (var i = 0; i < map.nodes.length; i++) {
+      var e = map.nodes[i];
+      if (e.node === firstNode || (e.math && e.node.contains(firstNode))) { start = e.start; break; }
+    }
     if (start < 0) return 0;
     var n = 0;
     for (var at = map.fullText.indexOf(text); at !== -1 && at < start; at = map.fullText.indexOf(text, at + 1)) n++;
     return n;
+  }
+
+  /**
+   * Range of searchText inside root. nth: which exact occurrence to use
+   * (JR.occurrenceIndex); the first one if there are fewer. Formulas count as
+   * their TeX source and are covered whole.
+   */
+  JR.findTextRange = function (root, searchText, nth) {
+    // Formulas as TeX first; a selection of part of a formula was saved as shown on screen.
+    return findTextRangeIn(root, searchText, nth, false)
+      || (root.querySelector(JR.site.mathSelector) ? findTextRangeIn(root, searchText, nth, true) : null);
   };
 
-  /** nth: which exact occurrence to use (JR.occurrenceIndex); the first one if there are fewer. */
-  JR.findTextRange = function (root, searchText, nth) {
-    var map = collectTextNodes(root, null);
+  function findTextRangeIn(root, searchText, nth, visibleMath) {
+    var map = collectTextNodes(root, null, visibleMath);
     var nodes = map.nodes;
     var fullText = map.fullText;
 
@@ -575,7 +638,7 @@
         }
       }
 
-      var map2 = collectTextNodes(root, function (n3) { return skipNodes.has(n3); });
+      var map2 = collectTextNodes(root, function (n3) { return skipNodes.has(n3); }, visibleMath);
       nodes = map2.nodes;
       fullText = map2.fullText;
 
@@ -608,30 +671,33 @@
     }
 
     var endIdx = newlineMatched ? origEnd : idx + searchText.length;
-    var startNode = null, startOffset = 0;
-    var endNode = null, endOffset = 0;
+    var start = null, startOffset = 0;
+    var end = null, endOffset = 0;
 
     for (var i = 0; i < nodes.length; i++) {
       var nodeStart = nodes[i].start;
-      var nodeEnd = nodeStart + nodes[i].node.textContent.length;
+      var nodeEnd = nodeStart + nodes[i].text.length;
 
-      if (startNode === null && idx < nodeEnd) {
-        startNode = nodes[i].node;
+      if (start === null && idx < nodeEnd) {
+        start = nodes[i];
         startOffset = idx - nodeStart;
       }
 
       if (endIdx <= nodeEnd) {
-        endNode = nodes[i].node;
+        end = nodes[i];
         endOffset = endIdx - nodeStart;
         break;
       }
     }
 
-    if (!startNode || !endNode) return null;
+    if (!start || !end) return null;
+    // Text found inside a formula's TeX but not covering the formula whole came
+    // from a selection of part of it, saved as shown: match on screen text instead.
+    if ((start.math && startOffset > 0) || (end.math && endOffset < end.text.length)) return null;
 
     var range = document.createRange();
-    range.setStart(startNode, startOffset);
-    range.setEnd(endNode, endOffset);
+    if (start.math) range.setStartBefore(start.node); else range.setStart(start.node, startOffset);
+    if (end.math) range.setEndAfter(end.node); else range.setEnd(end.node, endOffset);
     return range;
-  };
+  }
 })();
