@@ -137,3 +137,6 @@
     - Restore after reload tries the TeX text, then the on-screen text; a TeX match inside part of a formula is rejected; `occurrenceIndex` follows the same rule.
     - Underlines: glyphs inside a formula share their `.base` line bottom (one underline, only under the selected part). `.katex .fbox { pointer-events: none }` lets drags reach text under a \boxed frame.
     - Tests: `tools/dom-test.html` (headless Chrome).
+
+55. ~~**Popup jumped while its answer streamed: at completion (scroll reset) and mid-stream (flipped to the other side of the highlight, partly off screen).**~~ **FIXED (1.2.3–1.2.8)** — The finish rebuild keeps the popup's and the chat's scroll position (`JR.rebuildPopupAfterEdit`). The side is chosen at open time for the popup's full CSS max-height; while streaming it never flips (`JR.checkStreamingOverflow` caps its height to the room left on its side, measured from the highlight's current screen position, and the answer scrolls inside). Verified live T37–T40: 0 px change at completion, no flip, on screen.
+

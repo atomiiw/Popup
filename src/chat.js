@@ -806,7 +806,7 @@
       // Delegated click handler for links + images (attach once via shared helper)
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
 
-      // Check if the popup overflows and needs to flip direction mid-stream
+      // Cap the popup on its side once it outgrows the room there (no mid-stream flip)
       JR.checkStreamingOverflow();
 
       // Reposition "above" popups so the arrow stays anchored to the highlight

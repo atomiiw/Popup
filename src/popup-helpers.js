@@ -547,7 +547,10 @@
     if (forceDirection === "above" || forceDirection === "below") {
       direction = forceDirection;
     } else {
-      direction = JR.bestDirection(rect, popupH, gap, contentContainer);
+      // Choose the side for the popup's full height (its CSS max-height), not its
+      // current one: the answer will grow it, and it must never move or leave the screen.
+      var fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
+      direction = JR.bestDirection(rect, Math.max(popupH, fullH), gap, contentContainer);
     }
     popup._jrLockedDirection = direction;
 
@@ -593,8 +596,11 @@
       var roomViewport = window.innerHeight - rect.bottom - gap;
       var roomContainer = naturalScrollH - top;
       popup._jrMaxHBelow = Math.min(roomViewport, roomContainer);
+      popup._jrMaxHAbove = null;
     } else {
       popup._jrMaxHBelow = null;
+      // Above: room up to the top of the screen and of the container.
+      popup._jrMaxHAbove = Math.min(rect.top - gap, popup._jrBottomAnchor);
     }
 
     JR.updateArrow(popup, centerRect, containerRect, left);
@@ -620,90 +626,28 @@
   };
 
   /**
-   * During streaming, detect when the popup overflows the page edge on its
-   * current side and flip direction (above↔below). Called every streaming sync.
-   *
-   * Detection mechanism — symmetric and immune to ChatGPT's auto-scroll:
-   *
-   *  - "above" mode: popup.style.top < 0. attachAboveAnchorObserver actively
-   *    drives popup.style.top downward as height grows (anchored at the
-   *    highlight's bottom), so this value crosses 0 deterministically when
-   *    the popup overflows the container's top edge. (Original mechanism —
-   *    confirmed working by user.)
-   *
-   *  - "below" mode: popup.offsetHeight > popup._jrMaxHBelow, where the
-   *    threshold was captured at popup placement as `viewportH - rect.bottom
-   *    - gap` (the room available below the highlight in the viewport AT
-   *    creation). offsetHeight is what's actually growing, and the threshold
-   *    was frozen before any auto-scroll could shift coordinates around. So
-   *    detection fires the moment the popup grows past the page's lower
-   *    edge, regardless of any layout games ChatGPT plays during streaming.
-   *
-   * One-shot flip: once a flip occurs in this streaming session, we don't
-   * flip again. Prevents ping-pong when neither side fits the popup.
+   * While an answer streams, the popup grows. Its side was chosen for its full
+   * height when it opened, so it never moves to the other side (that jump lost
+   * the user's place); if even that side is too small, its height is capped there
+   * and the answer scrolls inside it.
+   * Room (measured when the popup was placed, screen and container):
+   * "below" = _jrMaxHBelow, "above" = _jrMaxHAbove.
    */
   JR.checkStreamingOverflow = function () {
-    if (!st.activePopup || st.activeSourceHighlights.length === 0) return;
     var popup = st.activePopup;
-    if (popup._jrFlippedDuringStream) return; // one-shot
-    var contentContainer = popup.parentElement;
-    if (!contentContainer) return;
-
+    if (!popup) return;
     var direction = popup._jrLockedDirection || popup._jrDirection;
-    var gap = 8;
-    var popupH = popup.offsetHeight;
-
-    // Symmetric overflow detection on each side.
-    var popupTop = parseFloat(popup.style.top) || 0;
-    var overflowsAbove = direction === "above" && popupTop < 0;
-    var overflowsBelow = direction === "below" &&
-                         popup._jrMaxHBelow != null &&
-                         popupH > popup._jrMaxHBelow;
-    if (!overflowsAbove && !overflowsBelow) return;
-
-    var newDirection = direction === "below" ? "above" : "below";
-
-    // Verify the target side has scroll-container room (so the popup isn't
-    // clipped by the container's edge after the flip).
-    var containerRect = contentContainer.getBoundingClientRect();
-    var rect = JR.getHighlightRect(st.activeSourceHighlights);
-    var aboveTopInContainer = rect.top - containerRect.top - popupH - gap;
-    var belowBottomInContainer = rect.bottom - containerRect.top + gap + popupH;
-    var scrollH = contentContainer.scrollHeight || contentContainer.offsetHeight;
-    if (newDirection === "above" && aboveTopInContainer < 0) return;
-    if (newDirection === "below" && belowBottomInContainer > scrollH) return;
-
-    // Apply the flip.
-    popup._jrLockedDirection = newDirection;
-    popup._jrDirection = newDirection;
-    popup._jrFlippedDuringStream = true;
-
-    var adjRect = JR.getAdjacentLineRect(st.activeSourceHighlights, newDirection);
-    var centerRect = adjRect || rect;
-    var popupW = popup.offsetWidth;
-    var left = centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2;
-    var containerW = contentContainer.clientWidth;
-    left = clampPopupLeft(left, popupW, containerRect, containerW);
-
-    var top;
-    if (newDirection === "above") {
-      top = centerRect.top - containerRect.top - popupH - gap;
-      popup._jrBottomAnchor = top + popupH;
-      popup._jrMaxHBelow = null;
-    } else {
-      top = centerRect.bottom - containerRect.top + gap;
-      popup._jrBottomAnchor = null;
-      // (One-shot flag above means this path is unreachable in practice,
-      // but keep the threshold consistent with positionPopup just in case.)
-      popup._jrMaxHBelow = Math.min(
-        window.innerHeight - rect.bottom - gap,
-        scrollH - top
-      );
+    // Screen room is measured now (the chat may have scrolled since the popup opened);
+    // container room was stored at placement.
+    var rect = st.activeSourceHighlights.length ? JR.getHighlightRect(st.activeSourceHighlights) : null;
+    var room = direction === "above" ? popup._jrMaxHAbove : popup._jrMaxHBelow;
+    if (rect && room != null) {
+      room = Math.min(room, direction === "above" ? rect.top - 8 : window.innerHeight - rect.bottom - 8);
     }
-
-    popup.style.left = left + "px";
-    popup.style.top = top + "px";
-    JR.updateArrow(popup, centerRect, containerRect, left);
+    if (room == null || popup.offsetHeight <= room) return;
+    // Only when neither side fits the full popup (small window): stay on screen, scroll inside.
+    popup.style.setProperty("--jr-popup-cap", Math.max(Math.floor(room), 0) + "px"); // floor: sub-pixel rects
+    if (direction === "above") JR.repositionPopup();
   };
 
   /**
