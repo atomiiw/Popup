@@ -57,10 +57,12 @@ function run(argv) {
   api.filterPage("n", { messages: [msg("u1", "user", "q", "e1", 1), msg("a1", "assistant", "y", "e1", 2), msg("p", "user", P, "e2", 3), msg("pa", "assistant", "x", "e2", null)] }, true);
   check("missing create_time", api.correctParent("n", "a1"), "pa");
 
-  // First screen entirely Popup: left unchanged (CSS hiding), nothing to fix.
-  check("first screen all Popup", ids(api.filterPage("e", { messages: [msg("p1", "user", P, "f1", 1), msg("q1", "assistant", "x", "f1", 2)] }, true)), "unchanged");
-  check("  ... status", api.status().fallback, "first screen all Popup");
-  check("  ... no fix", api.correctParent("e", "q1"), null);
+  // First screen entirely Popup: filtered to empty (ChatGPT then loads older pages, verified live, T35);
+  // the next message from the last visible one on an older page goes after the hidden turns.
+  check("first screen all Popup", ids(api.filterPage("e", { messages: [msg("p1", "user", P, "f1", 10), msg("q1", "assistant", "x", "f1", 11)] }, true)), "");
+  check("  ... no fallback", api.status().fallback, null);
+  api.filterPage("e", { messages: [msg("u0", "user", "q", "f0", 1), msg("a0", "assistant", "y", "f0", 2)] }, false);
+  check("  ... parent after the hidden first screen", api.correctParent("e", "a0"), "q1");
 
   // Missing turn_exchange_id on a Popup message: nothing filtered.
   var bad = msg("pz", "user", P, null, 1); bad.metadata = {};

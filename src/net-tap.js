@@ -196,9 +196,6 @@
     }
     var isDropped = function (msg) { var e = msg && msg.metadata && msg.metadata.turn_exchange_id; return !!(e && drop[e]); };
     var kept = j.messages.filter(function (msg) { return !isDropped(msg); });
-    // The newest 10 turns all Popup: an empty first screen is untested in ChatGPT,
-    // so give the page this one unchanged (Popup hides those turns with CSS).
-    if (firstScreen && !kept.length && j.messages.length) { filterStatus.fallback = "first screen all Popup"; drop = {}; kept = j.messages; }
 
     var seg = { t0: null, items: [], first: !!firstScreen };
     j.messages.forEach(function (msg) {

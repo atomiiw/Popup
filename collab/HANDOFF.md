@@ -19,7 +19,6 @@ Key facts about the new ChatGPT DOM (measured): one `[data-turn-key=UUID]` per q
 
 ## Not verified / known limits
 - Branch switching inside one page load (ChatGPT now only previews other versions in a "See versions" dialog, which does not reload data); the parent fix resets on every first-screen load.
-- First screen made only of Popup turns (≥10 Popup Q&As after the last normal message): left unfiltered by design (CSS hiding); not seen live.
 - Sidebar open/close and dark mode with a popup open (clicking the sidebar button closes the popup, same as 1.1.3).
 - Old-data migration with real v1 data (the test install had none).
 - No side-by-side perf comparison against 1.1.3; longest single long task seen: 461 ms during 5-level nesting.
