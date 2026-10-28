@@ -878,17 +878,9 @@
   };
 
   /**
-   * Sync the jr-source-highlight-active class on highlight spans.
-   * Adds active class to spans matching the given highlight ID,
-   * removes it from all others.
+   * Underline the highlights of the open popups (the whole popup stack + hlId).
    */
   JR.syncHighlightActive = function (hlId) {
-    // Remove active from all
-    var allActive = document.querySelectorAll(".jr-source-highlight-active");
-    for (var i = 0; i < allActive.length; i++) {
-      allActive[i].classList.remove("jr-source-highlight-active");
-    }
-
     // Collect all highlight IDs that should be active:
     // every highlight in the popup stack + the current one
     var activeIds = [];
@@ -897,16 +889,7 @@
     }
     if (hlId) activeIds.push(hlId);
 
-    // Add active class + underlines for all
     if (activeIds.length > 0) {
-      for (var ai = 0; ai < activeIds.length; ai++) {
-        var entry = st.completedHighlights.get(activeIds[ai]);
-        if (entry && entry.spans) {
-          for (var j = 0; j < entry.spans.length; j++) {
-            entry.spans[j].classList.add("jr-source-highlight-active");
-          }
-        }
-      }
       if (JR.showActiveUnderline) JR.showActiveUnderline(activeIds);
     } else {
       if (JR.removeActiveUnderline) JR.removeActiveUnderline();

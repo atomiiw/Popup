@@ -166,7 +166,7 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 ### Step 7b: Highlight Hover & Active States — DONE
 - Darken the highlight background color when the mouse hovers over a completed highlight span
 - Apply a distinct "active/selected" background color when a highlight's popup is currently open
-- Hover uses `:hover` pseudo-class; active uses `.jr-source-highlight-active` class toggled by `JR.syncHighlightActive()`
+- Hover uses `:hover` pseudo-class; active uses `.jr-source-highlight-active` class toggled by `JR.syncHighlightActive()` (1.2.1: shades and the class removed; the function only draws the open-popup underline)
 - Works for all 5 highlight colors + default blue, in both light and dark mode
 - Works for both level-1 highlights in the chat and chained highlights inside popup responses
 
