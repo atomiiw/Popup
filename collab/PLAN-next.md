@@ -56,33 +56,102 @@
 - 对话数据走 `POST /claudeai-rpc/…ConversationService/StreamTimeline`，格式是 connect+proto 二进制。要做网络层过滤，就得改写 protobuf，很脆弱。
 - 可选方向：先查清空白是怎么来的。比如 Claude 的列表在估算行高，可以试试用 `height:0; overflow:hidden` 代替 `display:none`，看估算会不会因此变对。实在不行，再考虑改二进制数据。
 
-## 新需求评估：popup 里附图提问（粘贴 Cmd+V 和拖放都要支持）
+## popup 里附图提问（ChatGPT）——方案已批准，第 0 步已完成
 
-### 用户想要的效果
-问追问时，可以把图片粘贴或拖进 popup 的输入框，和问题一起发给 AI。
+### 背景
 
-### 做法
-1. **popup 输入框接收图片**：
-   - 在 popup 输入框上监听 `paste`（`clipboardData.files`）和 `dragover`/`drop`（`dataTransfer.files`），只收 `image/*`。
-   - 在输入框下面显示缩略图，带 × 可以删掉。
-   - 现在的 `paste` 处理只取纯文本（`popup.js` 里 `questionText` 的 paste 监听），要改成先检查有没有图片文件。
-2. **把图片交给网站自己的上传流程**，不自己上传，这样仍然用用户的账号，不需要 API key：
-   - **方式 A**：找到网站隐藏的 `<input type="file">`，用 `new DataTransfer()` 把文件放进去，再触发 `change`。这在 React 网站上通常有效。
-   - **方式 B**：在网站输入框上触发一个合成的 `paste` 或 `drop` 事件，带上 `DataTransfer`。合成事件不算真实用户操作（`isTrusted` 为 false），有的网站会忽略它，所以只作为备用。
-   - 等网站显示的附件卡片出现，并且上传完成（发送按钮可用，或者卡片的加载状态消失），再写入问题文字、发送。
-3. **隐藏和识别**：用户消息里多了图片，但文字部分仍然是 Popup 格式。ChatGPT 的 `content.parts` 里图片是对象、文字是字符串，`net-tap.js` 的 `partsText` 和 `parsePopupMessage` 只看文字部分，所以过滤和解析都不受影响。
-4. **popup 里怎么显示**：
-   - 当次会话显示缩略图。
-   - 刷新后，从对话数据里认出这条消息带图，显示「[图片]」占位就够了。要显示原图，得调用网站的文件下载接口，第一版不做。
-   - 存储仍然只存 key，不存图片。
+用户想在 popup 里追问时，把图片粘贴（Cmd+V）或拖进输入框，和问题一起发给 ChatGPT。用户已定：
+- **范围**：一级 popup 提新问题、编辑已有问题都支持；嵌套 popup 用的是同一个输入框代码，所以自然也支持。
+- **数量**：一次可以带多张，上限和 ChatGPT 一样。
+- **刷新后**：popup 里显示原图缩略图。
+- **网站**：先只做 ChatGPT；DeepSeek 等它的适配做完再接。
 
-### 可行性和风险
-- **ChatGPT**：可行性中高。最大的不确定是方式 A 能不能触发 ChatGPT 的上传；拿不准的是它的 file input 在哪、有几个，以及上传完成的信号是什么。要用 1 到 2 条消息实测。
-- **DeepSeek**：要等适配完成后再测。DeepSeek 的图片是识别其中的文字（OCR），会走 `ref_file_ids`。
-- **其他风险**：
-  - 上传要几秒，发送要排在上传完成之后，排队和超时逻辑要考虑这段时间。
-  - 用户的账号如果不支持图片，或者额度用完，上传会失败，需要在 popup 里提示。
-  - 带图的消息会让 Popup 隐藏的那一轮更大，但不影响过滤。
-- **建议的验证顺序**：
-  1. 先做一个只读开发开关，在 ChatGPT 输入框里自动放入一张测试图，不发送，看附件卡片会不会出现，确认方式 A 是否有效。
-  2. 有效之后，再用 1 条消息测完整流程：带图提问、隐藏、回答，再刷新看占位。
+**原则不变**：Popup 自己不上传，图片交给 ChatGPT 自己的上传流程，用用户的账号。存储只存 key，不存图片。
+
+### 现状（代码审查结论）
+
+| 位置 | 现在的情况 | 附图要改什么 |
+|---|---|---|
+| `src/popup.js` `buildInputRow` (~L658) 和编辑输入框 (~L1256) | `paste` 只插入纯文本，图片被静默丢掉；没有 `drop` 处理 | 接收图片文件，显示缩略图条 |
+| `doSend` (~L709)、`submitEdit` (~L1179)、重试 (~L1503) | 只把问题文字放进 `JR.enqueueMessage` | 把图片 `File[]` 一起带上 |
+| 编辑输入框的发送按钮 (~L1385) | 只在文字改变时才能点 | 加了图或换了图也要能发 |
+| `src/chat.js` `injectAndSend` (L204) | 只等发送按钮约 1.8 秒，等不到就判失败 | 上传要几秒，会被误判为发送失败 |
+| `waitForResponse` 的被拒检测 (L1175) | 1.5 秒后输入框里还有文字，就清空并重发 | 上传中会被误判成「被拒」，导致清空、重复发送 |
+| `waitForResponse` 的快速超时 (L1200) | 发出后 3 秒内没出现新一轮，就判超时 | 同上 |
+| `clearComposer` (L51) | 只删文字 | 附件卡片会留在输入框里 |
+| `src/net-tap.js` `questionFromBody` (L29) | 只认 `parts[0]` 是字符串的消息 | 带图消息 `parts = [图片, 文字]` 认不出 → 不读流、不改写父消息。改成和 `partsText` 一样只取字符串 |
+| `findNewTurns`、`parsePopupMessage`、`textOf`、`partsText`、`filterPage` | 只看文字 | 带图消息照样能认出、能隐藏、能读回文字，不用改 |
+| 读回（`src/qa-content.js`） | 从不读图片 | 要按图片指针拿到图片的临时地址 |
+| 灯箱 `openLightbox` (popup.js L481) | 标了 CAROUSEL-LOCKED | 不改，直接用对象 URL 调用，现有代码就是这么用的 |
+
+### 方案
+
+### 第 0 步：实测取证（开发开关，先不发消息，最后用 1 条）
+
+不确定的地方都靠实测确认，证据存到 `collab/evidence/img/`：
+1. **怎么把图交给 ChatGPT**：开发版加一个网址开关 `#jr-imgtest`，打开页面时自动生成一张小测试图（用 canvas 画），按两种方式放进 ChatGPT 的输入框，不发送：
+   - **A**：找到它隐藏的 `<input type="file">`，用 `DataTransfer` 把文件放进去，再触发 `change`；
+   - **B**：在输入框上触发合成的 `drop` 或 `paste` 事件，事件里带上文件。
+
+   记录哪种方式会出现附件卡片、卡片怎么判断上传完成、怎么删掉卡片。
+2. **上传接口和请求格式**：沿用之前的探针方式，记录上传要调用哪些接口，以及发送请求里图片在 `content.parts` 里长什么样（应该类似 `image_asset_pointer`，带 `file-service://file-…`）。
+3. **刷新后怎么拿到图片**：从对话数据里拿到图片的 file id，然后调 `GET /backend-api/files/download/{id}`，预计会返回一个有时效的下载地址。要确认这一点，以及这个地址能不能直接放进 `<img>`。
+4. 前 3 项都清楚了，再用 1 条消息测完整的附图提问，确认上面的推断都对。
+
+### 第 1 步：popup 输入框接收图片
+- 新加的输入框和编辑输入框都监听 `paste`（`clipboardData.files`）、`dragover` 和 `drop`（`dataTransfer.files`），只收 `image/*`；文字照旧按纯文本粘贴。
+- 输入框下面显示缩略图条（新的 CSS 类，例如 `.jr-popup-attach`，按样式指南来），每张图带 ×，点图片用现有的 `openLightbox` 放大。
+- 要发送，问题文字仍然不能为空，因为消息格式需要问题。编辑时，文字改了、图加了、图删了，都算有改动。
+
+### 第 2 步：发送时把图交给 ChatGPT
+- `JR.enqueueMessage` 的参数里加上 `files`，排队时文件留在内存里。
+- `chat.js` 新增 `attachToComposer(files)`，用第 0 步验证有效的方式。新的选择器（文件输入框、附件卡片、上传中的标志、卡片上的删除按钮）都放进 `src/site-adapter.js`。
+- `injectAndSend` 的新顺序：
+  1. 把整个输入区藏起来，不只是文字框，免得附件卡片闪一下；
+  2. 放入图片；
+  3. 等上传完成：卡片都在、没有在加载、发送按钮可用。上限 60 秒，超时或出错就报「图片上传失败」，并清掉卡片；
+  4. 写入文字，点发送。
+- **计时修正**：被拒检测、3 秒快速超时、10 秒超时，都从**真正点下发送**那一刻开始算，不再从排队开始算。`clearComposer` 也会删掉附件卡片。
+- `net-tap.js` 的 `questionFromBody` 改成只取字符串部分，和 `partsText` 一致。
+
+### 第 3 步：popup 里显示图片
+- **当次会话**：问题上方用对象 URL 显示缩略图。
+- **存储**：只加一个计数字段 `images`（几张），沿用 `wholeResponse` 那几处的写法，涉及 `saveHighlight`、`updateHighlightFields`，以及 `popup.js` 和 `chat.js` 里复制条目的地方。不存图片本身。
+- **刷新后**：`qa-content.js` 读回时，从这条用户消息里取出图片的 file id，用第 0 步确认的接口拿到临时地址，显示缩略图；这次会话里缓存起来，不重复请求。拿不到时显示「[图片]」占位。
+- **编辑**：新版本带它自己的图。切换版本时，缩略图跟着切换。
+- **重试**：图片文件还在内存里就一起重发；已经不在了（比如刷新过），就提示用户「编辑问题，重新附上图片」，不会只发文字假装成功。
+
+### 关键文件
+- `src/popup.js`：输入框、`doSend`、`submitEdit`、重试，以及显示图片。
+- `src/chat.js`：`attachToComposer`、`injectAndSend`、计时修正、`clearComposer`。
+- `src/site-adapter.js`：新增文件输入框、附件卡片、上传状态的选择器。
+- `src/net-tap.js`：`questionFromBody`。
+- `src/qa-content.js`：读回图片。
+- `storage.js`：`images` 字段。
+- `styles.css`：缩略图条，以及拖进来时的高亮提示。
+
+### 验证
+- **单元测试**：
+  - `tools/net-tap-test.js` 加带图消息的用例：`questionFromBody` 和 `filterPage` 都要能认出它是 Popup 问题。
+  - `tools/qa-content-test.js` 加一个用例：从对话数据里取出图片 file id。
+  - `tools/dom-test.html` 加一个用例：在 popup 输入框上触发带图片文件的 `paste` 和 `drop`，检查缩略图条出现，删除按钮能删掉。
+- **真实页面**（用户批准消息额度）：
+  - 不发消息：第 0 步的输入框测试。
+  - 发消息：附 1 张图提问 → 主聊天里看不到，popup 里能看到回答和缩略图；刷新后缩略图还在；编辑问题并换一张图，生成第 2 版，两个版本切换时缩略图跟着变；一次附 2 张图。
+
+  大约需要 4 条消息。
+- 最后在 ChatGPT 上跑一遍 T26 那样的全面回归，确认不带图的提问不受影响。
+
+### 风险
+- **方式 A 和 B 都不被 ChatGPT 接受**（比如它只认真实的用户操作）：这样就做不了「交给网站上传」，只能改成我们自己调它的上传接口，复杂度和风险都会明显上升。第 0 步就是为了尽早知道这一点。
+- **上传失败**（账号额度用完、图片太大）：要有清楚的提示，并且不能只发出文字。
+- **刷新后拿图片的地址有时效**：每次打开 popup 时重新拿，不存起来。
+
+### 第 0 步结果（IMG0，2026-10-28，零发送，证据在 collab/evidence/img/）
+- **A**（隐藏的文件输入框，设置 `files` 后触发 `change`）：没有反应，没有出现附件，也没有发起上传。
+- **B**（合成的 `drop`）：同样没有反应。
+- **C**（在 `.ProseMirror[data-composer-markdown]` 上触发合成的 `paste`，`clipboardData` 里带文件）：**成功**。输入框上方出现图片附件卡片，接着调用 `POST /backend-api/files` → `{file_id: "file_…", upload_url}` 和 `/backend-api/files/process_upload_stream`，两个都返回 200，发送按钮变成可用。→ **采用方式 C。**
+- 卡片的删除按钮：`button[aria-label="Remove <文件名>"]`。上传完成的信号：发送按钮 `button[aria-label="Send"]` 可用，且附件卡片里没有加载状态。
+- 还没测的（要发消息才能看到）：发送请求里图片在 `content.parts` 里的样子；刷新后能否用 `GET /backend-api/files/download/{file_id}` 拿到图片地址。
+- 开发开关 `src/dev-imgtest.js`（网址加 `#jr-imgtest=A|B|C`）还没提交，只用于评估，不能打进商店 zip。
+- **下一步**：按方案做第 1 到 3 步，然后用约 4 条消息做真实测试，这些消息要用户批准。
