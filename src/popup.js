@@ -1803,6 +1803,18 @@
     var entry = st.completedHighlights.get(hlId);
     if (!entry) return;
 
+    // The user may be reading while the answer finishes: keep both the popup's
+    // and the chat's scroll position across the rebuild (no jump on "done").
+    var oldResp = popup.querySelector(".jr-popup-response");
+    var respTop = oldResp ? oldResp.scrollTop : 0;
+    var chat = JR.site.scrollContainer();
+    var chatTop = chat ? chat.scrollTop : null;
+    function keepPlace() {
+      var resp = popup.querySelector(".jr-popup-response");
+      if (resp) resp.scrollTop = respTop;
+      if (chat && chatTop !== null) chat.scrollTop = chatTop;
+    }
+
     // Exit generating state
     popup.classList.remove("jr-popup--generating");
 
@@ -1825,10 +1837,12 @@
     }
 
     showCompletedResponse(popup, upper, hlId, entry, entry.contentContainer);
+    keepPlace();
     JR.repositionPopup();
     // Also reposition on next frame in case pending layout/scroll changes
     // (e.g. ChatGPT auto-scroll after unlock) shift the highlight spans.
     requestAnimationFrame(function () {
+      keepPlace();
       JR.repositionPopup();
     });
   };
