@@ -380,6 +380,21 @@
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
+    /**
+     * The part of the thread the user actually sees, in viewport coordinates:
+     * below the app header, above the bottom area (composer, plus the
+     * "ChatGPT can make mistakes" line that sticks ~28px above it). Popups stay inside.
+     */
+    visibleBand: function () {
+      function visible(sel) {
+        return Array.prototype.filter.call(document.querySelectorAll(sel), isVisible)[0];
+      }
+      var h = visible("[data-app-shell-titlebar]");
+      var f = visible("[data-thread-scroll-footer]");
+      var top = h ? h.getBoundingClientRect().bottom : 0;
+      var bottom = f ? f.getBoundingClientRect().top - 28 : window.innerHeight;
+      return { top: top, bottom: Math.min(bottom, window.innerHeight) };
+    },
     // KaTeX formulas: a visible copy plus an invisible one for screen readers
     // (MathML + the TeX source). Popup reads a formula as its TeX source, so the
     // question sent to ChatGPT is exact (10^8, not "108") and appears once.

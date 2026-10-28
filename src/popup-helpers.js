@@ -411,8 +411,9 @@
    */
   JR.bestDirection = function (highlightRect, popupH, gap, contentContainer) {
     if (!highlightRect) return "below";
-    var spaceBelow = window.innerHeight - highlightRect.bottom - gap;
-    var spaceAbove = highlightRect.top - gap;
+    var band = JR.site.visibleBand();
+    var spaceBelow = band.bottom - highlightRect.bottom - gap;
+    var spaceAbove = highlightRect.top - band.top - gap;
 
     // Check scroll room: can the user actually scroll to see the popup?
     // If the popup would open above but there's no scroll room above the
@@ -543,13 +544,13 @@
     var popupW = popup.offsetWidth;
     var popupH = popup.offsetHeight;
 
-    var direction;
+    var direction, fullH;
     if (forceDirection === "above" || forceDirection === "below") {
       direction = forceDirection;
     } else {
       // Choose the side for the popup's full height (its CSS max-height), not its
       // current one: the answer will grow it, and it must never move or leave the screen.
-      var fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
+      fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
       direction = JR.bestDirection(rect, Math.max(popupH, fullH), gap, contentContainer);
     }
     popup._jrLockedDirection = direction;
@@ -593,14 +594,21 @@
     //       container's scrollHeight, which is what was leaving the trailing blank
     //       space after the flip
     if (direction === "below") {
-      var roomViewport = window.innerHeight - rect.bottom - gap;
+      var roomViewport = JR.site.visibleBand().bottom - rect.bottom - gap;
       var roomContainer = naturalScrollH - top;
       popup._jrMaxHBelow = Math.min(roomViewport, roomContainer);
       popup._jrMaxHAbove = null;
     } else {
       popup._jrMaxHBelow = null;
       // Above: room up to the top of the screen and of the container.
-      popup._jrMaxHAbove = Math.min(rect.top - gap, popup._jrBottomAnchor);
+      popup._jrMaxHAbove = Math.min(rect.top - JR.site.visibleBand().top - gap, popup._jrBottomAnchor);
+    }
+    // Neither side fits the full popup (short window): cap it to its side now, so even
+    // an already finished answer never runs under the header or the composer.
+    var roomNow = direction === "above" ? popup._jrMaxHAbove : popup._jrMaxHBelow;
+    fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
+    if (roomNow != null && Math.max(popupH, fullH) > roomNow) {
+      popup.style.setProperty("--jr-popup-cap", Math.max(Math.floor(roomNow), 0) + "px");
     }
 
     JR.updateArrow(popup, centerRect, containerRect, left);
@@ -642,7 +650,8 @@
     var rect = st.activeSourceHighlights.length ? JR.getHighlightRect(st.activeSourceHighlights) : null;
     var room = direction === "above" ? popup._jrMaxHAbove : popup._jrMaxHBelow;
     if (rect && room != null) {
-      room = Math.min(room, direction === "above" ? rect.top - 8 : window.innerHeight - rect.bottom - 8);
+      var band = JR.site.visibleBand();
+      room = Math.min(room, direction === "above" ? rect.top - band.top - 8 : band.bottom - rect.bottom - 8);
     }
     if (room == null || popup.offsetHeight <= room) return;
     // Only when neither side fits the full popup (small window): stay on screen, scroll inside.
