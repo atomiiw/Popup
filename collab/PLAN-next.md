@@ -7,7 +7,8 @@
 - `main` 上的 1.2.9 是正式版本，只支持 ChatGPT；商店 zip 是 `dist/Popup-1.2.9.zip`。
 - 工作区里有**没提交的探针改动**：
   - `src/probe-net.js`：只在 claude.ai / chat.deepseek.com 上运行（页面环境），记录请求的形状，写进 `#jr-probelog`，不记正文。
-  - `manifest.json`：加了这两个网站的权限和探针脚本，`version_name` 是 `1.2.9-probe.3`。
+  - `src/dev-imgtest.js`：只在 ChatGPT 上运行（页面环境），网址加 `#jr-imgtest=A|B|C` 时往输入框里放一张测试图，不发送，过程写进 `#jr-imglog`。
+  - `manifest.json`：加了 claude.ai 和 DeepSeek 的权限和探针脚本，ChatGPT 的页面环境脚本里多了 `dev-imgtest.js`，`version_name` 是 `1.2.9-probe.4`。
   - **这些只用于评估，不能打进商店 zip。** 正式实现时删掉探针，或者用正式代码替换它。
 - DeepSeek 测试对话已经建好，路径形如 `/a/chat/s/fb177f05…`。用户批准的 5 条消息还剩 4 条。
 
