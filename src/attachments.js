@@ -11,6 +11,18 @@
   function isImage(file) { return /^image\//.test(file.type || ""); }
 
   /**
+   * A file name that fits a tile: the start of the name, "…", and always the
+   * extension ("test-note.pdf" -> "test….pdf", "a.zip" stays "a.zip").
+   */
+  JR.shortFileName = function (name, max) {
+    max = max || 9;
+    if (name.length <= max) return name;
+    var m = /^(.*?)(\.[^.]{1,6})?$/.exec(name), ext = m[2] || "";
+    var keep = Math.max(1, max - ext.length - 1);
+    return m[1].slice(0, keep) + "\u2026" + ext;
+  };
+
+  /**
    * One thumbnail (image) or chip (other file). With onRemove it gets an × that
    * calls it; without, it is a read-only copy (the question after sending).
    */
@@ -33,11 +45,10 @@
       var chip = document.createElement("span");
       chip.className = "jr-attach-chip";
       chip.innerHTML = FILE_SVG;
-      var ext = document.createElement("span");
-      ext.className = "jr-attach-ext";
-      var m = /\.([^.]{1,5})$/.exec(file.name);
-      ext.textContent = m ? m[1].toUpperCase() : "FILE";
-      chip.appendChild(ext);
+      var label = document.createElement("span");
+      label.className = "jr-attach-ext";
+      label.textContent = JR.shortFileName(file.name);
+      chip.appendChild(label);
       chip.title = file.name;
       chip.setAttribute("aria-label", file.name);
       item.appendChild(chip);
@@ -62,8 +73,9 @@
     if (!message && (!failed || !failed.length)) return;
     var note = document.createElement("div");
     note.className = "jr-attach-note";
-    note.textContent = message || (failed.length === 1 ? "1 attachment was" : failed.length + " attachments were") + " not sent: " +
-      failed.map(function (f) { return f.file.name + " (" + f.reason + ")"; }).join(", ");
+    // One short line; the details on hover
+    note.textContent = message || "Not sent: " + failed.map(function (f) { return f.file.name; }).join(", ");
+    note.title = message || failed.map(function (f) { return f.file.name + " (" + f.reason + ")"; }).join("\n");
     // Below the row, not in it: the row is a flex row and a note in it squeezed the question to 0 px (T8, T9)
     var last = questionDiv, n;
     while ((n = last.nextElementSibling) && n.classList.contains("jr-attach-note")) last = n;
@@ -86,7 +98,7 @@
     if (questionDiv) JR.notesBelow(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
     if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
     var note = questionDiv && JR.showAttachmentNote(questionDiv, null,
-      "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.");
+      "Send or remove your files in ChatGPT\u2019s box first");
     if (note) note.classList.add("jr-attach-note--blocked");
     return true;
   };

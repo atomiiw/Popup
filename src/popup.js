@@ -1575,7 +1575,7 @@
           beforeSend: function (w) { JR.prepareSend(w, null); },
         });
         var qd = popup.querySelector(".jr-popup-question");
-        if (filesGone && qd) JR.showAttachmentNote(qd, null, "The attachments are gone after the reload; only the text was sent.");
+        if (filesGone && qd) JR.showAttachmentNote(qd, null, "Files gone after the reload: sent the text only");
       });
       retryBtn.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
       timeoutDiv.appendChild(retryBtn);

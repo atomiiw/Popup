@@ -338,7 +338,7 @@ var strip = JR.stripAbove(qd);
 check("Step 2: a dropped PDF is taken too", att.files().length === 2 && att.files()[1] === pdf);
 check("Step 2: a row of squares just above the question row: thumbnail for the image, PDF tile for the PDF",
   !!strip && strip === qd.previousElementSibling && !strip.hidden && !!strip.querySelector("img.jr-attach-thumb") &&
-  strip.querySelector(".jr-attach-chip") && strip.querySelector(".jr-attach-chip").textContent === "PDF" &&
+  strip.querySelector(".jr-attach-chip") && strip.querySelector(".jr-attach-chip").textContent === "notes.pdf" &&
   strip.querySelector(".jr-attach-chip").title === "notes.pdf", strip && strip.outerHTML);
 strip.querySelectorAll(".jr-attach-remove")[0].click();
 check("Step 2: x removes that file", att.files().length === 1 && att.files()[0] === pdf && changes >= 3, att.files().length + " / " + changes);
@@ -374,7 +374,8 @@ check("Step 2c: switching version replaces the strip", sq.parentNode.querySelect
 asyncChecks.push(new Promise(function (resolve) { setTimeout(function () {
   var st2 = JR.stripAbove(sq);
   var kinds = st2 ? Array.prototype.map.call(st2.children, function (it) { return it.querySelector("img") ? "img" : (it.querySelector(".jr-attach-ext") || {}).textContent; }).join(",") : "none";
-  check("Step 2c: after a reload: PDF tile, image thumbnail, an image without an address as a PNG tile", kinds === "PDF,img,PNG", kinds);
+  check("Step 2c: after a reload: PDF tile, image thumbnail, an image without an address as a file tile", kinds === "notes.pdf,img,gone.png", kinds);
+check("Step 2: long file names keep their extension", JR.shortFileName("test-note.pdf") === "test\u2026.pdf" && JR.shortFileName("a.zip") === "a.zip" && JR.shortFileName("README") === "README", JR.shortFileName("test-note.pdf"));
   JR.qa = realQa;
   sq.remove(); if (st2) st2.remove();
   resolve();
