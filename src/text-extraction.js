@@ -131,7 +131,7 @@
     // A selection in a chart's plot (ticks, legend, tooltip): its words alone mean little,
     // so the quote says which chart, from its title.
     var chartEl = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
-    var chart = chartEl && chartEl.closest(".recharts-wrapper") && JR.site.chartContext(chartEl);
+    var chart = chartEl && chartEl.closest(JR.site.chartPlotSelector) && JR.site.chartContext(chartEl);
     if (chart) {
       var picked = [], tw = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, null), tn;
       if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) picked.push(range.toString());
@@ -449,8 +449,9 @@
   };
 
   /** Elements that make their ancestor block not the innermost one. */
+  var innerBlockSel = null;
   function innerBlockSelector() {
-    return Array.from(BLOCK_TAGS).join(", ") + ", " + JR.site.codeBlockSelector;
+    return innerBlockSel || (innerBlockSel = Array.from(BLOCK_TAGS).join(", ") + ", " + JR.site.codeBlockSelector);
   }
 
   /** A code block counts as one block for sentence extraction (old <pre> or current [data-code-block]). */
@@ -466,7 +467,7 @@
     var src = (block.tagName === "PRE" ? block : block.querySelector(JR.site.codeSourceSelector)) || block;
     var text = JR.site.codeText(src);
     var from = 0, to = text.length;
-    var cm = src.querySelectorAll(".cm-line");
+    var cm = JR.site.codeLineEls(src);
     if (cm.length) {
       var hit = [];
       for (var i = 0; i < cm.length; i++) if (range.intersectsNode(cm[i])) hit.push(i);

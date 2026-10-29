@@ -79,7 +79,10 @@ def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     tid, text = resolve(sys.argv[1]), sys.argv[2]
-    res = steer(tid, text)
+    try:
+        res = steer(tid, text)
+    except (OSError, ConnectionError, KeyError) as e:  # desktop app not running / IPC changed
+        res = {"error": f"ipc: {e}"}
     if res.get("resultType") == "success":
         print(f"STEERED into the running turn of {tid}")
         return

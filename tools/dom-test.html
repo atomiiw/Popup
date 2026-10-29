@@ -274,6 +274,16 @@ var cmr = document.createRange(); cmr.setStart(cml, 16); cmr.setEnd(cml, 30);
 var cmw = JR.highlightRange(cmr);
 check("R3 code: nothing inserted into CodeMirror", cm.querySelector(".cm-content").innerHTML === cmHTML0);
 check("R3 code: a proxy over the selection", cmw.length === 1 && cmw[0].classList.contains("jr-hl-proxy") && JR.spanRange(cmw[0]).toString() === "response.http_", cmw.length && JR.spanRange(cmw[0]).toString());
+// Removing a proxy highlight (Esc, delete) must leave CodeMirror's DOM exactly as it was:
+// the editor keeps references to its text nodes (two adjacent ones in this line).
+var cmLine2 = cm.querySelectorAll(".cm-line")[1];
+cmLine2.appendChild(document.createTextNode(" # done"));
+var cmBefore = cmLine2.childNodes.length;
+var cmw2 = JR.highlightRange(cmr);
+JR.state.activeSourceHighlights = cmw2;
+JR.removeSourceHighlight();
+check("removing a code highlight leaves CodeMirror's text nodes alone", cmLine2.childNodes.length === cmBefore && cmw2.every(function (w) { return !w.isConnected; }),
+  cmLine2.childNodes.length + " nodes (was " + cmBefore + ")");
 cm.remove();
 
 out.push(failed ? failed + " FAILED" : "all passed");

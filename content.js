@@ -468,14 +468,7 @@
     }
     st.completedHighlights.forEach(function (entry) {
       for (var i = 0; i < entry.spans.length; i++) {
-        var span = entry.spans[i];
-        var parent = span.parentNode;
-        if (!parent) continue;
-        while (span.firstChild) {
-          parent.insertBefore(span.firstChild, span);
-        }
-        parent.removeChild(span);
-        parent.normalize();
+        JR.unwrapHighlight(entry.spans[i]);
       }
     });
     st.completedHighlights.clear();

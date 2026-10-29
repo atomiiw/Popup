@@ -11,7 +11,7 @@
   // classes, takes clicks and hover, and gives popups their position, so the
   // rest of Popup treats it like any other highlight span.
   var proxyGroups = new Set(); // { range, zone, host, text, proxies }
-  var watchedHosts = new WeakSet();
+  var hostWatchers = new Map(); // host → [MutationObserver, ResizeObserver]
 
   function zoneOf(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -80,11 +80,21 @@
     });
   }
 
-  function relayoutAll() {
+  /** Forget groups whose proxies are all gone; stop watching hosts with none left. */
+  function dropGoneGroups() {
     proxyGroups.forEach(function (g) {
-      if (g.proxies.some(function (p) { return p.isConnected; })) layoutProxies(g);
-      else proxyGroups.delete(g); // its widget was replaced
+      if (!g.proxies.some(function (p) { return p.isConnected; })) proxyGroups.delete(g);
     });
+    hostWatchers.forEach(function (obs, host) {
+      var used = false;
+      proxyGroups.forEach(function (g) { if (g.host === host) used = true; });
+      if (!used) { obs.forEach(function (o) { if (o) o.disconnect(); }); hostWatchers.delete(host); }
+    });
+  }
+
+  function relayoutAll() {
+    dropGoneGroups(); // e.g. ChatGPT replaced the widget
+    proxyGroups.forEach(layoutProxies);
     paintProxyRanges();
   }
   var relayoutQueued = false;
@@ -102,16 +112,13 @@
   }, true);
 
   function watchHost(host) {
-    if (watchedHosts.has(host)) return;
-    watchedHosts.add(host);
+    if (hostWatchers.has(host)) return;
     // A proxy removed like any span (dismiss, delete): stop painting its text
-    new MutationObserver(function () {
-      proxyGroups.forEach(function (g) {
-        if (g.host === host && !g.proxies.some(function (p) { return p.isConnected; })) proxyGroups.delete(g);
-      });
-      paintProxyRanges();
-    }).observe(host, { childList: true });
-    if (window.ResizeObserver) new ResizeObserver(queueRelayout).observe(host);
+    var mo = new MutationObserver(function () { dropGoneGroups(); paintProxyRanges(); });
+    mo.observe(host, { childList: true });
+    var ro = window.ResizeObserver ? new ResizeObserver(queueRelayout) : null;
+    if (ro) ro.observe(host);
+    hostWatchers.set(host, [mo, ro]);
   }
 
   function makeProxies(range, zone) {
@@ -337,19 +344,27 @@
   }
 
   /**
+   * Take one highlight span out of the page, its text back in place. A proxy is
+   * only removed: its parent holds a chart or a CodeMirror editor, whose DOM
+   * normalize() must not touch (the editor keeps references to its text nodes).
+   */
+  JR.unwrapHighlight = function (span) {
+    var parent = span.parentNode;
+    if (!parent) return;
+    if (span._jrProxyGroup) { span.remove(); return; }
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+    parent.normalize();
+  };
+
+  /**
    * Remove all source highlight spans and restore original DOM.
    */
   JR.removeSourceHighlight = function () {
     for (var i = 0; i < st.activeSourceHighlights.length; i++) {
       var span = st.activeSourceHighlights[i];
       if (span._jrReplyAnchor) continue; // don't unwrap reply-to-all buttons
-      var parent = span.parentNode;
-      if (!parent) continue;
-      while (span.firstChild) {
-        parent.insertBefore(span.firstChild, span);
-      }
-      parent.removeChild(span);
-      parent.normalize();
+      JR.unwrapHighlight(span);
     }
     st.activeSourceHighlights = [];
 

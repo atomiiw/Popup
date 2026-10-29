@@ -990,12 +990,7 @@
       // Unwrap highlight spans
       if (entry.spans) {
         for (var s = 0; s < entry.spans.length; s++) {
-          var span = entry.spans[s];
-          var parent = span.parentNode;
-          if (!parent) continue;
-          while (span.firstChild) parent.insertBefore(span.firstChild, span);
-          parent.removeChild(span);
-          parent.normalize();
+          JR.unwrapHighlight(entry.spans[s]);
         }
       }
 

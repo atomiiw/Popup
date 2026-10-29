@@ -379,9 +379,12 @@
     codeBlockSelector: C.codeBlock.join(", "),
     codeSourceSelector: C.codeSource.slice(0, 2).join(", "),
 
-    /** Text of a code source element: CodeMirror keeps one div.cm-line per line and no "\n". */
+    /** CodeMirror's line elements in a code source element (one div.cm-line per line). */
+    codeLineEls: function (src) { return src.querySelectorAll(".cm-line"); },
+
+    /** Text of a code source element: CodeMirror keeps no "\n" between its lines. */
     codeText: function (src) {
-      var lines = src.querySelectorAll(".cm-line");
+      var lines = JR.site.codeLineEls(src);
       if (!lines.length) return src.textContent;
       return Array.prototype.map.call(lines, function (l) { return l.textContent; }).join("\n");
     },
@@ -393,6 +396,8 @@
      * and CodeMirror code (the editor removes them). Proxies go into the widget around it.
      */
     noWrapSelector: "svg, .cm-content, .recharts-wrapper",
+    /** A chart's plot: axes, labels, legend, tooltip (Recharts). */
+    chartPlotSelector: ".recharts-wrapper",
     noWrapHostSelector: "[data-client-defined-widget]",
 
     /** Text that is in the DOM but not on screen (a chart's screen-reader data table). */
