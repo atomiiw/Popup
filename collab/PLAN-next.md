@@ -29,6 +29,14 @@
 | R3 | 代码块（新样式：标题栏「Python」+ Run 按钮） | **页面上代码没有被高亮**，但引用里的高亮正常；引用里混进了「PythonRun」，并且**换行全丢了**（所有行连成一段） | 代码块的 DOM 又改了：`[data-code-block-source]` 可能找不到了，退回整块 `textContent`（带工具栏文字）；如果代码是按行的 `div`（类似 CodeMirror 的 `.cm-line`），`textContent` 不带换行；编辑器重绘会删掉我们插进去的高亮 span |
 | R4 | 图表（SVG 折线图，坐标轴数字） | 选中横轴数字 2–6 后，**图表被弄坏**（这几个数字从图上消失）；popup **被弹到页面最下面**，压在输入框下、被拦腰截断 | `highlightRange` 把 HTML `<span>` 插进 SVG 的 `<text>` 里，SVG 不渲染它 → 文字消失；SVG 里的 span 没有尺寸，`getHighlightRect` 拿到 0 → popup 定位到错误位置 |
 
+### 后来补充的问题
+| # | 现象 | 备注 |
+|---|---|---|
+| R5 | Reply 的引用和发给 ChatGPT 的全文末尾多了「Reply」 | 1.2.10-dev.1 已修 |
+| R6 | reply popup 开着时再点同一个 Reply，会再叠一层 | 1.2.10-dev.1 已修 |
+| R7 | （排查过）新格式回答刷新后「This response couldn't load」 | 关掉 Popup 后照样出现（2026-10-28 operator 实测），是 ChatGPT 自己的问题，不修 |
+| R8 | Popup 在所有 chatgpt.com 页面都会尝试工作（设置、GPTs、资料库等），应该只在聊天界面生效 | 2026-10-28 用户报告，未开始。ChatGPT 是单页应用，页面间跳转不重新加载，所以内容脚本仍要在所有页面加载，改成按网址路径自己开关 |
+
 ### 第 1 步：列出 ChatGPT 的高风险回答组件
 
 先在真实页面上把各种组件都弄出来（用户批准消息额度，放在一个专门的测试对话里），每种记下 DOM 结构（只记结构和属性，不记正文），存到 `collab/evidence/formats/`。分类：

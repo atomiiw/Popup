@@ -441,6 +441,11 @@
             scheduleMountCheck();
             return;
           }
+          // An answer filled in after its turn mounted, while a highlight still waits for it
+          if (JR.pendingRestoreCount && JR.pendingRestoreCount() > 0 && n.closest && n.closest(JR.SEL.turn)) {
+            scheduleMountCheck();
+            return;
+          }
         }
       }
     });

@@ -521,17 +521,21 @@
   // Text matching is the expensive part of a mount pass. If a highlight's text
   // wasn't found in a rendered answer, don't search that same element again on
   // every later mount (ChatGPT rebuilds the element when it re-renders it).
-  var noMatch = new WeakMap(); // answer root element → Set of quoteIds not found in it
+  // The current renderer fills an answer element after it mounts: a miss only
+  // counts while the answer's text is unchanged.
+  var noMatch = new WeakMap(); // answer root element → { len: its text length then, ids: Set of quoteIds not found }
 
   function tryRestoreL1(q) {
     var roots = rootsFor(q);
     for (var i = 0; i < roots.length; i++) {
+      var len = roots[i].textContent.length;
       var missed = noMatch.get(roots[i]);
-      if (missed && missed.has(q.quoteId)) continue;
+      if (missed && missed.len !== len) { noMatch.delete(roots[i]); missed = null; }
+      if (missed && missed.ids.has(q.quoteId)) continue;
       var turn = JR.site.turnOf(roots[i]);
       if (!JR.restoreHighlightInElement(roots[i], q, JR.site.popupHost(turn))) {
-        if (!missed) noMatch.set(roots[i], missed = new Set());
-        missed.add(q.quoteId);
+        if (!missed) noMatch.set(roots[i], missed = { len: len, ids: new Set() });
+        missed.ids.add(q.quoteId);
         continue;
       }
       if (!q.sourceTurnKey) {
