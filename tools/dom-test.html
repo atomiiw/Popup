@@ -455,20 +455,21 @@ check("R13: a half-written component tag at the end is hidden; other text is kep
 
 // Formats in a narrow popup (300 px, the width a popup can be dragged down to): task lists,
 // wide tables and card grids stay readable
+var reset = document.createElement("style"); reset.textContent = "input { appearance: none; width: 0; height: 0; border: 0; } table { table-layout: fixed; } th, td { min-width: 0; }"; document.head.appendChild(reset); // ChatGPT's page CSS (T16)
 var narrow = document.createElement("div"); narrow.className = "jr-popup"; narrow.style.cssText = "position:static;width:300px;max-height:none;opacity:1";
 var nr = document.createElement("div"); nr.className = "jr-popup-response"; narrow.appendChild(nr); document.body.appendChild(narrow);
-nr.innerHTML = JR.renderMarkdown('- [ ] open task\n- [x] done task\n\n| c1 | c2 | c3 | c4 | c5 | c6 | c7 |\n|---|---|---|---|---|---|---|\n| a long cell text | 2 | 3 | 4 | 5 | 6 | 7 |\n\n<grid columns={3}> <grid-item> <box border> A </box> </grid-item> <grid-item> <box border> B </box> </grid-item> <grid-item> <box border> C </box> </grid-item> </grid>');
+nr.innerHTML = JR.renderMarkdown('- [ ] open task\n- [x] done task\n\n| 对比项目 | 租房 | 买房 | 主要成本 | 灵活性 | 长期影响 |\n|---|---|---|---|---|---|\n| 前期投入 | 较低 | 较高 | 押金 / 首付 | 租房更高 | 影响现金储备 |\n\n<grid columns={3}> <grid-item> <box border> A </box> </grid-item> <grid-item> <box border> B </box> </grid-item> <grid-item> <box border> C </box> </grid-item> </grid>');
 var boxes = nr.querySelectorAll("input[type=checkbox]");
-check("formats: a task list shows checkboxes (the second ticked), not [ ] / [x]",
-  boxes.length === 2 && !boxes[0].checked && boxes[1].checked && boxes[0].disabled && nr.textContent.indexOf("[") === -1, nr.innerHTML);
+check("formats: a task list shows checkboxes (the second ticked), not [ ] / [x], visible despite the page's input reset",
+  boxes.length === 2 && !boxes[0].checked && boxes[1].checked && boxes[0].disabled && nr.textContent.indexOf("[") === -1 && boxes[0].offsetWidth >= 12 && boxes[0].offsetHeight >= 12, nr.innerHTML);
 var ths = nr.querySelectorAll("th"), wrap = nr.querySelector("table").parentElement;
 check("formats: a wide table in a narrow popup scrolls sideways instead of squeezing its columns",
-  Array.prototype.every.call(ths, function (th) { return th.offsetWidth >= 40; }) && wrap.scrollWidth > wrap.clientWidth && narrow.scrollWidth <= 300,
+  Array.prototype.every.call(ths, function (th) { return th.offsetWidth >= 60; }) && wrap.scrollWidth > wrap.clientWidth && narrow.scrollWidth <= 300,
   Array.prototype.map.call(ths, function (th) { return th.offsetWidth; }));
 var gi = nr.querySelectorAll(".jr-dil-grid-item");
 check("formats: a 3-column card grid in a narrow popup uses fewer columns (each card at least 120 px)",
   gi.length === 3 && Array.prototype.every.call(gi, function (g) { return g.offsetWidth >= 120; }), Array.prototype.map.call(gi, function (g) { return g.offsetWidth; }));
-narrow.remove();
+narrow.remove(); reset.remove();
 
 // T15: more components in answers read back after a reload (collab/evidence/formats/t15/*-reload.txt)
 function md2(src) { var d = document.createElement("div"); d.innerHTML = JR.renderMarkdown(src); return d; }
@@ -496,6 +497,10 @@ var tb = tl.querySelectorAll("input[type=checkbox]");
 check("T15: a scripted task list is drawn from its data (no code run, no template text shown)",
   tb.length === 3 && tb[0].checked && !tb[1].checked && tb[2].checked && tl.textContent.indexOf("Rate") !== -1 &&
   tl.textContent.indexOf("2 / 3 done") !== -1 && !/@body|#each|\/each|useState|onChange|\{|\}/.test(tl.textContent), tl.innerHTML);
+var lk = md2('Source: <Link url="https://www.iea.org/x" title="IEA \u2014 Sales"/> and <Link url="javascript:alert(1)" title="bad"/>');
+check("T16: a Link is a link (http/https only; others are their title as text)",
+  lk.querySelectorAll("a").length === 1 && lk.querySelector("a").href === "https://www.iea.org/x" && lk.querySelector("a").textContent === "IEA \u2014 Sales" &&
+  lk.textContent.indexOf("bad") !== -1 && lk.textContent.indexOf("Link") === -1, lk.innerHTML);
 var tl2 = md2('{@body const x = compute()} {#each x as a}<checkbox checked={a.on}>{a.name}</checkbox>{/each}\n\nPlain {braces} stay.');
 check("T15: a template Popup can't read is hidden; braces in a normal answer stay",
   tl2.textContent.indexOf("Plain {braces} stay.") !== -1 && !/@body|#each|compute|checkbox/.test(tl2.textContent), tl2.innerHTML);

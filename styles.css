@@ -717,12 +717,18 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response li:last-child { margin-bottom: 0; }
 
 .jr-popup-response table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 13px; }
-.jr-popup-response th, .jr-popup-response td { border: 1px solid var(--jr-border); padding: 6px 10px; text-align: left; min-width: 3em; }
-/* A wide table in a narrow popup scrolls sideways instead of squeezing to a letter per line */
+.jr-popup-response th, .jr-popup-response td { border: 1px solid var(--jr-border); padding: 6px 10px; text-align: left; }
+/* A wide table in a narrow popup scrolls sideways instead of squeezing its columns
+   (ChatGPT's page CSS lays tables out fixed, which ignores cell widths: T16) */
 .jr-popup-response .jr-table-wrap { overflow-x: auto; margin: 1em 0; }
-.jr-popup-response .jr-table-wrap table { margin: 0; }
+.jr-popup-response .jr-table-wrap table { margin: 0; table-layout: auto !important; }
+.jr-popup-response .jr-table-wrap th, .jr-popup-response .jr-table-wrap td { min-width: 5em !important; }
+/* A checkbox, drawn even though ChatGPT's page CSS resets every input to 0 × 0 (T16) */
 .jr-popup-response li:has(> .jr-task) { list-style: none; margin-left: -1.2em; }
-.jr-popup-response .jr-task { margin: 0 4px 0 0; vertical-align: -2px; }
+.jr-popup-response input.jr-task {
+  appearance: auto !important; width: 13px !important; height: 13px !important; border: revert !important;
+  flex: none; margin: 0 4px 0 0; vertical-align: -2px; accent-color: var(--jr-action);
+}
 .jr-popup-response th { background: var(--jr-highlight-bg); font-weight: 600; }
 
 .jr-popup-response a { color: var(--jr-link); text-decoration: underline; cursor: pointer; pointer-events: auto; }

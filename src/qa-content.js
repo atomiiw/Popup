@@ -537,7 +537,7 @@
   // Where a tag starts (or inline code, skipped); readTag reads the rest of the tag
   var TAG_RE = /(`+)[\s\S]*?\1|<(\/?)([A-Za-z][\w-]*)/g;
   // Tags with no closing tag
-  var SELF = { icon: 1, divider: 1, spacer: 1, Chart: 1, MapWidgetV2: 1, Cite: 1, AsyncImage: 1, Entity: 1 };
+  var SELF = { icon: 1, divider: 1, spacer: 1, Chart: 1, MapWidgetV2: 1, Cite: 1, AsyncImage: 1, Entity: 1, Link: 1 };
 
   /** Index just past the {…} that starts at s[i] (any depth; braces in strings don't count), or -1. */
   function braceEnd(s, i) {
@@ -718,6 +718,10 @@
     if (tag === "Chart") return typeof a.content === "string" ? chartHTML(a.content) : "";
     if (tag === "MapWidgetV2") return typeof a.points === "string" ? mapHTML(a) : "";
     if (tag === "Entity") return typeof a.value === "string" ? esc(a.value) : "";
+    if (tag === "Link") {
+      var title = esc(String(typeof a.title === "string" ? a.title : a.url || ""));
+      return typeof a.url === "string" && /^https?:\/\//.test(a.url) ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + title + "</a>" : title;
+    }
     if (tag === "Cite" || tag === "AsyncImage") return ""; // a source marker / an image search with no address
     if (tag === "checkbox") return '<div class="jr-dil-check"><input type="checkbox" class="jr-task" disabled' + (a.checked === true || a.checked === "true" ? " checked" : "") + ">";
     if (tag === "badge") return '<span class="jr-dil-badge">'; // one grey look: the style guide has no badge colours

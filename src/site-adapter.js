@@ -453,7 +453,7 @@
     answerComponents: {
       block: ["box", "row", "column", "stack", "grid", "grid-item", "card", "caption", "callout", "divider", "title", "spacer",
         "Chart", "MapWidgetV2", "checkbox"],
-      inline: ["icon", "badge", "text", "Cite", "AsyncImage", "Entity"],
+      inline: ["icon", "badge", "text", "Cite", "AsyncImage", "Entity", "Link"],
       code: "CodeBlock", // its text is code, taken as written
     },
 
