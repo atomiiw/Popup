@@ -470,6 +470,41 @@ check("formats: a 3-column card grid in a narrow popup uses fewer columns (each 
   gi.length === 3 && Array.prototype.every.call(gi, function (g) { return g.offsetWidth >= 120; }), Array.prototype.map.call(gi, function (g) { return g.offsetWidth; }));
 narrow.remove();
 
+// T15: more components in answers read back after a reload (collab/evidence/formats/t15/*-reload.txt)
+function md2(src) { var d = document.createElement("div"); d.innerHTML = JR.renderMarkdown(src); return d; }
+var cb = md2('Code:\n\n<CodeBlock language="python" editable> x = 2 ** 10\ny = {"a": 1}\nprint(f"{x:,.2f} | {y}") </CodeBlock>\n\nafter');
+check("T15: a CodeBlock is a code block, verbatim (line breaks and ** kept)",
+  !!cb.querySelector("pre code.language-python") && cb.querySelector("pre code").textContent === 'x = 2 ** 10\ny = {"a": 1}\nprint(f"{x:,.2f} | {y}")' && !cb.querySelector("strong") && cb.textContent.indexOf("CodeBlock") === -1, cb.innerHTML);
+var ch = md2('<Chart content={{"chartType":"line","meta":{"title":"EV sales","description":"millions"},"xKey":"year","series":[{"dataKey":"sales","label":"Sales","valueSuffix":" M"}],"yAxisMin":0,"yAxisMax":24,"data":[{"year":"2020","sales":3.0},{"year":"2021","sales":6.6},{"year":"2022","sales":10.2}]}}/>\n\nTrend.<Cite ref="turn5search5"/>');
+check("T15: a line Chart is drawn as an SVG with its title, a line and the x labels; Cite is hidden",
+  !!ch.querySelector(".jr-chart svg polyline") && ch.querySelector(".jr-chart-title").textContent === "EV sales" &&
+  ch.querySelector("svg").textContent.indexOf("2021") !== -1 && ch.textContent.indexOf("Chart") === -1 && ch.textContent.indexOf("Cite") === -1 && ch.textContent.indexOf("Trend.") !== -1, ch.innerHTML);
+var bar = md2('<Chart content={{"chartType":"bar","xKey":"k","series":[{"dataKey":"v"}],"data":[{"k":"a","v":1},{"k":"b","v":2}]}}/>');
+var pie = md2('<Chart content={{"chartType":"pie","xKey":"k","series":[{"dataKey":"v","label":"Value"}],"data":[{"k":"a","v":1},{"k":"b","v":2}]}}/>');
+check("T15: a bar Chart has one bar per value; another chart type becomes a data table",
+  bar.querySelectorAll(".jr-chart svg rect.jr-chart-bar").length === 2 && !!pie.querySelector("table") && pie.querySelectorAll("tbody tr").length === 2 && pie.querySelector("th:last-child").textContent === "Value", [bar.innerHTML, pie.innerHTML]);
+var bad = md2('<Chart content={{"chartType":"line", broken}}/>');
+check("T15: a Chart with broken data is left out, not shown as text", bad.textContent.trim() === "", bad.innerHTML);
+var map = md2('# Tokyo\n\n<MapWidgetV2 title="Sights" points={[ {"id":"t","name":"Tokyo Tower","address":"4 Chome-2-8 Shibakoen, Tokyo","icon":"🗼"}, {"id":"s","name":"Senso-ji","address":"2 Chome-3-1 Asakusa"} ]} carousel={{visibility:"hidden"}} />\n\n<AsyncImage query="Tokyo Tower" aspectRatio="4:3"/>\n\n1. <Entity category="point_of_interest" location="Minato" value="Tokyo Tower (东京塔)"/>\n\nA tower.');
+var links = map.querySelectorAll(".jr-map a");
+check("T15: a map becomes a list of places with a map link each; AsyncImage is hidden; Entity is its name",
+  map.querySelectorAll(".jr-map li").length === 2 && links.length === 2 && links[0].href.indexOf("https://www.google.com/maps/search/?api=1&query=") === 0 &&
+  decodeURIComponent(links[0].href).indexOf("Tokyo Tower") !== -1 && map.textContent.indexOf("Shibakoen") !== -1 &&
+  !/MapWidget|AsyncImage|Entity/.test(map.textContent) && map.textContent.indexOf("Tokyo Tower (东京塔)") !== -1, map.innerHTML);
+var tl = md2('### List\n\n{@body const tasks = ["Budget","Rate","Rent"]} {@body const [done,setDone] = DIL.useState([true,false,true])}\n\nChecklist\n\n{done.filter(Boolean).length} / 3 done\n\n{#each tasks as task,i}\n\n<checkbox key={i} checked={done[i]} onChange={v=>setDone(old=>old.map((x,j)=>j===i?v:x))}>{task}</checkbox> {/each}\n\nEnd');
+var tb = tl.querySelectorAll("input[type=checkbox]");
+check("T15: a scripted task list is drawn from its data (no code run, no template text shown)",
+  tb.length === 3 && tb[0].checked && !tb[1].checked && tb[2].checked && tl.textContent.indexOf("Rate") !== -1 &&
+  tl.textContent.indexOf("2 / 3 done") !== -1 && !/@body|#each|\/each|useState|onChange|\{|\}/.test(tl.textContent), tl.innerHTML);
+var tl2 = md2('{@body const x = compute()} {#each x as a}<checkbox checked={a.on}>{a.name}</checkbox>{/each}\n\nPlain {braces} stay.');
+check("T15: a template Popup can't read is hidden; braces in a normal answer stay",
+  tl2.textContent.indexOf("Plain {braces} stay.") !== -1 && !/@body|#each|compute|checkbox/.test(tl2.textContent), tl2.innerHTML);
+
+var wt = document.createElement("div"); wt.innerHTML = '<p>x</p><div data-client-defined-widget="visualization"></div>';
+var ct = document.createElement("div"); ct.innerHTML = '<p>x</p><div data-client-defined-widget="code_block"></div>';
+check("T15: an answer with a chart or map is drawn by Popup, not copied (the copy is blank); a code block is copied",
+  JR.site.hasUndrawnWidget(wt) && !JR.site.hasUndrawnWidget(ct));
+
 var evil = JR.renderMarkdown('<box background="x\" onmouseover=alert(1) \"">hi</box>'), ed = document.createElement("div"); ed.innerHTML = evil;
 check("R13: attribute values never reach the page (a malformed tag stays text)", !ed.querySelector("[onmouseover]") && ed.textContent.indexOf("onmouseover=alert(1)") !== -1 && !ed.querySelector("div"), evil);
 

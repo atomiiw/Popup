@@ -756,6 +756,7 @@
     /** ChatGPT's DOM has a usable answer for our turn right now. */
     function domAnswerUsable() {
       var t = liveResponseTurn();
+      if (t && JR.site.hasUndrawnWidget(t) && net.text.trim()) return false; // a copy would show a blank chart or map: Popup draws it
       return !!(t && !JR.site.renderFailed(t) && JR.site.assistantText(t).trim());
     }
 

@@ -1142,3 +1142,29 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
 .jr-popup-response .jr-dil-muted { color: var(--jr-text-muted); }
 .jr-popup-response .jr-dil-spacer { height: 4px; margin: 0; }
 .jr-popup-response .jr-dil hr { margin: 4px 0; }
+
+/* Charts and maps Popup draws from an answer's data (T15) */
+.jr-popup-response .jr-chart, .jr-popup-response .jr-map { margin: 1em 0; }
+.jr-popup-response .jr-chart-title { font-weight: 600; }
+.jr-popup-response .jr-chart-desc { font-size: 0.85em; color: var(--jr-text-muted); }
+.jr-popup-response .jr-chart svg { display: block; width: 100%; height: auto; margin-top: 6px; overflow: visible; }
+.jr-popup-response .jr-chart-grid { stroke: var(--jr-border); stroke-width: 1; }
+.jr-popup-response .jr-chart-axis { fill: var(--jr-text-muted); font-size: 9px; }
+.jr-popup-response .jr-chart-line { fill: none; stroke: var(--jr-action); stroke-width: 2; }
+.jr-popup-response .jr-chart-dot, .jr-popup-response .jr-chart-bar { fill: var(--jr-action); }
+.jr-popup-response .jr-chart-s1 { opacity: 0.7; }
+.jr-popup-response .jr-chart-s2 { opacity: 0.5; }
+.jr-popup-response .jr-chart-s3 { opacity: 0.35; }
+.jr-popup-response .jr-chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.85em; color: var(--jr-text-muted); }
+.jr-popup-response .jr-chart-key::before { content: ""; display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; background: var(--jr-action); }
+.jr-popup-response .jr-map ul { list-style: none; padding: 0; margin: 6px 0 0; }
+.jr-popup-response .jr-map li { margin-bottom: 6px; }
+.jr-popup-response .jr-map-addr { display: block; font-size: 0.85em; color: var(--jr-text-muted); }
+.jr-popup-response .jr-dil-check { display: flex; align-items: baseline; gap: 2px; margin: 4px 0; }
+
+/* ChatGPT's own tables in a copied answer: its viewport is sized for the page, so in
+   a popup it overflowed the right edge (T15); here it scrolls sideways instead */
+.jr-popup-response [data-d-component="table"], .jr-popup-response [data-d-table-viewport] {
+  width: auto !important; max-width: 100% !important; min-width: 0 !important;
+}
+.jr-popup-response [data-d-table-viewport] { overflow-x: auto !important; }

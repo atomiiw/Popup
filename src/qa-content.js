@@ -528,25 +528,198 @@
   // markdown inside (<box border radius="lg">**DNS**…</box><icon name="arrow-down"/>).
   // ChatGPT draws it in the page; Popup's hidden Q&As never reach its renderer,
   // so Popup draws a simple version: boxes, rows, captions, badges, icons as
-  // symbols. Attribute values only choose classes; they never reach the page.
+  // symbols, code blocks, charts and maps from their data (T15). Attribute values
+  // only choose classes or are drawn as escaped text; they never reach the page as markup.
   // Icons with a clear plain symbol; others (lightbulb, server, lock…) are left out
   var DIL_ICONS = { "arrow-down": "\u2193", "arrow-up": "\u2191", "arrow-right": "\u2192", "arrow-left": "\u2190",
     check: "\u2713", "check-circle": "\u2713", x: "\u2715", close: "\u2715", "x-circle": "\u2715", plus: "+", minus: "\u2212",
     star: "\u2605", info: "\u24d8", "alert-circle": "!", warning: "\u26a0", "alert-triangle": "\u26a0", alert: "\u26a0", dot: "\u2022" };
-  // An attribute value: "…", or {…} with one level of nested braces (border={{size:1,color:"…"}})
-  var VAL = '(?:"[^"]*"|\\{(?:[^{}]|\\{[^{}]*\\})*\\})';
-  var TAG_RE = new RegExp("(`+)[\\s\\S]*?\\1|<(\\/?)([a-z][a-z-]*)((?:\\s+[a-zA-Z][\\w-]*(?:=" + VAL + ")?)*)\\s*(\\/?)>", "g");
+  // Where a tag starts (or inline code, skipped); readTag reads the rest of the tag
+  var TAG_RE = /(`+)[\s\S]*?\1|<(\/?)([A-Za-z][\w-]*)/g;
+  // Tags with no closing tag
+  var SELF = { icon: 1, divider: 1, spacer: 1, Chart: 1, MapWidgetV2: 1, Cite: 1, AsyncImage: 1, Entity: 1 };
 
-  function dilAttrs(src) {
-    var out = {}, re = new RegExp('([a-zA-Z][\\w-]*)(?:=(?:"([^"]*)"|\\{((?:[^{}]|\\{[^{}]*\\})*)\\}))?', "g"), m;
-    while ((m = re.exec(src || ""))) out[m[1]] = m[2] != null ? m[2] : (m[3] != null ? m[3] : true);
-    return out;
+  /** Index just past the {…} that starts at s[i] (any depth; braces in strings don't count), or -1. */
+  function braceEnd(s, i) {
+    var depth = 0, quote = null;
+    for (; i < s.length; i++) {
+      var ch = s[i];
+      if (quote) { if (ch === "\\") i++; else if (ch === quote) quote = null; continue; }
+      if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) return i + 1;
+    }
+    return -1;
+  }
+
+  /**
+   * The attributes of a tag whose name ends at s[i]: name="text", name={value} (the
+   * text inside the braces) or a bare name (true). Returns { attrs, self, end }, or
+   * null when the tag is malformed (it then stays text).
+   */
+  function readTag(s, i) {
+    var attrs = {}, name = /\s*([a-zA-Z][\w-]*)/y, ws = /\s*/y, m;
+    for (;;) {
+      ws.lastIndex = i; ws.exec(s); i = ws.lastIndex;
+      if (s[i] === ">") return { attrs: attrs, self: false, end: i + 1 };
+      if (s[i] === "/" && s[i + 1] === ">") return { attrs: attrs, self: true, end: i + 2 };
+      name.lastIndex = i;
+      if (!(m = name.exec(s))) return null;
+      i = name.lastIndex;
+      if (s[i] !== "=") { attrs[m[1]] = true; continue; }
+      i++;
+      if (s[i] === '"') {
+        var q = s.indexOf('"', i + 1);
+        if (q === -1) return null;
+        attrs[m[1]] = s.slice(i + 1, q); i = q + 1;
+      } else if (s[i] === "{") {
+        var e = braceEnd(s, i);
+        if (e === -1) return null;
+        attrs[m[1]] = s.slice(i + 1, e - 1); i = e;
+      } else return null;
+    }
+  }
+
+  function parseJSON(t) { try { return JSON.parse(t); } catch (e) { return undefined; } }
+
+  // --- Scripted parts (ChatGPT's template syntax): Popup never runs them. It only reads
+  // constants written as JSON ({@body const tasks = [...]}, DIL.useState([...])),
+  // repeats {#each} blocks over them and fills in simple {expressions}; anything else
+  // of a template is hidden.
+  function evalSimple(expr, scope) {
+    var m, v;
+    expr = expr.trim();
+    if ((m = /^(\w+)$/.exec(expr))) v = scope[m[1]];
+    else if ((m = /^(\w+)\[(\w+)\]$/.exec(expr)) && Array.isArray(scope[m[1]])) v = scope[m[1]][/^\d+$/.test(m[2]) ? +m[2] : scope[m[2]]];
+    else if ((m = /^(\w+)(\.filter\(Boolean\))?\.length$/.exec(expr)) && Array.isArray(scope[m[1]])) v = (m[2] ? scope[m[1]].filter(Boolean) : scope[m[1]]).length;
+    return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? v : undefined;
+  }
+  function fillExpressions(text, scope, known) {
+    var out = "", i = 0, j;
+    while ((j = text.indexOf("{", i)) !== -1) {
+      var e = braceEnd(text, j);
+      if (e === -1) break;
+      var expr = text.slice(j + 1, e - 1), v = evalSimple(expr, scope);
+      var attr = text[j - 1] === "=";
+      if (v !== undefined) out += text.slice(i, j) + (attr ? "{" + v + "}" : String(v));
+      else if (attr || !known.test(expr)) out += text.slice(i, e); // not ours: kept as written
+      else out += text.slice(i, j); // a template expression Popup can't work out: hidden
+      i = e;
+    }
+    return out + text.slice(i);
+  }
+  function templates(text) {
+    if (!/\{[@#]\w/.test(text)) return text;
+    var vars = {}, out = "", i = 0, j, m;
+    while ((j = text.indexOf("{@", i)) !== -1) { // {@body const …}: read the JSON constants, drop the rest
+      var e = braceEnd(text, j);
+      if (e === -1) break;
+      var body = text.slice(j + 2, e - 1);
+      if ((m = /^body\s+const\s+(\w+)\s*=\s*([\s\S]*)$/.exec(body)) ||
+          (m = /^body\s+const\s*\[\s*(\w+)\s*,\s*\w+\s*\]\s*=\s*DIL\.useState\(([\s\S]*)\)$/.exec(body))) {
+        var val = parseJSON(m[2]);
+        if (val !== undefined) vars[m[1]] = val;
+      }
+      out += text.slice(i, j); i = e;
+    }
+    text = out + text.slice(i);
+    var names = Object.keys(vars);
+    var known = names.length ? new RegExp("\\b(?:" + names.join("|") + ")\\b") : /(?!)/;
+    text = text.replace(/\{#each\s+(\w+)\s+as\s+(\w+)\s*(?:,\s*(\w+))?\s*\}([\s\S]*?)\{\/each\}/g, function (all, list, item, index, body) {
+      if (!Array.isArray(vars[list])) return "";
+      return vars[list].map(function (el, n) {
+        var scope = Object.assign({}, vars);
+        scope[item] = el;
+        if (index) scope[index] = n;
+        return fillExpressions(body, scope, /[\s\S]/); // inside the block every {…} is template
+      }).join("\n\n");
+    });
+    text = text.replace(/\{[#:\/]\w[^{}]*\}/g, ""); // other block syntax ({#if}, {:else}, {/if}, a stray {/each})
+    return fillExpressions(text, vars, known);
+  }
+
+  // --- Charts and maps, drawn from the data in the answer -----------------------
+  function num(v) { var n = Number(v); return isFinite(n) ? n : null; }
+  function fmt(n) { return String(Math.round(n * 100) / 100); }
+
+  function chartTable(c, series) {
+    return '<div class="jr-table-wrap"><table><thead><tr><th>' + esc(String(c.xKey)) + "</th>" +
+      series.map(function (s) { return "<th>" + esc(String(s.label || s.dataKey)) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+      c.data.map(function (d) {
+        return "<tr><td>" + esc(String(d[c.xKey])) + "</td>" + series.map(function (s) { return "<td>" + esc(String(d[s.dataKey] == null ? "" : d[s.dataKey])) + "</td>"; }).join("") + "</tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+
+  /** A <Chart content={{…}}/>: a simple line or bar chart; other kinds as a table of the data. */
+  function chartHTML(src) {
+    var c = parseJSON(src);
+    if (!c || !Array.isArray(c.data) || !c.data.length || !c.xKey || !Array.isArray(c.series) || !c.series.length) return "";
+    var series = c.series.slice(0, 4), meta = c.meta || {};
+    var head = (meta.title ? '<div class="jr-chart-title">' + esc(String(meta.title)) + "</div>" : "") +
+      (meta.description ? '<div class="jr-chart-desc">' + esc(String(meta.description)) + "</div>" : "");
+    if (c.chartType !== "line" && c.chartType !== "bar" && c.chartType !== "area") return '<div class="jr-chart">' + head + chartTable(c, series) + "</div>";
+    var vals = [];
+    c.data.forEach(function (d) { series.forEach(function (s) { var v = num(d[s.dataKey]); if (v !== null) vals.push(v); }); });
+    if (!vals.length) return "";
+    var lo = num(c.yAxisMin), hi = num(c.yAxisMax);
+    if (lo === null) lo = Math.min(0, Math.min.apply(null, vals));
+    if (hi === null) hi = Math.max.apply(null, vals) * 1.1;
+    if (hi <= lo) hi = lo + 1;
+    var W = 320, H = 170, L = 34, R = 8, T = 8, B = 22, n = c.data.length, step = (W - L - R) / n;
+    var x = function (k) { return L + step * (k + 0.5); };
+    var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+    var svg = "";
+    for (var t = 0; t <= 4; t++) {
+      var tv = lo + (hi - lo) * t / 4;
+      svg += '<line class="jr-chart-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(tv) + '" y2="' + y(tv) + '"/>' +
+        '<text class="jr-chart-axis" x="' + (L - 4) + '" y="' + (y(tv) + 3) + '" text-anchor="end">' + esc(fmt(tv)) + "</text>";
+    }
+    var every = Math.ceil(n / 8); // at most 8 labels under the chart
+    c.data.forEach(function (d, k) {
+      if (k % every === 0) svg += '<text class="jr-chart-axis" x="' + x(k) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(String(d[c.xKey])) + "</text>";
+    });
+    series.forEach(function (s, si) {
+      var pts = [];
+      c.data.forEach(function (d, k) {
+        var v = num(d[s.dataKey]);
+        if (v === null) return;
+        if (c.chartType === "bar") {
+          var bw = step * 0.7 / series.length, bx = x(k) - step * 0.35 + bw * si, top = y(Math.max(v, lo)), base = y(Math.max(lo, Math.min(0, hi)));
+          svg += '<rect class="jr-chart-bar jr-chart-s' + si + '" x="' + bx + '" y="' + Math.min(top, base) + '" width="' + bw + '" height="' + Math.abs(base - top) + '"/>';
+        } else pts.push(x(k) + "," + y(v));
+      });
+      if (pts.length) svg += '<polyline class="jr-chart-line jr-chart-s' + si + '" points="' + pts.join(" ") + '"/>' +
+        pts.map(function (p) { var q = p.split(","); return '<circle class="jr-chart-dot jr-chart-s' + si + '" cx="' + q[0] + '" cy="' + q[1] + '" r="2.5"/>'; }).join("");
+    });
+    var legend = series.length > 1 ? '<div class="jr-chart-legend">' + series.map(function (s, si) {
+      return '<span class="jr-chart-key jr-chart-s' + si + '">' + esc(String(s.label || s.dataKey)) + "</span>";
+    }).join("") + "</div>" : "";
+    return '<div class="jr-chart">' + head + '<svg viewBox="0 0 ' + W + " " + H + '" role="img">' + svg + "</svg>" + legend + "</div>";
+  }
+
+  /** A <MapWidgetV2 points={[…]}/>: the places as a list, each with a link to a map. */
+  function mapHTML(a) {
+    var pts = parseJSON(a.points);
+    if (!Array.isArray(pts) || !pts.length) return "";
+    return '<div class="jr-map">' + (typeof a.title === "string" ? '<div class="jr-chart-title">' + esc(a.title) + "</div>" : "") + "<ul>" +
+      pts.filter(function (p) { return p && p.name; }).map(function (p) {
+        var name = String(p.name), addr = p.address ? String(p.address) : "";
+        var url = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(addr ? name + ", " + addr : name);
+        return "<li>" + (p.icon ? esc(String(p.icon)) + " " : "") + "<strong>" + esc(name) + "</strong>" +
+          (addr ? '<span class="jr-map-addr">' + esc(addr) + "</span>" : "") +
+          ' <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Map ↗</a></li>';
+      }).join("") + "</ul></div>";
   }
 
   function dilOpen(tag, a) {
     if (tag === "icon") return DIL_ICONS[a.name] ? '<span class="jr-dil-icon" aria-hidden="true">' + esc(DIL_ICONS[a.name]) + "</span>" : "";
     if (tag === "divider") return "<hr>";
     if (tag === "spacer") return '<div class="jr-dil-spacer"></div>';
+    if (tag === "Chart") return typeof a.content === "string" ? chartHTML(a.content) : "";
+    if (tag === "MapWidgetV2") return typeof a.points === "string" ? mapHTML(a) : "";
+    if (tag === "Entity") return typeof a.value === "string" ? esc(a.value) : "";
+    if (tag === "Cite" || tag === "AsyncImage") return ""; // a source marker / an image search with no address
+    if (tag === "checkbox") return '<div class="jr-dil-check"><input type="checkbox" class="jr-task" disabled' + (a.checked === true || a.checked === "true" ? " checked" : "") + ">";
     if (tag === "badge") return '<span class="jr-dil-badge">'; // one grey look: the style guide has no badge colours
     if (tag === "text") {
       var tc = (a.size === "xs" || a.size === "sm" ? "jr-dil-small" : "") + (a.color === "secondary" ? " jr-dil-muted" : "");
@@ -572,40 +745,55 @@
   function componentize(md) {
     var comps = JR.site.answerComponents || { block: [], inline: [] };
     var parts = [], open = [];
+    function part(html, block) {
+      parts.push(html);
+      var ph = "\u0002" + (parts.length - 1) + "\u0003";
+      return block ? "\n\n" + ph + "\n\n" : ph;
+    }
     // While streaming, the text can end inside a tag ("…<box border radius=\"x"): hide it until it is complete
     var names = comps.block.concat(comps.inline).join("|");
     if (names) md = md.replace(new RegExp("<\\/?(?:" + names + ")(?=[\\s/]|$)[^<>]*$"), "");
     // Inside a component ChatGPT shows every line as its own line (markdown would join them);
     // a line that starts a list item or a table row is left alone
-    function lines(text) { return open.length ? text.replace(/([^\n])\n(?!\s*(?:[-*+]\s|\d+[.)]\s|\|))/g, "$1\n\n") : text; }
-    function swap(all, tick, slash, tag, attrSrc, self) {
-      if (tick) return all; // inline code
+    function lines(text, depth) { return depth ? text.replace(/([^\n])\n(?!\s*(?:[-*+]\s|\d+[.)]\s|\|))/g, "$1\n\n") : text; }
+    function swap(m) {
+      var tag = m[3], slash = m[2];
+      if (m[1]) return { html: m[0], end: m.index + m[0].length }; // inline code
       var block = comps.block.indexOf(tag) !== -1;
-      if (!block && comps.inline.indexOf(tag) === -1) return all;
-      var html;
+      if (!block && comps.inline.indexOf(tag) === -1) return null;
+      var end = m.index + m[0].length;
       if (slash) {
+        var close = /^\s*>/.exec(m.input.slice(end));
+        if (!close) return null;
+        end += close[0].length;
         var top = open.length ? open[open.length - 1] : null;
-        if (!top || top.tag !== tag) return ""; // a closing tag with no matching opening one
+        if (!top || top.tag !== tag) return { html: "", end: end }; // a closing tag with no matching opening one
         open.pop();
-        html = dilClose(tag, top.attrs);
-      } else {
-        var a = dilAttrs(attrSrc);
-        html = dilOpen(tag, a);
-        if (!self && tag !== "icon" && tag !== "divider" && tag !== "spacer") open.push({ tag: tag, attrs: a });
+        return { html: part(dilClose(tag, top.attrs), block), end: end };
       }
-      parts.push(html);
-      var ph = "\u0002" + (parts.length - 1) + "\u0003";
-      return block ? "\n\n" + ph + "\n\n" : ph;
+      var t = readTag(m.input, end);
+      if (!t) return null; // malformed: stays text
+      var html = dilOpen(tag, t.attrs);
+      if (!t.self && !SELF[tag]) open.push({ tag: tag, attrs: t.attrs });
+      return { html: part(html, block), end: t.end };
     }
+    var code = new RegExp("<" + (comps.code || "CodeBlock") + "\\b([^>]*)>([\\s\\S]*?)(?:</" + (comps.code || "CodeBlock") + ">|$)", "g");
     var chunks = md.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m); // fenced code stays as it is
     for (var c = 0; c < chunks.length; c += 2) {
-      var text = chunks[c], out = "", last = 0, m;
+      // Code blocks first, verbatim (their text must not be read as markdown or template)
+      var text = templates(chunks[c].replace(code, function (all, attrSrc, body) {
+        var lang = ((readTag(attrSrc + ">", 0) || { attrs: {} }).attrs.language || "") + "";
+        return part('<pre><code' + (/^[\w+#.-]+$/.test(lang) ? ' class="language-' + lang + '"' : "") + ">" + esc(body.replace(/^\s*\n|\s+$/g, "").replace(/^ /, "")) + "</code></pre>", true);
+      }));
+      var out = "", last = 0, m, r;
       TAG_RE.lastIndex = 0;
       while ((m = TAG_RE.exec(text))) {
-        out += lines(text.slice(last, m.index)) + swap.apply(null, m);
-        last = TAG_RE.lastIndex;
+        var depth = open.length; // the text before this tag is inside what was open before it
+        if (!(r = swap(m))) continue;
+        out += lines(text.slice(last, m.index), depth) + r.html;
+        last = TAG_RE.lastIndex = r.end;
       }
-      chunks[c] = out + lines(text.slice(last));
+      chunks[c] = out + lines(text.slice(last), open.length);
     }
     return { md: chunks.join(""), parts: parts };
   }

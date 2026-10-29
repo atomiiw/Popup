@@ -81,6 +81,9 @@
     turnState: ["[data-talvt-turn-state]"],
     // ChatGPT failed to render an answer ("This response couldn't load", T5).
     renderFailed: ["[data-dil-render-failed]"],
+    // Widgets ChatGPT draws only on screen: in a hidden Popup turn a chart measures
+    // 0 × 0 and a map is a canvas, so a copy of them is blank (T15)
+    undrawnWidget: ['[data-client-defined-widget="visualization"]', '[data-client-defined-widget="map"]'],
   };
 
   var used = {};      // hook → selector that matched last time
@@ -244,6 +247,10 @@
     },
 
     /** True if ChatGPT shows "This response couldn't load" instead of the answer. */
+    hasUndrawnWidget: function (turn) {
+      return !!(turn && first("undrawnWidget", turn));
+    },
+
     renderFailed: function (turn) {
       return !!(turn && first("renderFailed", turn));
     },
@@ -439,12 +446,15 @@
     /**
      * Component tags in the text of ChatGPT's rich answers (2026-10; seen in answers
      * read back from its data, collab/evidence/r13): <box …>…</box>, <icon …/>,
-     * <caption>…</caption>. Popup draws them itself (qa-content.js) where ChatGPT's
-     * renderer never ran. Tags not listed here stay text.
+     * <caption>…</caption>, <Chart content={{…}}/>, <MapWidgetV2 points={[…]}/>,
+     * <CodeBlock>…</CodeBlock> (T15). Popup draws them itself (qa-content.js) where
+     * ChatGPT's renderer never ran. Tags not listed here stay text.
      */
     answerComponents: {
-      block: ["box", "row", "column", "stack", "grid", "grid-item", "card", "caption", "callout", "divider", "title", "spacer"],
-      inline: ["icon", "badge", "text"],
+      block: ["box", "row", "column", "stack", "grid", "grid-item", "card", "caption", "callout", "divider", "title", "spacer",
+        "Chart", "MapWidgetV2", "checkbox"],
+      inline: ["icon", "badge", "text", "Cite", "AsyncImage", "Entity"],
+      code: "CodeBlock", // its text is code, taken as written
     },
 
     /** Text that is in the DOM but not on screen (a chart's screen-reader data table). */
