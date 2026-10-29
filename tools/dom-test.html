@@ -361,7 +361,7 @@ var sq = document.createElement("div"); sq.className = "jr-popup-question"; docu
 JR.showSentAttachments(sq, { _files: [png, pdf], _failedFiles: [{ file: { name: "empty.txt" }, reason: "ChatGPT did not accept it" }] });
 var sqStrip = JR.stripAbove(sq);
 check("Step 2c: this session: the version's files above its question", !!sqStrip && sqStrip.children.length === 2 && !!sqStrip.querySelector("img"));
-check("Step 2c: ...and the note on what was not sent survives the popup being rebuilt", JR.notesBelow(sq).length === 1 && JR.notesBelow(sq)[0].textContent.indexOf("empty.txt") !== -1);
+check("Step 2c: ...and the note on what was not sent survives the popup being rebuilt", JR.layerNotes(sq).length === 1 && JR.layerNotes(sq)[0].textContent.indexOf("empty.txt") !== -1);
 var realQa = JR.qa;
 JR.qa = {
   attachmentsOf: function () { return Promise.resolve([{ id: "file-1", name: "notes.pdf", mime: "application/pdf" },
@@ -402,19 +402,24 @@ var nq = document.createElement("div"); nq.className = "jr-popup-question"; nq.s
 nq.innerHTML = '<div class="jr-popup-question-inner"><span class="jr-popup-question-text">What is this?</span></div><div class="jr-edit-send-wrapper"><button class="jr-popup-edit-send">→</button></div>';
 document.body.appendChild(nq);
 JR.showAttachmentNote(nq, null, "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.");
-function noteBelow(row) { var n = row.nextElementSibling; return n && n.classList.contains("jr-attach-note") ? n : row.querySelector(".jr-attach-note"); }
+// Notes live in the attachment layer: between the quote and the question, under the tiles.
+function noteIn(row) { return JR.layerNotes(row)[0]; }
 var nqText = nq.querySelector(".jr-popup-question-text").getBoundingClientRect();
-var nqNote = noteBelow(nq).getBoundingClientRect();
-check("Step 2: a note sits on its own line under the question, which stays readable", nqText.width > 50 && nqNote.top >= nqText.bottom - 1, nqText.width + " / " + nqNote.top + " vs " + nqText.bottom);
+var nqNote = noteIn(nq).getBoundingClientRect();
+check("Step 2: a note sits on its own line above the question (the attachment layer), which stays readable", nqText.width > 50 && nqNote.bottom <= nqText.top + 1, nqText.width + " / " + nqNote.bottom + " vs " + nqText.top);
 // The same for an answered question: its controls are hidden, so the row has nothing but the text (T9)
 var aq = document.createElement("div"); aq.className = "jr-popup-question jr-popup-question--editable"; aq.style.width = "300px";
 aq.innerHTML = '<div class="jr-popup-question-inner"><span class="jr-popup-question-text">Did you get it?</span></div><div class="jr-popup-question-controls"><div class="jr-edit-send-wrapper" style="display: none;"></div></div>';
 nq.replaceWith(aq);
 JR.showAttachmentNote(aq, [{ file: { name: "clipboard.plain" }, reason: "ChatGPT did not accept it" }]);
-var aqText = aq.querySelector(".jr-popup-question-text").getBoundingClientRect(), aqNote = noteBelow(aq).getBoundingClientRect();
-check("Step 2: ...also under an answered question", aqText.width > 50 && aqNote.top >= aqText.bottom - 1, aqText.width + " / " + aqNote.top + " vs " + aqText.bottom);
+var aqText = aq.querySelector(".jr-popup-question-text").getBoundingClientRect(), aqNote = noteIn(aq).getBoundingClientRect();
+check("Step 2: ...also for an answered question", aqText.width > 50 && aqNote.bottom <= aqText.top + 1, aqText.width + " / " + aqNote.bottom + " vs " + aqText.top);
+JR.showSentAttachments(aq, { _files: [png], _failedFiles: [{ file: { name: "x.bin" }, reason: "r" }] });
+var aqStrip = JR.stripAbove(aq), aqN = noteIn(aq);
+check("Step 2: in the layer the tiles come first, then the note, then the question",
+  !!aqStrip && !!aqN && aqStrip.nextElementSibling === aqN && aqN.nextElementSibling === aq, aqStrip && aqStrip.nextElementSibling && aqStrip.nextElementSibling.className);
 JR.showSentAttachments(aq, { _failedFiles: [] });
-check("Step 2: showing a version again clears its old note", !noteBelow(aq));
+check("Step 2: showing a version again clears its old note", !noteIn(aq) && !JR.stripAbove(aq));
 aq.remove();
 
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.

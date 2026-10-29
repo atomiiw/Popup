@@ -76,18 +76,19 @@
     // One short line; the details on hover
     note.textContent = message || "Not sent: " + failed.map(function (f) { return f.file.name; }).join(", ");
     note.title = message || failed.map(function (f) { return f.file.name + " (" + f.reason + ")"; }).join("\n");
-    // Below the row, not in it: the row is a flex row and a note in it squeezed the question to 0 px (T8, T9)
-    var last = questionDiv, n;
-    while ((n = last.nextElementSibling) && n.classList.contains("jr-attach-note")) last = n;
-    if (questionDiv.parentNode) last.after(note); else questionDiv.appendChild(note);
+    // In the attachment layer, under the tiles and above the question (not in the question's
+    // flex row: a note there squeezed the question to 0 px, T8/T9)
+    if (questionDiv.parentNode) questionDiv.parentNode.insertBefore(note, questionDiv); else questionDiv.appendChild(note);
     return note;
   };
 
-  /** The notes just below a question row. */
-  JR.notesBelow = function (questionDiv) {
+  function isLayer(el) { return !!el && (el.classList.contains("jr-attach-note") || el.classList.contains("jr-popup-attach")); }
+
+  /** The notes in the attachment layer above a question row, top to bottom. */
+  JR.layerNotes = function (questionDiv) {
     var out = [], n = questionDiv;
-    while ((n = n.nextElementSibling) && n.classList.contains("jr-attach-note")) out.push(n);
-    return out.concat(Array.prototype.slice.call(questionDiv.querySelectorAll(".jr-attach-note")));
+    while (isLayer(n = n.previousElementSibling)) if (n.classList.contains("jr-attach-note")) out.unshift(n);
+    return out;
   };
 
   /**
@@ -95,7 +96,7 @@
    * them along, hidden. Say so under questionDiv and return true (then don't send).
    */
   JR.blockedByComposerAttachments = function (questionDiv) {
-    if (questionDiv) JR.notesBelow(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
+    if (questionDiv) JR.layerNotes(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
     if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
     var note = questionDiv && JR.showAttachmentNote(questionDiv, null,
       "Send or remove your files in ChatGPT\u2019s box first");
@@ -132,7 +133,7 @@
   JR.showSentAttachments = function (questionDiv, item) {
     if (questionDiv._jrSentStrip) { JR.releaseStrip(questionDiv._jrSentStrip); questionDiv._jrSentStrip.remove(); }
     questionDiv._jrSentStrip = null;
-    JR.notesBelow(questionDiv).forEach(function (n) { n.remove(); });
+    JR.layerNotes(questionDiv).forEach(function (n) { n.remove(); });
     if (!item) return;
     JR.showAttachmentNote(questionDiv, item._failedFiles); // what didn't go out (this session)
     var strip;
@@ -162,15 +163,22 @@
     return strip;
   };
 
-  /** Place a strip as the layer just above a question row (between it and the quote). */
+  /**
+   * Place a strip in the attachment layer above a question row (between it and the
+   * quote): above the layer's notes, so the tiles come first.
+   */
   JR.placeStripAbove = function (strip, questionDiv) {
-    if (questionDiv.parentNode && strip.nextSibling !== questionDiv) questionDiv.parentNode.insertBefore(strip, questionDiv);
+    if (!questionDiv.parentNode) return;
+    var target = questionDiv, n;
+    while ((n = target.previousElementSibling) && n.classList.contains("jr-attach-note")) target = n;
+    if (strip.nextSibling !== target) questionDiv.parentNode.insertBefore(strip, target);
   };
 
-  /** The attachment strip just above a question row, if any. */
+  /** The attachment strip nearest above a question row, if any. */
   JR.stripAbove = function (questionDiv) {
-    var prev = questionDiv && questionDiv.previousElementSibling;
-    return prev && prev.classList.contains("jr-popup-attach") ? prev : null;
+    var n = questionDiv;
+    while (isLayer(n = n && n.previousElementSibling)) if (n.classList.contains("jr-popup-attach")) return n;
+    return null;
   };
 
   /**

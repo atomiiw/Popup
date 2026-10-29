@@ -1396,7 +1396,9 @@
           sel.addRange(range);
         }
         lastCaretRange = null;
+        // The version's attachments and notes step aside: an edit starts with none
         if (questionDiv._jrSentStrip) questionDiv._jrSentStrip.classList.add("jr-attach-away");
+        JR.layerNotes(questionDiv).forEach(function (n) { n.classList.add("jr-attach-away"); });
         if (versionNav) versionNav.style.display = "none";
         sendWrapper.style.display = "";
         sendBtn.disabled = true;
@@ -1412,6 +1414,9 @@
         questionText.textContent = originalText;
         editAttach.clear();
         if (questionDiv._jrSentStrip) questionDiv._jrSentStrip.classList.remove("jr-attach-away");
+        JR.layerNotes(questionDiv).forEach(function (n) {
+          if (n.classList.contains("jr-attach-note--blocked")) n.remove(); else n.classList.remove("jr-attach-away");
+        });
         if (versionNav) versionNav.style.display = "";
         sendWrapper.style.display = "none";
         sendBtn.disabled = true;
