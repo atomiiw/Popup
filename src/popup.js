@@ -1884,7 +1884,7 @@
     // Find the upper card and strip question/version nav from it
     var upper = popup.querySelector(".jr-popup-upper");
     if (upper) {
-      upper.querySelectorAll(".jr-popup-attach").forEach(function (s) { JR.releaseStrip(s); s.remove(); });
+      upper.querySelectorAll(".jr-popup-attach, .jr-attach-note").forEach(function (s) { JR.releaseStrip(s); s.remove(); });
       var questionDiv = upper.querySelector(".jr-popup-question");
       if (questionDiv) questionDiv.remove();
       var versionNav = upper.querySelector(".jr-popup-version-nav");

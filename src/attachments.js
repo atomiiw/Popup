@@ -64,7 +64,18 @@
     note.className = "jr-attach-note";
     note.textContent = message || (failed.length === 1 ? "1 attachment was" : failed.length + " attachments were") + " not sent: " +
       failed.map(function (f) { return f.file.name + " (" + f.reason + ")"; }).join(", ");
-    questionDiv.appendChild(note);
+    // Below the row, not in it: the row is a flex row and a note in it squeezed the question to 0 px (T8, T9)
+    var last = questionDiv, n;
+    while ((n = last.nextElementSibling) && n.classList.contains("jr-attach-note")) last = n;
+    if (questionDiv.parentNode) last.after(note); else questionDiv.appendChild(note);
+    return note;
+  };
+
+  /** The notes just below a question row. */
+  JR.notesBelow = function (questionDiv) {
+    var out = [], n = questionDiv;
+    while ((n = n.nextElementSibling) && n.classList.contains("jr-attach-note")) out.push(n);
+    return out.concat(Array.prototype.slice.call(questionDiv.querySelectorAll(".jr-attach-note")));
   };
 
   /**
@@ -72,13 +83,11 @@
    * them along, hidden. Say so under questionDiv and return true (then don't send).
    */
   JR.blockedByComposerAttachments = function (questionDiv) {
-    var old = questionDiv && questionDiv.querySelector(".jr-attach-note--blocked");
-    if (old) old.remove();
+    if (questionDiv) JR.notesBelow(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
     if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
-    var note = document.createElement("div");
-    note.className = "jr-attach-note jr-attach-note--blocked";
-    note.textContent = "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.";
-    if (questionDiv) questionDiv.appendChild(note);
+    var note = questionDiv && JR.showAttachmentNote(questionDiv, null,
+      "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.");
+    if (note) note.classList.add("jr-attach-note--blocked");
     return true;
   };
 
@@ -111,7 +120,7 @@
   JR.showSentAttachments = function (questionDiv, item) {
     if (questionDiv._jrSentStrip) { JR.releaseStrip(questionDiv._jrSentStrip); questionDiv._jrSentStrip.remove(); }
     questionDiv._jrSentStrip = null;
-    Array.prototype.forEach.call(questionDiv.querySelectorAll(".jr-attach-note"), function (n) { n.remove(); });
+    JR.notesBelow(questionDiv).forEach(function (n) { n.remove(); });
     if (!item) return;
     JR.showAttachmentNote(questionDiv, item._failedFiles); // what didn't go out (this session)
     var strip;
