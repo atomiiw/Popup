@@ -1062,6 +1062,9 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
    ========================================================================== */
 
 .jr-popup-attach { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+/* The question row is a flex row (text + send): the strip takes a line of its own above it */
+.jr-popup-question:has(> .jr-popup-attach:not([hidden])) { flex-wrap: wrap; }
+.jr-popup-question > .jr-popup-attach { flex: 0 0 100%; padding-top: 6px; }
 .jr-popup-attach[hidden] { display: none; }
 .jr-attach-item { position: relative; display: inline-flex; }
 .jr-attach-thumb {
