@@ -541,7 +541,7 @@
           items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null, responseHTML: null,
         };
       }
-      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, createdAt: r.createdAt };
+      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, createdAt: r.createdAt, attachments: r.attachments || 0 };
       fillFromQA(item);
       q.items.push(item);
       if (r.active) q.activeItemIndex = q.items.length - 1;

@@ -1055,3 +1055,31 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
 html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(.relative)[style*="height"] {
   display: none !important;
 }
+
+
+/* ==========================================================================
+   Attachments in a popup question (Step 2): a strip above the text
+   ========================================================================== */
+
+.jr-popup-attach { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.jr-popup-attach[hidden] { display: none; }
+.jr-attach-item { position: relative; display: inline-flex; }
+.jr-attach-thumb {
+  width: 48px; height: 48px; object-fit: cover; cursor: zoom-in;
+  border-radius: var(--jr-radius); border: 1px solid var(--jr-border);
+}
+.jr-attach-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 160px; height: 28px; padding: 0 8px;
+  border-radius: var(--jr-radius); border: 1px solid var(--jr-border); background: var(--jr-highlight-bg);
+  color: var(--jr-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jr-attach-chip svg { width: 14px; height: 14px; flex: none; color: var(--jr-text-muted); }
+.jr-attach-remove {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 3px;
+  border: none; border-radius: 50%; background: var(--jr-text); color: var(--jr-bg); cursor: pointer;
+}
+.jr-attach-remove svg { width: 100%; height: 100%; display: block; }
+.jr-popup-question.jr-attach-drop { outline: 2px dashed var(--jr-action); outline-offset: 2px; border-radius: var(--jr-radius); }
+.jr-attach-note { margin-top: 4px; font-size: 12px; color: var(--jr-text-muted); }
+/* ChatGPT's composer while Popup hands it files: hidden so the cards never flash */
+[data-jr-attaching] { opacity: 0 !important; }

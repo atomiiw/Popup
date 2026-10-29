@@ -109,6 +109,7 @@ function toPublic(rec) {
     turnKeys: (rec.turnKeys || []).slice(),
     active: rec.active !== false,
     wholeResponse: !!rec.wholeResponse,
+    attachments: rec.attachments || 0,
     createdAt: rec.createdAt,
     question: rec.question || null,
     sentence: null,
@@ -211,6 +212,7 @@ async function saveHighlight(opts) {
     question: statusFromHTML(opts.responseHTML) === "done" ? undefined : (opts.question || undefined),
     active: opts.active !== false,
     wholeResponse: !!opts.wholeResponse,
+    attachments: opts.attachments || undefined, // how many files the question carried (not the files)
     createdAt: Date.now(),
   };
   await modifyDoc(convKeyForUrl(opts.url), function (doc) {
@@ -244,6 +246,7 @@ function updateHighlightFields(id, fields, url) {
     if ("sourceTurnKey" in fields) rec.sourceTurnKey = fields.sourceTurnKey;
     if ("active" in fields) rec.active = fields.active;
     if ("parentItemId" in fields) rec.parentItemId = fields.parentItemId;
+    if ("attachments" in fields) rec.attachments = fields.attachments || undefined;
   });
 }
 

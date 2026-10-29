@@ -47,9 +47,24 @@
     else if (kind === "done") st.netActive = Math.max(0, st.netActive - 1);
   });
 
-  /** Remove text from ChatGPT's composer (used when ChatGPT refused our send). */
-  function clearComposer(composer) {
+  /** Remove the cards of Popup's files from ChatGPT's composer (never the user's own). */
+  function removeComposerAttachments(composer, files) {
+    (files || []).forEach(function (f) {
+      var b = JR.site.attachmentRemoveButton(composer, f.name);
+      if (b) b.click();
+    });
+  }
+
+  /** Show ChatGPT's composer again after Popup handed it files. */
+  function endAttaching() {
+    var box = JR.site.composerBox(JR.site.composer());
+    if (box) box.removeAttribute("data-jr-attaching");
+  }
+
+  /** Remove text (and Popup's attachment cards) from ChatGPT's composer (used when ChatGPT refused our send). */
+  function clearComposer(composer, files) {
     if (!composer) return;
+    removeComposerAttachments(composer, files);
     composer.focus({ preventScroll: true });
     try {
       document.execCommand("selectAll", false, null);
@@ -317,8 +332,45 @@
    * @param {object} opts.waitOpts - Args for JR.waitForResponse (popup, text, sentence, blockTypes, parentId, question, editOpts, ...)
    * @param {function} [opts.beforeSend] - Called right before injection; should call JR.prepareSend(w, anchor).
    */
+  /**
+   * Put files into ChatGPT's composer the way a user's paste does (ChatGPT uploads
+   * them itself, with the user's account) and wait until the upload is done.
+   * done({ sent: File[], failed: [{ file, reason }] }): a file ChatGPT did not take
+   * fails; after 60 s without the upload finishing all cards are removed and every
+   * file fails. The composer box is hidden meanwhile, so the cards never flash.
+   */
+  JR.attachToComposer = function (files, done) {
+    var composer = JR.site.composer();
+    if (!composer) {
+      done({ sent: [], failed: files.map(function (f) { return { file: f, reason: "ChatGPT's input box was not found" }; }) });
+      return;
+    }
+    var box = JR.site.composerBox(composer);
+    if (box) box.setAttribute("data-jr-attaching", "");
+    var dt = new DataTransfer();
+    files.forEach(function (f) { dt.items.add(f); });
+    composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    var t0 = Date.now();
+    (function check() {
+      var elapsed = Date.now() - t0;
+      var carded = files.filter(function (f) { return !!JR.site.attachmentRemoveButton(composer, f.name); });
+      var btn = JR.site.sendButton(composer);
+      var idle = btn && !btn.disabled && !JR.site.attachmentsUploading(composer);
+      // A file ChatGPT refuses never gets a card: after 5 s the others go without it.
+      var ready = carded.length > 0 && idle && (carded.length === files.length || elapsed > 5000);
+      var nothingCame = carded.length === 0 && elapsed > 5000;
+      if (!ready && !nothingCame && elapsed < 60000) { setTimeout(check, 250); return; }
+      var sent = ready ? carded : [];
+      var failed = files.filter(function (f) { return sent.indexOf(f) === -1; }).map(function (f) {
+        return { file: f, reason: !ready && carded.length ? "upload timed out" : "ChatGPT did not accept it" };
+      });
+      removeComposerAttachments(composer, failed.map(function (x) { return x.file; }));
+      done({ sent: sent, failed: failed });
+    })();
+  };
+
   JR.enqueueMessage = function (opts) {
-    if (JR.isGenerating() || st.responseWatchActive) {
+    if (JR.isGenerating() || st.responseWatchActive || st.attaching) {
       st.messageQueue.push(opts);
       return;
     }
@@ -326,22 +378,43 @@
   };
 
   function sendQueued(opts) {
+    // Files first: the answer watch's timers (refusal check, quick timeout) start
+    // only when the message is really sent, not while ChatGPT uploads.
+    if (opts.files && opts.files.length && !opts.attached) {
+      st.attaching = true;
+      var startUrl = location.href;
+      JR.attachToComposer(opts.files, function (res) {
+        st.attaching = false;
+        if (location.href !== startUrl) { // the user opened another chat meanwhile: never send there
+          removeComposerAttachments(JR.site.composer(), res.sent);
+          endAttaching();
+          return;
+        }
+        opts.attached = res;
+        if (opts.onAttached) opts.onAttached(res);
+        sendQueued(opts);
+      });
+      return;
+    }
     var w = opts.waitOpts;
     if (opts.beforeSend) opts.beforeSend(w);
     if (!w.turnsBefore || !w.turnsBefore.keys) w.turnsBefore = JR.snapshotTurns();
 
     // Offline check: skip injection entirely, save __TIMEOUT__ immediately
     if (!navigator.onLine) {
+      if (opts.attached) { removeComposerAttachments(JR.site.composer(), opts.attached.sent); endAttaching(); }
       report(false, "offline", "the browser is offline");
       immediateTimeout(w);
       JR.drainQueue();
       return;
     }
 
+    var sentFiles = opts.attached ? opts.attached.sent : [];
     var watch = JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll,
       w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId, opts.message,
-      w.wholeResponse, w.wholeResponseFull);
+      w.wholeResponse, w.wholeResponseFull, sentFiles);
     JR.injectAndSend(opts.message, function (r) {
+      endAttaching();
       if (!r.ok && watch) watch.failInjection(r);
     });
   }
@@ -360,7 +433,8 @@
 
     if (w.editOpts) {
       var newItemId = crypto.randomUUID();
-      memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", turnKeys: [] });
+      memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", turnKeys: [],
+        _files: memEntry._editFiles, attachments: (memEntry._editFiles || []).length });
       memEntry.activeItemIndex = memEntry.items.length - 1;
       memEntry.question = w.question;
       memEntry.responseHTML = "__TIMEOUT__";
@@ -368,7 +442,7 @@
         id: newItemId, quoteId: hlId, text: memEntry.text, responseHTML: "__TIMEOUT__",
         url: location.href, parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
         sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: [], active: true,
-        wholeResponse: !!memEntry.wholeResponse,
+        wholeResponse: !!memEntry.wholeResponse, attachments: (memEntry._editFiles || []).length,
       });
     } else {
       var itemIdx = memEntry.activeItemIndex || 0;
@@ -396,7 +470,7 @@
    */
   JR.drainQueue = function () {
     if (st.messageQueue.length === 0) return;
-    if (JR.isGenerating()) return;
+    if (JR.isGenerating() || st.attaching) return; // one send at a time, uploads included
     var next = st.messageQueue.shift();
     sendQueued(next);
   };
@@ -406,7 +480,7 @@
   // then drain.
   setInterval(function () {
     if (st.messageQueue.length === 0) return;
-    if (st.responseWatchActive) return;
+    if (st.responseWatchActive || st.attaching) return;
     if (JR.isGenerating()) return;
     JR.drainQueue();
   }, 300);
@@ -570,7 +644,7 @@
    * @param {object} snap - JR.snapshotTurns() taken right before sending
    * @param {string} message - the exact injected message (used to recognise the new turn)
    */
-  JR.waitForResponse = function (popup, snap, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts, preRegisteredHlId, preRegisteredItemId, message, wholeResponse, wholeResponseFull) {
+  JR.waitForResponse = function (popup, snap, text, sentence, blockTypes, unlockScroll, parentId, question, editOpts, preRegisteredHlId, preRegisteredItemId, message, wholeResponse, wholeResponseFull, files) {
     // Resolve the parent's active item id at call time (for parentItemId tracking)
     var parentItemId = resolveParentItemId(null, parentId);
     st.responseWatchActive = true;
@@ -678,7 +752,8 @@
       if (editOpts) {
         // Edit: create a new version item with __TIMEOUT__
         var newItemId = crypto.randomUUID();
-        memEntry.items.push({ id: newItemId, question: question, responseHTML: "__TIMEOUT__", turnKeys: hideKeys });
+        memEntry.items.push({ id: newItemId, question: question, responseHTML: "__TIMEOUT__", turnKeys: hideKeys,
+          _files: memEntry._editFiles, attachments: (memEntry._editFiles || []).length });
         memEntry.activeItemIndex = memEntry.items.length - 1;
         memEntry.question = question;
         memEntry.responseHTML = "__TIMEOUT__";
@@ -687,7 +762,7 @@
           url: convUrl, parentId: parentId || null,
           parentItemId: (memEntry && memEntry.parentItemId) || parentItemId || null,
           sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: hideKeys, active: true,
-          wholeResponse: !!memEntry.wholeResponse,
+          wholeResponse: !!memEntry.wholeResponse, attachments: (memEntry._editFiles || []).length,
         });
       } else {
         // New highlight (pre-registered or detached): update the pending item to __TIMEOUT__
@@ -1176,8 +1251,9 @@
         var composer = JR.site.composer();
         var probe = norm60(message).slice(0, 30);
         if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
-          clearComposer(composer);
-          if (rejected.count >= 1) {
+          clearComposer(composer, files);
+          // With files, a resend would go out as text only: fail instead (Retry resends the files).
+          if (rejected.count >= 1 || (files && files.length)) {
             st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };
             finishWithTimeout();
             return;

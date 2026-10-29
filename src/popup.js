@@ -679,6 +679,7 @@
     });
     inputInner.appendChild(questionText);
     questionDiv.appendChild(inputInner);
+    var attach = JR.acceptAttachments(questionDiv, questionText, null); // Step 2: files above the text
 
     // Send wrapper with click-to-send + switch mode button
     var sendWrapper = document.createElement("div");
@@ -732,6 +733,10 @@
       displayText.className = "jr-popup-question-text";
       displayText.textContent = question;
       displayInner.appendChild(displayText);
+      var files = attach.files();
+      attach.clear(); // frees the input strip's previews (the input row goes away)
+      var sentStrip = files.length ? JR.attachmentStrip(files) : null;
+      if (sentStrip) displayDiv.appendChild(sentStrip);
       displayDiv.appendChild(displayInner);
       var loadingDiv = JR.createLoadingDiv();
       container.appendChild(displayDiv);
@@ -815,6 +820,7 @@
         sourceTurnKey: sourceTurnKey,
         turnKeys: [],
         wholeResponse: !!wholeResponse,
+        attachments: attach.files().length,
       });
 
       JR.updateNavWidget();
@@ -826,9 +832,18 @@
         preRegisteredHlId: sendHlId, preRegisteredItemId: sendItemId
       };
 
+      if (files.length) pendingEntry.items[0]._files = files; // memory only: a retry can resend them
       JR.enqueueMessage({
         message: message,
         waitOpts: waitOpts,
+        files: files,
+        onAttached: function (res) { // the strip shows what really went out
+          if (sentStrip) { JR.releaseStrip(sentStrip); sentStrip.replaceWith(res.sent.length ? (sentStrip = JR.attachmentStrip(res.sent)) : document.createComment("")); }
+          JR.showAttachmentNote(displayDiv, res.failed);
+          pendingEntry.items[0]._files = res.sent;
+          pendingEntry.items[0].attachments = res.sent.length;
+          updateHighlightFields(sendItemId, { attachments: res.sent.length }, location.href);
+        },
         beforeSend: function (w) {
           JR.prepareSend(w, wrappers.length > 0 ? wrappers[0] : null);
         },
@@ -1171,7 +1186,9 @@
 
   var SEND_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></svg>';
 
-  function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode) {
+  function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode, files) {
+    files = files || [];
+    entry._editFiles = files; // the new version's files (chat.js stores their count with it)
     if (extensionWasUpdated(popup)) return;
     // Exit edit mode, enter generating state
     popup.classList.add("jr-popup--generating");
@@ -1182,6 +1199,10 @@
       questionText.contentEditable = "false";
       questionText.textContent = newQuestion;
     }
+    // The input strip becomes the sent question's strip (read-only)
+    var oldStrip = questionDiv && questionDiv.querySelector(".jr-popup-attach");
+    var sentStrip = files.length ? JR.attachmentStrip(files) : null;
+    if (oldStrip) { JR.releaseStrip(oldStrip); oldStrip.replaceWith(sentStrip || document.createComment("")); }
 
     // Remove response, show loading
     var responseDiv = popup.querySelector(".jr-popup-response");
@@ -1209,6 +1230,12 @@
     JR.enqueueMessage({
       message: message,
       waitOpts: waitOpts,
+      files: files,
+      onAttached: function (res) {
+        if (sentStrip) { JR.releaseStrip(sentStrip); sentStrip.replaceWith(res.sent.length ? (sentStrip = JR.attachmentStrip(res.sent)) : document.createComment("")); }
+        if (questionDiv) JR.showAttachmentNote(questionDiv, res.failed);
+        entry._editFiles = res.sent;
+      },
       beforeSend: function (w) {
         JR.prepareSend(w, entry.spans.length > 0 ? entry.spans[0] : null);
       },
@@ -1286,10 +1313,10 @@
       function rebuildEditDropdown() {
         populateModeDropdown(editDropdown, function (key) {
           var current = readQuestion(questionText);
-          if (!current || current === originalText) return;
+          if (!editChanged(current)) return;
           editing = false; // prevent blur→exitEditMode from reverting text
           st.responseMode = key;
-          submitEdit(popup, id, entry, contentContainer, current, key);
+          submitEdit(popup, id, entry, contentContainer, current, key, editAttach.files());
         });
       }
       rebuildEditDropdown();
@@ -1301,6 +1328,18 @@
       var editing = false;
       var originalText = entry.question;
       var lastCaretRange = null;
+      // Edits start with no attachments (the new version carries only what is added now)
+      var editAttach = JR.acceptAttachments(questionDiv, questionText, updateEditSend, function () { return editing; });
+      /** A new version can be sent: non-empty text that changed, or any attachment added. */
+      function editChanged(current) {
+        return !!current && (current !== originalText || editAttach.files().length > 0);
+      }
+      function updateEditSend() {
+        var ok = editChanged(readQuestion(questionText));
+        sendBtn.disabled = !ok;
+        editDropdown.classList.toggle("jr-disabled", !ok);
+        if (editing && document.activeElement !== questionText) questionText.focus(); // after an × click
+      }
 
       // Track caret position on mousemove for click-to-edit placement
       questionText.addEventListener("mousemove", function (e) {
@@ -1362,6 +1401,7 @@
         questionDiv.classList.remove("jr-popup-question--editing");
         questionText.contentEditable = "false";
         questionText.textContent = originalText;
+        editAttach.clear();
         if (versionNav) versionNav.style.display = "";
         sendWrapper.style.display = "none";
         sendBtn.disabled = true;
@@ -1377,16 +1417,7 @@
       });
 
       // Track text changes to enable/disable send
-      questionText.addEventListener("input", function () {
-        var current = readQuestion(questionText);
-        var unchanged = (current === originalText || current === "");
-        sendBtn.disabled = unchanged;
-        if (unchanged) {
-          editDropdown.classList.add("jr-disabled");
-        } else {
-          editDropdown.classList.remove("jr-disabled");
-        }
-      });
+      questionText.addEventListener("input", updateEditSend);
 
       // Blur exits edit mode
       questionText.addEventListener("blur", function (e) {
@@ -1406,9 +1437,9 @@
           } else {
             e.preventDefault();
             var current = readQuestion(questionText);
-            if (current && current !== originalText) {
+            if (editChanged(current)) {
               editing = false; // prevent blur→exitEditMode from reverting text
-              submitEdit(popup, id, entry, contentContainer, current, st.responseMode);
+              submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files());
             }
           }
         }
@@ -1422,9 +1453,9 @@
       sendBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         var current = readQuestion(questionText);
-        if (!current || current === originalText) return;
+        if (!editChanged(current)) return;
         editing = false; // prevent blur→exitEditMode from reverting text
-        submitEdit(popup, id, entry, contentContainer, current, st.responseMode);
+        submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files());
       });
 
       upper.appendChild(questionDiv);
@@ -1513,8 +1544,15 @@
         popup.classList.add("jr-popup--generating");
         timeoutDiv.remove();
         popup.appendChild(JR.createLoadingDiv());
+        var retryFiles = (activeItem && activeItem._files) || [];
+        var filesGone = !retryFiles.length && activeItem && activeItem.attachments > 0;
         JR.enqueueMessage({ // queued like any send: two live watches would fight over shared state
           message: retryMessage,
+          files: retryFiles,
+          onAttached: function (res) {
+            var q = popup.querySelector(".jr-popup-question");
+            if (q) JR.showAttachmentNote(q, res.failed);
+          },
           waitOpts: {
             popup: popup, text: text, sentence: sentence,
             blockTypes: entry.blockTypes, parentId: entry.parentId,
@@ -1523,6 +1561,8 @@
           },
           beforeSend: function (w) { JR.prepareSend(w, null); },
         });
+        var qd = popup.querySelector(".jr-popup-question");
+        if (filesGone && qd) JR.showAttachmentNote(qd, null, "The attachments are gone after the reload; only the text was sent.");
       });
       retryBtn.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
       timeoutDiv.appendChild(retryBtn);
@@ -1625,6 +1665,7 @@
   JR.wireResponseClicks = wireResponseClicks;
   JR.processResponseLinks = processResponseLinks;
   JR.processResponseImages = processResponseImages; // [CAROUSEL-LOCKED]
+  JR.openLightbox = openLightbox; // attachment thumbnails open in the same lightbox (attachments.js)
 
   JR.createPopup = function (opts) {
     var completedId = opts.completedId || null;

@@ -32,11 +32,29 @@
       var json = JSON.parse(body);
       var msgs = json.messages || (json.message ? [json.message] : []);
       for (var i = msgs.length - 1; i >= 0; i--) {
+        // With attachments, parts = [image pointer(s)…, text]: keep the text parts (like partsText)
         var parts = msgs[i] && msgs[i].content && msgs[i].content.parts;
-        if (parts && typeof parts[0] === "string") return parts.join("\n");
+        var text = parts ? parts.filter(function (x) { return typeof x === "string"; }) : [];
+        if (text.length) return text.join("\n");
       }
     } catch (e) { /* not JSON */ }
     return null;
+  }
+
+  /**
+   * The shape of a request's user message, never its text: content type, the type of
+   * each part, and the keys of each attachment (#jr-netlog; how attachments travel).
+   */
+  function bodyShape(body) {
+    try {
+      var j = JSON.parse(body), m = (j.messages || [])[0] || {};
+      var parts = (m.content && m.content.parts) || [];
+      return JSON.stringify({
+        content_type: m.content && m.content.content_type,
+        parts: parts.map(function (p) { return typeof p === "string" ? "text" : Object.keys(p).join("|") + ":" + p.content_type; }),
+        attachments: ((m.metadata && m.metadata.attachments) || []).map(function (a) { return Object.keys(a).join("|") + ":" + a.mime_type; }),
+      });
+    } catch (e) { return "unreadable"; }
   }
 
   function emit(detail) {
@@ -285,7 +303,7 @@
         if (fixed !== init.body) init = Object.assign({}, init, { body: fixed });
       }
       var q = questionFromBody(init.body);
-      if (isPopupQuestion(q)) { question = q; rawLog = []; logRaw(url, "request matched"); } // log = latest Popup request
+      if (isPopupQuestion(q)) { question = q; rawLog = []; logRaw(url, "request matched"); logRaw(url, "request shape " + bodyShape(init.body)); } // log = latest Popup request
     }
     var p = origFetch.call(this, input, init);
     if (!question) return p;

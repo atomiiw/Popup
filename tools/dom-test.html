@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- dom-test.html — text matching in a real browser DOM (src/text-extraction.js + src/highlight.js).
      Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
-          --allow-file-access-from-files --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
+          --allow-file-access-from-files --virtual-time-budget=15000 --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
      or open it in Chrome and read the page. -->
 <html><head><meta charset="utf-8"><title>dom-test</title><link rel="stylesheet" href="../styles.css"></head><body>
 <div id="answer"><p>Read <b>the cache</b> first. Later, read the cache again; the cache wins.</p></div>
@@ -19,6 +19,8 @@
 <script src="../src/highlight.js"></script>
 <script>JR.state = JR.state || {}; </script>
 <script src="../src/popup-helpers.js"></script>
+<script src="../src/attachments.js"></script>
+<script src="../src/chat.js"></script>
 <script>
 var out = [], failed = 0;
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
@@ -313,6 +315,42 @@ var fr2 = JR.findTextRange(fade, "while the popup", 0);
 check("highlights restore inside a fading-in popup", JR.highlightRange(fr2).length === 1);
 fade.remove();
 
+// Step 2: files pasted or dropped into a popup question are kept and shown above the text.
+var qd = document.createElement("div"), qi = document.createElement("span");
+qi.contentEditable = "true"; qd.appendChild(qi); document.body.appendChild(qd);
+var changes = 0;
+var att = JR.acceptAttachments(qd, qi, function () { changes++; });
+function filesEvent(type, files) {
+  var dt = new DataTransfer(); files.forEach(function (f) { dt.items.add(f); });
+  var ev = type === "paste" ? new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })
+                            : new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+  (type === "paste" ? qi : qd).dispatchEvent(ev);
+  return ev;
+}
+var png = new File([new Uint8Array([137, 80, 78, 71])], "shot.png", { type: "image/png" });
+var pdf = new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" });
+var pasteEv = filesEvent("paste", [png]);
+check("Step 2: a pasted image is taken (not pasted as text)", pasteEv.defaultPrevented && att.files().length === 1 && att.files()[0] === png);
+filesEvent("drop", [pdf]);
+var strip = qd.querySelector(".jr-popup-attach");
+check("Step 2: a dropped PDF is taken too", att.files().length === 2 && att.files()[1] === pdf);
+check("Step 2: strip above the text: thumbnail for the image, chip with the name for the PDF",
+  !!strip && strip === qd.firstElementChild && !strip.hidden && !!strip.querySelector("img.jr-attach-thumb") &&
+  strip.querySelector(".jr-attach-chip") && strip.querySelector(".jr-attach-chip").textContent.indexOf("notes.pdf") !== -1, strip && strip.outerHTML);
+strip.querySelectorAll(".jr-attach-remove")[0].click();
+check("Step 2: x removes that file", att.files().length === 1 && att.files()[0] === pdf && changes >= 3, att.files().length + " / " + changes);
+var textPaste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+textPaste.clipboardData.setData("text/plain", "hello");
+qi.dispatchEvent(textPaste);
+check("Step 2: text paste is left to the text handler", att.files().length === 1);
+var officeDt = new DataTransfer();
+officeDt.setData("text/plain", "cell"); officeDt.setData("text/html", "<td>cell</td>"); officeDt.items.add(png);
+qi.dispatchEvent(new ClipboardEvent("paste", { clipboardData: officeDt, bubbles: true, cancelable: true }));
+check("Step 2: text copied from Word/Excel (it also carries a picture) is pasted as text", att.files().length === 1);
+att.clear();
+check("Step 2: clear empties the strip", att.files().length === 0 && strip.hidden);
+qd.remove();
+
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
 var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,
@@ -322,7 +360,51 @@ Object.keys(chatPages).forEach(function (path) {
   check("R8 chat page? " + path, JR.site.isChatPage(path) === chatPages[path], JR.site.isChatPage && JR.site.isChatPage(path));
 });
 
-out.push(failed ? failed + " FAILED" : "all passed");
-document.getElementById("out").textContent = out.join("\n");
-document.title = failed ? "FAIL" : "PASS";
+// Step 2: handing files to ChatGPT's composer (attachToComposer) and the send queue meanwhile.
+// A fake composer box: ChatGPT adds a card ("Remove <name>") for each file it takes.
+var fakeForm = document.createElement("form");
+fakeForm.innerHTML = '<div class="ProseMirror" data-composer-markdown contenteditable="true"></div><button type="button" aria-label="Send">Send</button>';
+document.body.appendChild(fakeForm);
+var fakeComposer = fakeForm.querySelector(".ProseMirror"), refuse = {};
+fakeComposer.addEventListener("paste", function (e) {
+  Array.prototype.forEach.call(e.clipboardData.files, function (f) {
+    if (refuse[f.name]) return;
+    setTimeout(function () {
+      var b = document.createElement("button"); b.type = "button"; b.setAttribute("aria-label", "Remove " + f.name);
+      b.addEventListener("click", function () { b.remove(); });
+      fakeForm.insertBefore(b, fakeComposer);
+    }, 50);
+  });
+});
+var asyncChecks = [];
+asyncChecks.push(new Promise(function (resolve) {
+  JR.attachToComposer([png, pdf], function (res) {
+    check("Step 2: both files taken by ChatGPT are sent", res.sent.length === 2 && res.failed.length === 0, JSON.stringify(res.failed));
+    check("Step 2: the composer box is hidden while files are handed over", fakeForm.hasAttribute("data-jr-attaching"));
+    fakeForm.querySelectorAll('button[aria-label^="Remove"]').forEach(function (b) { b.remove(); });
+    fakeForm.removeAttribute("data-jr-attaching");
+    refuse["notes.pdf"] = true;
+    JR.attachToComposer([png, pdf], function (res2) {
+      check("Step 2: a file ChatGPT refuses is reported, the other one is sent",
+        res2.sent.length === 1 && res2.sent[0] === png && res2.failed.length === 1 && res2.failed[0].file === pdf, JSON.stringify(res2.failed));
+      fakeForm.querySelectorAll('button[aria-label^="Remove"]').forEach(function (b) { b.remove(); });
+      resolve();
+    });
+  });
+}));
+// While one popup's files upload, a second popup's send waits in the queue.
+JR.state.attaching = true;
+var queuedOpts = { message: "second", waitOpts: {} };
+JR.state.messageQueue.push(queuedOpts);
+JR.drainQueue();
+check("Step 2: the queue does not send while files upload", JR.state.messageQueue[0] === queuedOpts);
+JR.state.messageQueue.length = 0;
+JR.state.attaching = false;
+
+Promise.all(asyncChecks).then(function () {
+  fakeForm.remove();
+  out.push(failed ? failed + " FAILED" : "all passed");
+  document.getElementById("out").textContent = out.join("\n");
+  document.title = failed ? "FAIL" : "PASS";
+});
 </script></body></html>

@@ -286,6 +286,34 @@
       return allVisible("stopButton", document)[0] || null;
     },
 
+    // --- Composer attachments (Step 2) ---
+    // A paste event with files on the composer makes ChatGPT add an attachment card
+    // and upload it (synthetic file inputs and drops are ignored; PLAN-next.md IMG0).
+
+    /** The composer's box: its text, attachment cards and buttons. */
+    composerBox: function (composer) {
+      return composer ? (composer.closest("form") || composer.parentElement) : null;
+    },
+
+    /**
+     * The × of the composer's attachment card for a file: a button whose aria-label
+     * holds the file name ("Remove <name>" in English; the name is the same in every
+     * UI language, and only Popup's own files are ever matched).
+     */
+    attachmentRemoveButton: function (composer, fileName) {
+      var box = JR.site.composerBox(composer);
+      if (!box) return null;
+      return Array.prototype.find.call(box.querySelectorAll("button[aria-label]"), function (b) {
+        return b.getAttribute("aria-label").indexOf(fileName) !== -1;
+      }) || null;
+    },
+
+    /** True while some card in the composer is still uploading. */
+    attachmentsUploading: function (composer) {
+      var box = JR.site.composerBox(composer);
+      return !!(box && box.querySelector('[role="progressbar"], [aria-busy="true"]'));
+    },
+
     isStopButton: function (node) { return !!closest("stopButton", node); },
 
     /** True while ChatGPT is generating: visible stop button, or a turn whose state isn't "complete". */

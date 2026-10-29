@@ -6,10 +6,9 @@ function run(argv) {
   function cut(start, end) { var a = src.indexOf(start), b = src.indexOf(end, a); if (a < 0 || b < 0) throw new Error("marker missing: " + start); return src.slice(a, b); }
   var code = [
     "var location = { hash: '' }; var document = { getElementById: function () { return null; }, body: null };",
-    "function questionFromBody() { return null; }",
-    cut("  var POPUP_PREFIXES", "  /** The user's question inside"),
+    cut("  var POPUP_PREFIXES", "  function emit("),
     cut("  function filterOn()", "  window.fetch ="),
-    "return { filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, status: function () { return filterStatus; } };",
+    "return { filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, questionFromBody: questionFromBody, status: function () { return filterStatus; } };",
   ].join("\n");
   var api = (new Function(code))();
 
@@ -21,6 +20,12 @@ function run(argv) {
     var ok = got === want; if (!ok) failed++;
     out.push((ok ? "PASS " : "FAIL ") + name + " -> " + got + (ok ? "" : "   [want " + want + "]"));
   }
+
+  // A Popup question sent with an image: parts = [image pointer, text] (Step 2).
+  var withImage = JSON.stringify({ messages: [{ content: { content_type: "multimodal_text", parts: [
+    { content_type: "image_asset_pointer", asset_pointer: "file-service://file-abc" }, P] } }] });
+  check("Popup question with an image is recognised", api.questionFromBody(withImage) === P, true);
+  check("plain Popup question still recognised", api.questionFromBody(JSON.stringify({ messages: [{ content: { parts: [P] } }] })) === P, true);
 
   // First screen: u1 a1, two Popup turns (one with a system message), u3 a3.
   var first = { messages: [
