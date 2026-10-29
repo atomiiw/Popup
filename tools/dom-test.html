@@ -291,14 +291,23 @@ cm.remove();
 var mp = document.createElement("div");
 mp.setAttribute("data-dil-message-id", "");
 mp.innerHTML = '<h2>Mission coffee map</h2><div data-client-defined-widget="map"><div data-testid="businesses-map-widget">' +
-  '<div style="user-select:none"><button><span>4.0</span></button><span aria-hidden="true">Four Barrel Coffee</span></div></div></div><h2>My top six</h2>';
+  '<div style="user-select:none"><button><span>4.0</span></button><span aria-hidden="true">Four Barrel Coffee</span></div>' +
+  '<div class="mapboxgl-scroll-zoom-blocker" style="opacity:0">Use cmd + scroll to zoom the map</div><div style="visibility:hidden">hidden hint</div></div></div><h2>My top six</h2>';
 document.body.appendChild(mp);
 var mph = mp.querySelectorAll("h2");
 var mpr = document.createRange(); mpr.setStart(mph[0].firstChild, 8); mpr.setEnd(mph[1].firstChild, 6);
 var mpw = JR.highlightRange(mpr);
-check("R10 map: marker labels the browser does not select are not highlighted",
+check("R10 map: marker labels the browser does not select, and invisible map hints, are not highlighted",
   mpw.length === 2 && mpw.every(function (w) { return !w.closest('[data-client-defined-widget="map"]'); }), mpw.map(function (w) { return w.textContent; }).join("|"));
 mp.remove();
+// ...but a popup or answer that is fading in (opacity 0 at the start) still gets its highlights.
+var fade = document.createElement("div");
+fade.style.opacity = "0";
+fade.innerHTML = "<p>Restored while the popup fades in.</p>";
+document.body.appendChild(fade);
+var fr2 = JR.findTextRange(fade, "while the popup", 0);
+check("highlights restore inside a fading-in popup", JR.highlightRange(fr2).length === 1);
+fade.remove();
 
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";

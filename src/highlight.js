@@ -13,12 +13,18 @@
   var proxyGroups = new Set(); // { range, zone, host, text, proxies }
   var hostWatchers = new Map(); // host → [MutationObserver, ResizeObserver]
 
-  /** Text the browser never puts in a selection (user-select: none, e.g. map labels). */
+  /**
+   * Text a highlight must leave alone: text the browser never selects (user-select:
+   * none, e.g. map labels) or that isn't shown (visibility: hidden, or opacity 0 on its
+   * own element, e.g. a map's "use ⌘ + scroll to zoom" hint). Only its own element's
+   * opacity: popups and ChatGPT answers fade in from opacity 0, and restoring a
+   * highlight during that fade must still work.
+   */
   function unselectable(node) {
     var el = node.parentElement;
     if (!el) return false;
     var cs = getComputedStyle(el);
-    return (cs.userSelect || cs.webkitUserSelect) === "none";
+    return (cs.userSelect || cs.webkitUserSelect) === "none" || cs.visibility === "hidden" || cs.opacity === "0";
   }
 
   function zoneOf(node) {
