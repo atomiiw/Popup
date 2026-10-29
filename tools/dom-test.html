@@ -396,6 +396,16 @@ try { JR.rebuildPopupAfterEdit(rb, "rb-hl"); } catch (e) { out.push("NOTE rebuil
 check("Step 2c: one attachment row after the popup is rebuilt", rb.querySelectorAll(".jr-popup-attach:not([hidden])").length === 1, rb.querySelectorAll(".jr-popup-attach").length);
 JR.state.completedHighlights.delete("rb-hl"); rb.remove();
 
+// A note in a question row must not squeeze the question away (T8: its text got 0 px wide).
+var nq = document.createElement("div"); nq.className = "jr-popup-question"; nq.style.width = "300px";
+nq.innerHTML = '<div class="jr-popup-question-inner"><span class="jr-popup-question-text">What is this?</span></div><div class="jr-edit-send-wrapper"><button class="jr-popup-edit-send">→</button></div>';
+document.body.appendChild(nq);
+JR.showAttachmentNote(nq, null, "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.");
+var nqText = nq.querySelector(".jr-popup-question-text").getBoundingClientRect();
+var nqNote = nq.querySelector(".jr-attach-note").getBoundingClientRect();
+check("Step 2: a note sits on its own line under the question, which stays readable", nqText.width > 50 && nqNote.top >= nqText.bottom - 1, nqText.width + " / " + nqNote.top + " vs " + nqText.bottom);
+nq.remove();
+
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
 var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,
@@ -410,11 +420,14 @@ Object.keys(chatPages).forEach(function (path) {
 var fakeForm = document.createElement("form");
 fakeForm.innerHTML = '<div class="ProseMirror" data-composer-markdown contenteditable="true"></div><button type="button" aria-label="Send">Send</button>';
 document.body.appendChild(fakeForm);
-// Like ChatGPT (T7): a taken name gets "(n)" before the extension; a file card has a button with its
-// name and its × ("Remove <name>"); a refused file's card shows up briefly and goes away.
+// Like ChatGPT (T7, T8): a name taken by an earlier file gets "(n)" before the extension; two files
+// with the same name in one paste keep only the last; a file card has a button with its name and its ×
+// ("Remove <name>"); a refused file's card shows up briefly and goes away.
 var fakeComposer = fakeForm.querySelector(".ProseMirror"), refuse = {}, seenNames = {};
 fakeComposer.addEventListener("paste", function (e) {
-  Array.prototype.forEach.call(e.clipboardData.files, function (f) {
+  var byName = {};
+  Array.prototype.forEach.call(e.clipboardData.files, function (f) { byName[f.name] = f; });
+  Object.keys(byName).map(function (k) { return byName[k]; }).forEach(function (f) {
     var n = seenNames[f.name] = (seenNames[f.name] || 0) + 1;
     var shown = n === 1 ? f.name : f.name.replace(/(\.[^.]*)$/, "(" + (n - 1) + ")$1");
     setTimeout(function () {
@@ -436,7 +449,8 @@ asyncChecks.push(new Promise(function (resolve) {
   var piechart = new File(["p"], "piechart.png", { type: "image/png" }), chart = new File(["c"], "chart.png", { type: "image/png" });
   var png2 = new File([new Uint8Array([137, 80, 78, 71, 1])], "shot.png", { type: "image/png" });
   JR.attachToComposer([png, png2, pdf], function (res) {
-    check("Step 2: two files with the same name (ChatGPT shows shot(1).png) and a PDF are all sent", res.sent.length === 3 && res.failed.length === 0, JSON.stringify(res.failed.map(function (x) { return x.file.name; })));
+    check("Step 2: two files with the same name (ChatGPT would keep only one) and a PDF are all sent", res.sent.length === 3 && res.failed.length === 0 &&
+      res.sent.indexOf(png) !== -1 && res.sent.indexOf(png2) !== -1, JSON.stringify(res.failed.map(function (x) { return x.file.name; })));
     check("Step 2: the user's own card that was there before is not taken for Popup's file", fakeForm.querySelectorAll(".fake-card").length === 4, fakeForm.querySelectorAll(".fake-card").length);
     check("Step 2: the composer box is hidden while files are handed over", fakeForm.hasAttribute("data-jr-attaching"));
     fakeForm.querySelectorAll(".fake-card:not(.user-card)").forEach(function (c) { c.remove(); });

@@ -379,30 +379,44 @@
     }
     var box = JR.site.composerBox(composer);
     if (box) box.setAttribute("data-jr-attaching", "");
+    // ChatGPT keeps only the last of several same-named files in one paste (T8: two
+    // clipboard.png became one): hand it copies with distinct names, report the originals.
+    var original = new Map(), used = {};
+    var upload = files.map(function (f) {
+      var name = f.name, m = /^(.*?)(\.[^.]*)?$/.exec(f.name), n = 1;
+      while (used[name]) name = m[1] + " (" + (++n) + ")" + (m[2] || "");
+      used[name] = true;
+      var copy = name === f.name ? f : new File([f], name, { type: f.type, lastModified: f.lastModified });
+      original.set(copy, f);
+      return copy;
+    });
     var dt = new DataTransfer();
-    files.forEach(function (f) { dt.items.add(f); });
+    upload.forEach(function (f) { dt.items.add(f); });
     buttonsBeforePaste = JR.site.composerButtons(composer);
     composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     var t0 = Date.now(), readySince = 0;
     (function check() {
       var elapsed = Date.now() - t0;
-      var cards = cardsFor(composer, files, buttonsBeforePaste);
-      var carded = files.filter(function (f) { return cards.has(f); });
+      var cards = cardsFor(composer, upload, buttonsBeforePaste);
+      var carded = upload.filter(function (f) { return cards.has(f); });
       var btn = JR.site.sendButton(composer);
       var idle = btn && !btn.disabled && !JR.site.attachmentsUploading(composer);
       // A file ChatGPT refuses never gets a card (or loses it): after 5 s the others go without it.
-      var looksReady = carded.length > 0 && idle && (carded.length === files.length || elapsed > 5000);
+      var looksReady = carded.length > 0 && idle && (carded.length === upload.length || elapsed > 5000);
       // ...and only once that has held for a moment (a refused card can show up briefly)
       readySince = looksReady ? (readySince || Date.now()) : 0;
       var ready = looksReady && Date.now() - readySince >= 1500;
       var nothingCame = carded.length === 0 && elapsed > 5000;
       if (!ready && !nothingCame && (elapsed < 60000 || readySince)) { setTimeout(check, 250); return; }
-      var sent = ready ? carded : [];
-      var failed = files.filter(function (f) { return sent.indexOf(f) === -1; }).map(function (f) {
-        return { file: f, reason: !ready && carded.length ? "upload timed out" : "ChatGPT did not accept it" };
+      var sentCopies = ready ? carded : [];
+      var failedCopies = upload.filter(function (f) { return sentCopies.indexOf(f) === -1; });
+      removeComposerAttachments(composer, failedCopies);
+      done({
+        sent: sentCopies.map(function (f) { return original.get(f); }),
+        failed: failedCopies.map(function (f) {
+          return { file: original.get(f), reason: !ready && carded.length ? "upload timed out" : "ChatGPT did not accept it" };
+        }),
       });
-      removeComposerAttachments(composer, failed.map(function (x) { return x.file; }));
-      done({ sent: sent, failed: failed });
     })();
   };
 
