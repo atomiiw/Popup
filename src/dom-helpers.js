@@ -129,7 +129,7 @@
       }
       if (n.nodeType !== Node.ELEMENT_NODE) return;
       if (n.matches(JR.site.mathSelector) && !visibleMath) { out += JR.mathText(n); return; }
-      if (n.matches(JR.site.hiddenMathSelector)) return;
+      if (n.matches(JR.site.hiddenMathSelector) || n.matches(JR.site.hiddenTextSelector)) return;
       if (blockBreaks && JR.BLOCK_TAGS.has(n.tagName) && out && out[out.length - 1] !== "\n") out += "\n";
       for (var c = n.firstChild; c; c = c.nextSibling) walk(c);
     })(root);

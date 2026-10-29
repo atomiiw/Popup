@@ -42,6 +42,7 @@
         return;
       }
       if (n.nodeType !== Node.ELEMENT_NODE) return;
+      if (n.matches(JR.site.hiddenTextSelector)) return;
       if (n.matches(JR.site.mathSelector)) { raw += JR.mathText(n); return; }
       // Citation pill — capture as a unit, record position
       if (n.matches && n.matches(JR.site.citationSelector)) {
@@ -113,6 +114,7 @@
     var selectedBlocks = [];
     var leafWalker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, {
       acceptNode: function (node) {
+        if (node.matches(JR.site.hiddenTextSelector)) return NodeFilter.FILTER_REJECT;
         if (isCodeBlock(node)) return NodeFilter.FILTER_ACCEPT; // a code block is one unit
         if (node.closest && node.closest(JR.site.codeBlockSelector)) return NodeFilter.FILTER_SKIP;
         // A display formula placed straight in the answer (no paragraph around it) is one unit too.
@@ -125,6 +127,21 @@
     var leafNode;
     while ((leafNode = leafWalker.nextNode())) {
       if (range.intersectsNode(leafNode)) selectedBlocks.push(leafNode);
+    }
+    // A selection in a chart's plot (ticks, legend, tooltip): its words alone mean little,
+    // so the quote says which chart, from its title.
+    var chartEl = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
+    var chart = chartEl && chartEl.closest(".recharts-wrapper") && JR.site.chartContext(chartEl);
+    if (chart) {
+      var picked = [], tw = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, null), tn;
+      if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) picked.push(range.toString());
+      while ((tn = tw.nextNode())) {
+        if (!range.intersectsNode(tn)) continue;
+        picked.push(tn.data.slice(tn === range.startContainer ? range.startOffset : 0, tn === range.endContainer ? range.endOffset : tn.data.length));
+      }
+      picked = picked.join(" ").replace(/\s+/g, " ").trim(); // chart labels are separate <text>s
+      if (blockTypes) blockTypes.push({ tag: "P", depth: 0, lineCount: 2, pills: [], bolds: null });
+      return "Chart: " + chart + "\n" + picked;
     }
     if (selectedBlocks.length === 0) return null;
 
@@ -494,7 +511,7 @@
           nodes.push({ node: c, start: fullText.length, text: c.data });
           fullText += c.data;
         } else if (c.nodeType === Node.ELEMENT_NODE) {
-          if (c.matches(JR.site.hiddenMathSelector)) continue;
+          if (c.matches(JR.site.hiddenMathSelector) || c.matches(JR.site.hiddenTextSelector)) continue;
           if (c.matches(JR.site.mathSelector) && !visibleMath) {
             var t = JR.mathText(c);
             nodes.push({ node: c, start: fullText.length, text: t, math: true });

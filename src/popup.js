@@ -770,10 +770,10 @@
 
       // Which occurrence of the text this is, inside the answer it was selected in.
       var nth = 0;
-      if (wrappers.length && wrappers[0].firstChild) {
+      if (wrappers.length && JR.spanTextNode(wrappers[0])) {
         var nthRoot = wrappers[0].closest(".jr-popup-response")
           || (sourceTurn && JR.site.assistantBodies(sourceTurn).filter(function (b) { return b.contains(wrappers[0]); })[0]);
-        nth = JR.occurrenceIndex(nthRoot, wrappers[0].firstChild, text);
+        nth = JR.occurrenceIndex(nthRoot, JR.spanTextNode(wrappers[0]), text);
       }
 
       var pendingEntry = {

@@ -388,6 +388,32 @@
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
+    /**
+     * Text a highlight span must not be put into: SVG charts (spans are not drawn)
+     * and CodeMirror code (the editor removes them). Proxies go into the widget around it.
+     */
+    noWrapSelector: "svg, .cm-content, .recharts-wrapper",
+    noWrapHostSelector: "[data-client-defined-widget]",
+
+    /** Text that is in the DOM but not on screen (a chart's screen-reader data table). */
+    hiddenTextSelector: ".sr-only",
+
+    /**
+     * What a chart shows, from fixed places in its widget: the title and subtitle
+     * above it (section[aria-labelledby] → title, then a subtitle <p>). Null outside charts.
+     */
+    chartContext: function (node) {
+      var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      var widget = el && el.closest('[data-client-defined-widget="visualization"]');
+      var section = widget && widget.querySelector("section[aria-labelledby]");
+      if (!section) return null;
+      var title = section.querySelector("#" + CSS.escape(section.getAttribute("aria-labelledby")));
+      if (!title) return null;
+      var sub = title.nextElementSibling;
+      var t = title.textContent.trim(), s = sub && sub.tagName === "P" ? sub.textContent.trim() : "";
+      return t ? (s ? t + " (" + s + ")" : t) : null;
+    },
+
     /** Bold text: <strong>/<b>, and the 2026-10 answer renderer's bold spans. */
     strongSelector: "strong, b, [data-d-default-strong]",
     /**

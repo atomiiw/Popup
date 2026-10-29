@@ -4,18 +4,176 @@
 
   var st = JR.state;
 
+  // --- Highlights where a span can't go -------------------------------------
+  // SVG text (charts) does not draw HTML spans, and CodeMirror (code blocks)
+  // removes them. There the text is painted with the CSS Custom Highlight API,
+  // and one transparent proxy span per line sits over it: it carries the usual
+  // classes, takes clicks and hover, and gives popups their position, so the
+  // rest of Popup treats it like any other highlight span.
+  var proxyGroups = new Set(); // { range, zone, host, text, proxies }
+  var watchedHosts = new WeakSet();
+
+  function zoneOf(node) {
+    var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest(JR.site.noWrapSelector) : null;
+  }
+
+  function paintProxyRanges() {
+    if (!window.CSS || !CSS.highlights) return;
+    var h = new Highlight();
+    proxyGroups.forEach(function (g) { h.add(g.range); });
+    CSS.highlights.set("jr-mark", h);
+  }
+
+  /** Client rects of a range, merged per line. */
+  function lineRects(range) {
+    var out = [];
+    Array.prototype.forEach.call(range.getClientRects(), function (r) {
+      if (!r.width || !r.height) return;
+      var last = out[out.length - 1];
+      if (last && Math.abs(last.top - r.top) < 2 && Math.abs(last.bottom - r.bottom) < 2) {
+        last.left = Math.min(last.left, r.left); last.right = Math.max(last.right, r.right);
+      } else {
+        out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+      }
+    });
+    return out;
+  }
+
+  function layoutProxies(g) {
+    if (!g.range.startContainer.isConnected) { // the editor or chart rebuilt its text
+      var r = JR.findTextRange(g.host, g.text, 0);
+      if (r) g.range = r;
+    }
+    var box = g.host.getBoundingClientRect(), rects = lineRects(g.range);
+    g.proxies.forEach(function (p, i) {
+      var r = rects[i] || { left: box.left, right: box.left, top: box.top, bottom: box.top };
+      p.style.setProperty("--jr-proxy-x", (r.left - box.left) + "px");
+      p.style.setProperty("--jr-proxy-y", (r.top - box.top) + "px");
+      p.style.setProperty("--jr-proxy-w", (r.right - r.left) + "px");
+      p.style.setProperty("--jr-proxy-h", (r.bottom - r.top) + "px");
+    });
+  }
+
+  function relayoutAll() {
+    proxyGroups.forEach(function (g) {
+      if (g.proxies.some(function (p) { return p.isConnected; })) layoutProxies(g);
+      else proxyGroups.delete(g); // its widget was replaced
+    });
+    paintProxyRanges();
+  }
+  var relayoutQueued = false;
+  function queueRelayout() {
+    if (relayoutQueued) return;
+    relayoutQueued = true;
+    requestAnimationFrame(function () { relayoutQueued = false; relayoutAll(); });
+  }
+  window.addEventListener("resize", queueRelayout);
+  // Scrolling inside a code block or chart moves the text but not the proxies
+  document.addEventListener("scroll", function (e) {
+    var inside = false;
+    proxyGroups.forEach(function (g) { if (!inside && e.target.nodeType === 1 && g.host.contains(e.target)) inside = true; });
+    if (inside) queueRelayout();
+  }, true);
+
+  function watchHost(host) {
+    if (watchedHosts.has(host)) return;
+    watchedHosts.add(host);
+    // A proxy removed like any span (dismiss, delete): stop painting its text
+    new MutationObserver(function () {
+      proxyGroups.forEach(function (g) {
+        if (g.host === host && !g.proxies.some(function (p) { return p.isConnected; })) proxyGroups.delete(g);
+      });
+      paintProxyRanges();
+    }).observe(host, { childList: true });
+    if (window.ResizeObserver) new ResizeObserver(queueRelayout).observe(host);
+  }
+
+  function makeProxies(range, zone) {
+    var host = zone.closest(JR.site.noWrapHostSelector) || zone.parentElement;
+    var g = { range: range.cloneRange(), zone: zone, host: host, text: range.toString(), proxies: [] };
+    lineRects(range).forEach(function () {
+      var p = document.createElement("span");
+      p.className = "jr-source-highlight jr-hl-proxy";
+      p._jrProxyGroup = g;
+      g.proxies.push(p);
+    });
+    if (!g.proxies.length) return [];
+    host.classList.add("jr-proxy-host");
+    g.proxies.forEach(function (p) { host.appendChild(p); });
+    proxyGroups.add(g);
+    watchHost(host);
+    layoutProxies(g);
+    paintProxyRanges();
+    return g.proxies;
+  }
+
+  /** The part of range inside zone. */
+  function clipTo(range, zone) {
+    var r = document.createRange();
+    r.selectNodeContents(zone);
+    if (range.compareBoundaryPoints(Range.START_TO_START, r) > 0) r.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, r) < 0) r.setEnd(range.endContainer, range.endOffset);
+    return r;
+  }
+
+  /** A highlight span's text as a Range (a proxy's: the text it stands over). */
+  JR.spanRange = function (span) {
+    if (span._jrProxyGroup) return span._jrProxyGroup.range.cloneRange();
+    var r = document.createRange();
+    r.selectNodeContents(span);
+    return r;
+  };
+
+  /** First text node of a highlight span (a proxy's: of the text it stands over). */
+  JR.spanTextNode = function (span) {
+    if (!span._jrProxyGroup) return span.firstChild;
+    var r = span._jrProxyGroup.range, n = r.startContainer;
+    return n.nodeType === Node.TEXT_NODE ? n : (n.childNodes[r.startOffset] || n);
+  };
+
+  /** Spans in a range plus proxies for its parts inside no-span zones, in text order. */
+  function highlightWithZones(range, zones) {
+    var out = [];
+    zones.forEach(function (z) { out = out.concat(makeProxies(clipTo(range, z), z)); });
+    out = out.concat(wrapRange(range, true));
+    return out.sort(function (a, b) {
+      var na = JR.spanTextNode(a) || a, nb = JR.spanTextNode(b) || b;
+      return na === nb ? 0 : (na.compareDocumentPosition(nb) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    });
+  }
+
+
+  /** No-span zones (SVG text, CodeMirror) the range has text in. */
+  function zonesIn(range) {
+    var zones = [], root = range.commonAncestorContainer, z = zoneOf(root);
+    if (z) return [z];
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = walker.nextNode())) {
+      if (!range.intersectsNode(n) || !(z = zoneOf(n))) continue;
+      if (zones.indexOf(z) === -1) zones.push(z);
+    }
+    return zones;
+  }
 
   /**
-   * Wrap the text nodes within a range in <span class="jr-source-highlight">.
+   * Highlight a range: its text nodes wrapped in <span class="jr-source-highlight">,
+   * and proxies over its text in SVG / CodeMirror (see above).
    * Returns an array of all wrapper spans created.
    */
   JR.highlightRange = function (range) {
+    if (!range || range.collapsed) {
+      console.warn("[JR] highlightRange: range is", range ? "collapsed" : "null");
+      return [];
+    }
+    var zones = zonesIn(range);
+    return zones.length ? highlightWithZones(range, zones) : wrapRange(range, false);
+  };
+
+  /** Wrap a range's text nodes in spans (skipZones: leave text in no-span zones alone). */
+  function wrapRange(range, skipZones) {
     var wrappers = [];
     try {
-      if (!range || range.collapsed) {
-        console.warn("[JR] highlightRange: range is", range ? "collapsed" : "null");
-        return wrappers;
-      }
       var startNode = range.startContainer;
       var endNode = range.endContainer;
       var commonAncestor = range.commonAncestorContainer;
@@ -25,6 +183,7 @@
 
       // Single text node
       if (startNode === endNode && startNode.nodeType === Node.TEXT_NODE) {
+        if (skipZones && zoneOf(startNode)) return wrappers;
         var so = Math.min(startOffset, startNode.length);
         var eo = Math.min(endOffset, startNode.length);
         if (so >= eo) return wrappers;
@@ -48,7 +207,7 @@
       var node;
       var displayCache = new Map(); // cache getComputedStyle results per element
       while ((node = walker.nextNode())) {
-        if (range.intersectsNode(node) && !JR.isHiddenMath(node)) {
+        if (range.intersectsNode(node) && !JR.isHiddenMath(node) && !(skipZones && zoneOf(node))) {
           // Skip whitespace-only text nodes between block elements
           // (they're layout-invisible; wrapping them in spans disrupts spacing)
           if (/^\s*$/.test(node.nodeValue)) {
@@ -149,7 +308,7 @@
       return [];
     }
     return wrappers;
-  };
+  }
 
   /**
    * Remove all source highlight spans and restore original DOM.
@@ -182,9 +341,11 @@
     if (st.activeSourceHighlights.length === 0) return;
     var sel = window.getSelection();
     sel.removeAllRanges();
+    var first = JR.spanRange(st.activeSourceHighlights[0]);
+    var last = JR.spanRange(st.activeSourceHighlights[st.activeSourceHighlights.length - 1]);
     var range = document.createRange();
-    range.setStartBefore(st.activeSourceHighlights[0]);
-    range.setEndAfter(st.activeSourceHighlights[st.activeSourceHighlights.length - 1]);
+    range.setStart(first.startContainer, first.startOffset);
+    range.setEnd(last.endContainer, last.endOffset);
     sel.addRange(range);
   };
 

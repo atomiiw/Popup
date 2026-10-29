@@ -279,9 +279,8 @@
     var hlId = entry.spans[0].getAttribute("data-jr-highlight-id");
     for (var i = 0; i < entry.spans.length; i++) {
       var span = entry.spans[i];
-      var range = document.createRange();
-      range.selectNodeContents(span);
-      var rRects = range.getClientRects();
+      // A proxy (chart / code text) stands over one line of its text: its own box is that line.
+      var rRects = span._jrProxyGroup ? [span.getBoundingClientRect()] : JR.spanRange(span).getClientRects();
       // Inside a formula, pieces sit at different heights (fractions, sub/superscripts):
       // put them all on the bottom of their formula line so they share one underline.
       var mathLine = span.closest(JR.site.mathSelector) && span.closest(JR.site.mathLineSelector);

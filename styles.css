@@ -328,6 +328,22 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   position: relative;
 }
 
+/* Chart / code text: painted by the Highlight API; a transparent proxy over each line
+   takes clicks, hover and the underline (src/highlight.js). */
+::highlight(jr-mark) {
+  background-color: var(--jr-mark-bg);
+  color: var(--jr-mark-text);
+}
+.jr-proxy-host { position: relative; }
+.jr-source-highlight.jr-hl-proxy {
+  position: absolute;
+  display: block;
+  left: var(--jr-proxy-x); top: var(--jr-proxy-y);
+  width: var(--jr-proxy-w); height: var(--jr-proxy-h);
+  background: transparent;
+  z-index: 2;
+}
+
 /* ChatGPT's \boxed{} formulas draw their frame as a layer over the text, so
    a drag selects nothing: let the mouse reach the characters under the frame. */
 .katex .fbox { pointer-events: none; }

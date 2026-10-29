@@ -3,7 +3,7 @@
      Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
           --allow-file-access-from-files --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
      or open it in Chrome and read the page. -->
-<html><head><meta charset="utf-8"><title>dom-test</title></head><body>
+<html><head><meta charset="utf-8"><title>dom-test</title><link rel="stylesheet" href="../styles.css"></head><body>
 <div id="answer"><p>Read <b>the cache</b> first. Later, read the cache again; the cache wins.</p></div>
 <div id="dmath"><p>So the voltage is <span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><mrow><mn>0.5</mn></mrow><annotation encoding="application/x-tex">V = 0.5(1-\frac{1}{4})
 = 0.375V</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base">V=0.5(1−41)=0.375V</span></span></span></span> at the junction.</p></div>
@@ -212,6 +212,66 @@ JR.renderSentenceContext(qc, "    print(path, response.http_version,\n          
 var qcCode = qc.querySelector(".jr-popup-context-code"), qcMark = qc.querySelector(".jr-popup-mark");
 check("R3 quoted code renders as one code block with the selection marked",
   qc.querySelectorAll(".jr-popup-context-code").length === 1 && qcCode.textContent.indexOf("    print") === 0 && !!qcMark && qcMark.textContent === "response.http_", qc.innerHTML);
+
+// R3/R4: no spans inside SVG charts or CodeMirror; proxies over the text instead.
+// Structure from collab/evidence/formats/r4.html (Recharts) and r3.html (CodeMirror).
+var ch = document.createElement("div");
+ch.setAttribute("data-dil-message-id", "");
+ch.innerHTML = '<p>Window size over time.</p><div data-client-defined-widget="visualization"><div class="recharts-wrapper">' +
+  '<svg width="300" height="60"><g class="recharts-xAxis-tick-labels">' +
+  '<text x="20" y="40"><tspan x="20">1</tspan></text><text x="60" y="40"><tspan x="60">2</tspan></text>' +
+  '<text x="100" y="40"><tspan x="100">3</tspan></text><text x="140" y="40"><tspan x="140">4</tspan></text></g></svg></div></div>';
+document.body.appendChild(ch);
+var svgHTML0 = ch.querySelector("svg").outerHTML;
+var tsp = ch.querySelectorAll("tspan");
+var chr = document.createRange(); chr.setStart(tsp[1].firstChild, 0); chr.setEnd(tsp[3].firstChild, 1);
+var chw = JR.highlightRange(chr);
+check("R4 chart: nothing inserted into the SVG", ch.querySelector("svg").outerHTML === svgHTML0, ch.querySelector("svg").outerHTML);
+check("R4 chart: a proxy stands over the selected text", chw.length === 1 && chw[0].classList.contains("jr-hl-proxy") && chw[0].parentElement.matches("[data-client-defined-widget]"), chw.length);
+var chRect = JR.getHighlightRect(chw);
+var selRect = chr.getBoundingClientRect();
+check("R4 chart: popup anchor is where the text is", Math.abs(chRect.left - selRect.left) < 2 && Math.abs(chRect.top - selRect.top) < 2 && chRect.width > 0,
+  JSON.stringify([chRect.left, chRect.top, chRect.width, selRect.left, selRect.top]));
+check("R4 chart: text painted by the Highlight API", !!(CSS.highlights && CSS.highlights.get("jr-mark") && CSS.highlights.get("jr-mark").size === 1));
+check("R4 chart: proxy knows its text", JR.spanTextNode(chw[0]) === tsp[1].firstChild && JR.spanRange(chw[0]).toString() === chr.toString(), JR.spanRange(chw[0]).toString());
+// From the paragraph above into the chart: a span for the paragraph part, a proxy for the chart part.
+var mix = document.createRange(); mix.setStart(ch.querySelector("p").firstChild, 7); mix.setEnd(tsp[1].firstChild, 1);
+var mixw = JR.highlightRange(mix);
+check("R4 text into chart: span then proxy", mixw.length === 2 && !mixw[0].classList.contains("jr-hl-proxy") && mixw[0].textContent === "size over time." && mixw[1].classList.contains("jr-hl-proxy"),
+  mixw.map(function (w) { return w.className + ":" + w.textContent; }).join("|"));
+check("R4 text into chart: SVG still untouched", ch.querySelector("svg").outerHTML === svgHTML0);
+ch.remove();
+
+// R4 quote: chart title from the widget header; the screen-reader data table never enters a quote.
+var cq = document.createElement("div");
+cq.setAttribute("data-dil-message-id", "");
+cq.innerHTML = '<p>Sales grew every year.</p><div data-client-defined-widget="visualization"><section aria-labelledby="t1"><div><div id="t1">Monthly sales 2022-2024</div><p>Unit: pieces</p></div>' +
+  '<div class="recharts-wrapper"><svg width="200" height="40"><text x="10" y="30"><tspan>Jan</tspan></text><text x="60" y="30"><tspan>Feb</tspan></text></svg></div>' +
+  '<ul class="sr-only"><li>Jan: 2022 120, 2023 160</li><li>Feb: 2022 135, 2023 175</li></ul></section></div><p>Next part.</p>';
+document.body.appendChild(cq);
+var cqt = cq.querySelectorAll("tspan");
+var cqr = document.createRange(); cqr.setStart(cqt[0].firstChild, 0); cqr.setEnd(cqt[1].firstChild, 3);
+var cqTypes = [];
+var cqSent = JR.extractSentenceInContainer(cqr, cqTypes, cq);
+check("R4 chart quote names the chart from its title", cqSent === "Chart: Monthly sales 2022-2024 (Unit: pieces)\nJan Feb", JSON.stringify(cqSent));
+var cqx = document.createRange(); cqx.setStart(cq.querySelector("p").firstChild, 6); cqx.setEnd(cq.querySelectorAll("p")[2].firstChild, 4);
+var cqxSent = JR.extractSentenceInContainer(cqx, [], cq);
+check("R4 screen-reader data table stays out of quotes", cqxSent && cqxSent.indexOf("2022 120") === -1, JSON.stringify(cqxSent));
+check("R4 screen-reader text is not searched", JR.findTextRange(cq, "2022 120", 0) === null);
+cq.remove();
+
+var cm = document.createElement("div");
+cm.setAttribute("data-dil-message-id", "");
+cm.innerHTML = '<div data-client-defined-widget="code_block"><div data-code-block="true"><div class="cm-editor"><div class="cm-scroller"><div contenteditable="true" class="cm-content">' +
+  '<div class="cm-line">import httpx</div><div class="cm-line">    print(path, response.http_version)</div></div></div></div></div></div>';
+document.body.appendChild(cm);
+var cmHTML0 = cm.querySelector(".cm-content").innerHTML;
+var cml = cm.querySelectorAll(".cm-line")[1].firstChild;
+var cmr = document.createRange(); cmr.setStart(cml, 16); cmr.setEnd(cml, 30);
+var cmw = JR.highlightRange(cmr);
+check("R3 code: nothing inserted into CodeMirror", cm.querySelector(".cm-content").innerHTML === cmHTML0);
+check("R3 code: a proxy over the selection", cmw.length === 1 && cmw[0].classList.contains("jr-hl-proxy") && JR.spanRange(cmw[0]).toString() === "response.http_", cmw.length && JR.spanRange(cmw[0]).toString());
+cm.remove();
 
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
