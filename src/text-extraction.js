@@ -324,7 +324,7 @@
     if (blockTypes && sentence) {
       var singleExtracted = JR.extractBlockText(startBlock);
       var closestLI = startBlock.closest("li");
-      var isFirstBlk = !closestLI || startBlock === closestLI || closestLI.firstElementChild === startBlock;
+      var isFirstBlk = !closestLI || startBlock === closestLI || closestLI.querySelector(innerBlockSelector()) === startBlock;
       var isFirstSentence = closestLI && isFirstBlk && sentStart === 0;
 
       var blockLeadWS = blockText.length - blockText.trimStart().length;

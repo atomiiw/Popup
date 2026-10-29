@@ -167,6 +167,10 @@ var dlSent = JR.extractSentenceInContainer(selectBetween(dl, "4 items", 2, "4 it
 check("R1 bullets across items: each item once", dlSent === "1:40：4 items here.\n2:10：4 items here.", JSON.stringify(dlSent));
 check("R1 each item starts with its bullet", dlTypes.map(function (t) { return t.tag; }).join() === "LI,LI", JSON.stringify(dlTypes.map(function (t) { return t.tag; })));
 check("R1 bold label kept", !!dlTypes[0] && JSON.stringify(dlTypes[0].bolds) === '[{"start":0,"end":4}]', dlTypes[0] && JSON.stringify(dlTypes[0].bolds));
+// R12: a selection inside ONE item of a current list keeps its bullet too.
+var dl1Types = [];
+var dl1Sent = JR.extractSentenceInContainer(selectBetween(dl, "1:40", 0, "4 items", 7), dl1Types, dl);
+check("R12 one list item: quoted with its bullet", dl1Types.length === 1 && dl1Types[0].tag === "LI", JSON.stringify(dl1Sent) + " " + JSON.stringify(dl1Types));
 dl.remove();
 
 var sc = document.createElement("div");
