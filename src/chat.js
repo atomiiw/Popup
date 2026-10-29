@@ -909,6 +909,7 @@
       var turn = liveResponseTurn();
       if (!turn) return;
       if (JR.site.renderFailed(turn)) return; // ChatGPT's "couldn't load" — the network text is shown instead
+      if (JR.site.hasUndrawnWidget(turn) && net.text.trim()) return; // Popup draws it from the network text (domAnswerUsable)
       // ChatGPT mounts an empty answer placeholder first: keep "Waiting for response…" until text arrives.
       if (!JR.site.assistantText(turn).trim()) return;
       var targetPopup = getStreamTarget();

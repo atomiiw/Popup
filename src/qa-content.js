@@ -777,18 +777,23 @@
       }
       var t = readTag(m.input, end);
       if (!t) return null; // malformed: stays text
-      var html = dilOpen(tag, t.attrs);
+      // A self-closing <box/> or <checkbox/> is closed at once
+      var html = dilOpen(tag, t.attrs) + (t.self && !SELF[tag] ? dilClose(tag, t.attrs) : "");
       if (!t.self && !SELF[tag]) open.push({ tag: tag, attrs: t.attrs });
       return { html: part(html, block), end: t.end };
     }
     var code = new RegExp("<" + (comps.code || "CodeBlock") + "\\b([^>]*)>([\\s\\S]*?)(?:</" + (comps.code || "CodeBlock") + ">|$)", "g");
     var chunks = md.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m); // fenced code stays as it is
     for (var c = 0; c < chunks.length; c += 2) {
-      // Code blocks first, verbatim (their text must not be read as markdown or template)
-      var text = templates(chunks[c].replace(code, function (all, attrSrc, body) {
+      // Inline code is set aside first: a `{#if}` or `<CodeBlock>` written in it is just code (review)
+      var inlineCode = [];
+      var text = chunks[c].replace(/(`+)[\s\S]*?\1/g, function (all) { inlineCode.push(all); return "\u0004" + (inlineCode.length - 1) + "\u0005"; });
+      // Code blocks next, verbatim (their text must not be read as markdown or template)
+      text = templates(text.replace(code, function (all, attrSrc, body) {
         var lang = ((readTag(attrSrc + ">", 0) || { attrs: {} }).attrs.language || "") + "";
+        body = body.replace(/\u0004(\d+)\u0005/g, function (_, k) { return inlineCode[+k]; });
         return part('<pre><code' + (/^[\w+#.-]+$/.test(lang) ? ' class="language-' + lang + '"' : "") + ">" + esc(body.replace(/^\s*\n|\s+$/g, "").replace(/^ /, "")) + "</code></pre>", true);
-      }));
+      })).replace(/\u0004(\d+)\u0005/g, function (_, k) { return inlineCode[+k]; });
       var out = "", last = 0, m, r;
       TAG_RE.lastIndex = 0;
       while ((m = TAG_RE.exec(text))) {

@@ -246,11 +246,12 @@
       return bodies;
     },
 
-    /** True if ChatGPT shows "This response couldn't load" instead of the answer. */
+    /** True if the answer has a chart or map, which a copy of the hidden turn shows blank. */
     hasUndrawnWidget: function (turn) {
       return !!(turn && first("undrawnWidget", turn));
     },
 
+    /** True if ChatGPT shows "This response couldn't load" instead of the answer. */
     renderFailed: function (turn) {
       return !!(turn && first("renderFailed", turn));
     },

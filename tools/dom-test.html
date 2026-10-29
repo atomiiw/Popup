@@ -501,6 +501,18 @@ var lk = md2('Source: <Link url="https://www.iea.org/x" title="IEA \u2014 Sales"
 check("T16: a Link is a link (http/https only; others are their title as text)",
   lk.querySelectorAll("a").length === 1 && lk.querySelector("a").href === "https://www.iea.org/x" && lk.querySelector("a").textContent === "IEA \u2014 Sales" &&
   lk.textContent.indexOf("bad") !== -1 && lk.textContent.indexOf("Link") === -1, lk.innerHTML);
+var ic = md2('In Svelte write `{#if user}` … `{/if}`, with {@body const n = 3} `let s = {n}`.\n\nIn Docusaurus use `<CodeBlock>` for code.\n\nMore **bold** here.\n\n- item');
+check("review: inline code is never read as template or CodeBlock",
+  ic.querySelectorAll("code")[0].textContent === "{#if user}" && ic.querySelectorAll("code")[1].textContent === "{/if}" &&
+  ic.querySelectorAll("code")[2].textContent === "let s = {n}" && ic.querySelectorAll("code")[3].textContent === "<CodeBlock>" &&
+  !ic.querySelector("pre") && !!ic.querySelector("strong") && !!ic.querySelector("li"), ic.innerHTML);
+var sc = md2('Items: <checkbox checked={true}/> Buy milk\n\n<box border/>\n\nNext paragraph');
+check("review: a self-closing <checkbox/> or <box/> is closed at once (the text after it is not inside)",
+  !!sc.querySelector(".jr-dil-check input:checked") && sc.querySelector(".jr-dil-check").textContent === "" &&
+  !sc.querySelector(".jr-dil-box").textContent && Array.prototype.some.call(sc.children, function (c) { return c.tagName === "P" && c.textContent === "Next paragraph"; }), sc.innerHTML);
+var xs = md2('<MapWidgetV2 title="<img src=x onerror=alert(1)>" points={[{"name":"<img src=x onerror=alert(2)>","address":"\\"><b>a</b>","icon":"<i>"}]}/>\n\n<Chart content={{"chartType":"line","meta":{"title":"<img src=x onerror=alert(3)>"},"xKey":"k","series":[{"dataKey":"v","label":"<b>L</b>"}],"data":[{"k":"<b>x</b>","v":1}]}}/>\n\n<Entity value="<img src=x onerror=alert(4)>"/>');
+check("review: text in maps, charts and entities is escaped", !xs.querySelector("img, b, i") && xs.textContent.indexOf("onerror=alert(2)") !== -1, xs.innerHTML);
+
 var tl2 = md2('{@body const x = compute()} {#each x as a}<checkbox checked={a.on}>{a.name}</checkbox>{/each}\n\nPlain {braces} stay.');
 check("T15: a template Popup can't read is hidden; braces in a normal answer stay",
   tl2.textContent.indexOf("Plain {braces} stay.") !== -1 && !/@body|#each|compute|checkbox/.test(tl2.textContent), tl2.innerHTML);
