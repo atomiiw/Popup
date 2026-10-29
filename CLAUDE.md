@@ -23,8 +23,10 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 - `src/site-adapter.js` — The only place with ChatGPT DOM selectors; `JR.diagnose()` self-check
 - `src/qa-content.js` — Message format, hiding Q&A turns, reading answers back from ChatGPT
 - `src/scroll-guard.js`, `src/net-tap.js` — MAIN-world helpers (block ChatGPT's auto-scroll during a send; read the answer stream)
-- `collab/` — Claude ↔ Codex collaboration (`HANDOFF.md` = current status; `BOARD.md`/`evidence/` are local-only)
-- `icons/` — Extension icons (16, 48, 128px)
+- `src/attachments.js` — Files in popup questions (attachment layer, notes, read-back)
+- `collab/` — Claude ↔ Codex collaboration: **`HANDOFF.md` = current status and how to continue on a new computer; `PROTOCOL.md` = how the user works and how to drive the Codex operator (read both first)**; `briefs/` = example task briefs; `BOARD.md`/`evidence/` are local-only
+- `icons/` — Extension icon (128px)
+- `tools/fixtures/` — Test files for attachment tests
 - **Permissions:** `storage` (highlight keys); host access to chatgpt.com / chat.openai.com
 - **Supported site:** ChatGPT only (since the 2026-10 redesign rewrite; other sites were never implemented)
 

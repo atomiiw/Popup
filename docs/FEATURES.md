@@ -2,6 +2,18 @@
 
 ## Current
 
+### Attachments in popups (1.2.11)
+- Paste or drop any file into a popup question; it shows in its own layer between the quote and the question as 45 px squares (images as thumbnails, other files as an icon with the name shortened in the middle, extension kept)
+- Sending hands the files to ChatGPT's own composer (synthetic paste), waits for the uploads, then sends the hidden Popup question with them; files ChatGPT refuses are listed in a one-line grey note (this session only) and the rest is sent
+- Answered popups show the attachments of each version, also after a reload (read from the conversation data); edits start with no attachments
+- Popup does not send while the user's own files wait in ChatGPT's input box (one-line note instead)
+
+### ChatGPT's rich answer formats (1.2.10–1.2.11)
+- Highlights work on step cards, CodeMirror code blocks (whole touched lines, monospace quote), SVG charts (axis labels; quote "Chart: <title>"), tables, maps (marker text skipped); highlighted text is always white (light) / dark (dark mode)
+- Popup answers show ChatGPT's rich formats: fresh answers are a copy of ChatGPT's own rendering; after a reload Popup draws them itself — cards and grids, title rows, badges, icons as symbols, code blocks with Copy, line/bar charts from the answer's data (other chart kinds as a table), maps as a place list with map links, checklists, links; source markers and image placeholders are hidden; answers with a chart or map are always drawn by Popup (ChatGPT's copy would be blank)
+- Popups can be dragged from 280 to 720 px wide: wide tables scroll sideways, card grids drop columns when narrow
+- Known limits: formulas after a reload show as TeX; Mermaid diagrams show as code
+
 ### Highlight-to-Popup (Step 1 — ChatGPT only)
 - Select any text inside a ChatGPT AI response to open a floating popup
 - Popup displays the highlighted text in a blockquote and provides an inline contenteditable input for follow-up questions with a send arrow (hover to pick Brief/Elaborate)
