@@ -711,6 +711,7 @@
       var question = readQuestion(questionText);
       if (!question) return;
       if (extensionWasUpdated(popup)) return;
+      if (JR.blockedByComposerAttachments(questionDiv)) return; // text and attachments stay
 
       st.responseMode = mode;
 
@@ -1191,6 +1192,7 @@
 
   function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode, files) {
     files = files || [];
+    if (JR.blockedByComposerAttachments(popup.querySelector(".jr-popup-question"))) return false; // still editing
     entry._editFiles = files; // the new version's files (chat.js stores their count with it)
     entry._editFailed = null;
     if (extensionWasUpdated(popup)) return;
@@ -1322,7 +1324,7 @@
           if (!editChanged(current)) return;
           editing = false; // prevent blur→exitEditMode from reverting text
           st.responseMode = key;
-          submitEdit(popup, id, entry, contentContainer, current, key, editAttach.files());
+          if (submitEdit(popup, id, entry, contentContainer, current, key, editAttach.files()) === false) editing = true; // blocked: keep editing
         });
       }
       rebuildEditDropdown();
@@ -1447,7 +1449,7 @@
             var current = readQuestion(questionText);
             if (editChanged(current)) {
               editing = false; // prevent blur→exitEditMode from reverting text
-              submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files());
+              if (submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files()) === false) editing = true; // blocked: keep editing
             }
           }
         }
@@ -1463,7 +1465,7 @@
         var current = readQuestion(questionText);
         if (!editChanged(current)) return;
         editing = false; // prevent blur→exitEditMode from reverting text
-        submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files());
+        if (submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files()) === false) editing = true; // blocked: keep editing
       });
 
       upper.appendChild(questionDiv);
@@ -1538,6 +1540,7 @@
       retryBtn.addEventListener("click", function (ev) {
         ev.stopPropagation();
         if (extensionWasUpdated(popup)) return;
+        if (JR.blockedByComposerAttachments(timeoutDiv)) return;
         var retryItemId = activeItemId;
         var retryQuestion = activeItem ? activeItem.question : entry.question;
         var text = entry.text;

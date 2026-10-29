@@ -67,6 +67,21 @@
     questionDiv.appendChild(note);
   };
 
+  /**
+   * The user's own files wait in ChatGPT's input box: a Popup message would carry
+   * them along, hidden. Say so under questionDiv and return true (then don't send).
+   */
+  JR.blockedByComposerAttachments = function (questionDiv) {
+    var old = questionDiv && questionDiv.querySelector(".jr-attach-note--blocked");
+    if (old) old.remove();
+    if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
+    var note = document.createElement("div");
+    note.className = "jr-attach-note jr-attach-note--blocked";
+    note.textContent = "ChatGPT\u2019s input box still has your own attachments. Send or remove them there first, then send again.";
+    if (questionDiv) questionDiv.appendChild(note);
+    return true;
+  };
+
   /** Free a strip's image previews (object URLs keep the image data alive). */
   JR.releaseStrip = function (strip) {
     if (!strip || !strip.children) return;

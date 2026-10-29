@@ -306,6 +306,16 @@
       return box ? Array.prototype.slice.call(box.querySelectorAll("button[aria-label]")) : [];
     },
 
+    /**
+     * True when the composer holds attachment cards (the user's own, before Popup
+     * pastes anything): each card has one × whose icon is codex-icon-xmark (T7,
+     * collab/evidence/s2/t7/composer-pdf.html); no other composer button uses it.
+     */
+    composerHasAttachments: function (composer) {
+      var box = JR.site.composerBox(composer);
+      return !!(box && box.querySelector('button use[href*="xmark"]'));
+    },
+
     /** True while some card in the composer is still uploading. */
     attachmentsUploading: function (composer) {
       var box = JR.site.composerBox(composer);

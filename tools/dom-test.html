@@ -366,7 +366,8 @@ var realQa = JR.qa;
 JR.qa = {
   attachmentsOf: function () { return Promise.resolve([{ id: "file-1", name: "notes.pdf", mime: "application/pdf" },
     { id: "file-2", name: "shot.png", mime: "image/png" }, { id: "file-3", name: "gone.png", mime: "image/png" }]); },
-  fileUrl: function (id) { return Promise.resolve(id === "file-2" ? "data:image/png;base64,iVBORw0KGgo=" : null); },
+  fileUrl: function (id) { return Promise.resolve(id === "file-2" ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" : null); },
+  forgetFileUrl: function () {},
 };
 JR.showSentAttachments(sq, { turnKeys: ["turn-1"], attachments: 3 });
 check("Step 2c: switching version replaces the strip", sq.parentNode.querySelectorAll(".jr-popup-attach").length === 1);
@@ -455,6 +456,14 @@ asyncChecks.push(new Promise(function (resolve) {
     });
   });
 }));
+// The user's own attachment waits in ChatGPT's box: Popup must not send (it would go out hidden).
+var ownCard = document.createElement("div");
+ownCard.innerHTML = '<button type="button" aria-label="Remove mine.pdf"><svg><use href="/cdn/assets/icons.svg#codex-icon-xmark-md-light-12"></use></svg></button>';
+fakeForm.insertBefore(ownCard, fakeComposer);
+check("Step 2: Popup sees the user's own attachment in ChatGPT's box", JR.site.composerHasAttachments(fakeComposer) === true);
+ownCard.remove();
+check("Step 2: ...and an empty box", JR.site.composerHasAttachments(fakeComposer) === false);
+
 // While one popup's files upload, a second popup's send waits in the queue.
 JR.state.attaching = true;
 var queuedOpts = { message: "second", waitOpts: {} };
