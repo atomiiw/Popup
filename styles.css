@@ -1096,3 +1096,41 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
 
 /* ChatGPT's composer while Popup hands it files: hidden so the cards never flash */
 [data-jr-attaching] { opacity: 0 !important; }
+
+/* ==========================================================================
+   ChatGPT rich-answer components in a popup answer (R13, qa-content.js):
+   a simple, readable version of what ChatGPT draws in the page
+   ========================================================================== */
+
+.jr-popup-response .jr-dil { margin: 8px 0; }
+.jr-popup-response .jr-dil > :first-child { margin-top: 0; }
+.jr-popup-response .jr-dil > :last-child { margin-bottom: 0; }
+.jr-popup-response .jr-dil-box, .jr-popup-response .jr-dil-card, .jr-popup-response .jr-dil-callout {
+  display: flex; flex-direction: column; gap: 6px; border-radius: var(--jr-radius);
+}
+.jr-popup-response .jr-dil-border, .jr-popup-response .jr-dil-card, .jr-popup-response .jr-dil-callout {
+  border: 1px solid var(--jr-border); padding: 10px 12px;
+}
+.jr-popup-response .jr-dil-bg { background: var(--jr-highlight-bg); padding: 8px 12px; }
+.jr-popup-response .jr-dil-center { align-items: center; text-align: center; }
+.jr-popup-response .jr-dil-full { align-self: stretch; }
+.jr-popup-response .jr-dil-row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+.jr-popup-response .jr-dil-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.jr-popup-response .jr-dil-caption { font-size: 0.85em; color: var(--jr-text-muted); text-align: center; }
+.jr-popup-response .jr-dil-icon { color: var(--jr-text-muted); line-height: 1; }
+.jr-popup-response .jr-dil-badge {
+  display: inline-block; padding: 1px 8px; border-radius: var(--jr-radius-pill);
+  background: var(--jr-highlight-bg); font-size: 0.8em; color: var(--jr-text-muted);
+}
+
+.jr-popup-response .jr-dil-cols-1 { grid-template-columns: 1fr; }
+.jr-popup-response .jr-dil-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.jr-popup-response .jr-dil-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.jr-popup-response .jr-dil-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.jr-popup-response .jr-dil-grid-item { min-width: 0; margin: 0; }
+.jr-popup-response .jr-dil-between { justify-content: space-between; }
+.jr-popup-response .jr-dil-title { font-weight: 600; font-size: 1.05em; margin: 0; }
+.jr-popup-response .jr-dil-small { font-size: 0.85em; }
+.jr-popup-response .jr-dil-muted { color: var(--jr-text-muted); }
+.jr-popup-response .jr-dil-spacer { height: 4px; margin: 0; }
+.jr-popup-response .jr-dil hr { margin: 4px 0; }

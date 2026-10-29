@@ -523,7 +523,102 @@
     return t.replace(/\u0000(\d+)\u0000/g, function (_, i) { return "<code>" + codes[+i] + "</code>"; });
   }
 
+  // --- Components in ChatGPT's rich answers (R13) ---------------------------
+  // Answers in the 2026-10 rich format carry JSX-like component markup with
+  // markdown inside (<box border radius="lg">**DNS**…</box><icon name="arrow-down"/>).
+  // ChatGPT draws it in the page; Popup's hidden Q&As never reach its renderer,
+  // so Popup draws a simple version: boxes, rows, captions, badges, icons as
+  // symbols. Attribute values only choose classes; they never reach the page.
+  // Icons with a clear plain symbol; others (lightbulb, server, lock…) are left out
+  var DIL_ICONS = { "arrow-down": "\u2193", "arrow-up": "\u2191", "arrow-right": "\u2192", "arrow-left": "\u2190",
+    check: "\u2713", "check-circle": "\u2713", x: "\u2715", close: "\u2715", "x-circle": "\u2715", plus: "+", minus: "\u2212",
+    star: "\u2605", info: "\u24d8", "alert-circle": "!", warning: "\u26a0", "alert-triangle": "\u26a0", alert: "\u26a0", dot: "\u2022" };
+  // An attribute value: "…", or {…} with one level of nested braces (border={{size:1,color:"…"}})
+  var VAL = '(?:"[^"]*"|\\{(?:[^{}]|\\{[^{}]*\\})*\\})';
+  var TAG_RE = new RegExp("(`+)[\\s\\S]*?\\1|<(\\/?)([a-z][a-z-]*)((?:\\s+[a-zA-Z][\\w-]*(?:=" + VAL + ")?)*)\\s*(\\/?)>", "g");
+
+  function dilAttrs(src) {
+    var out = {}, re = new RegExp('([a-zA-Z][\\w-]*)(?:=(?:"([^"]*)"|\\{((?:[^{}]|\\{[^{}]*\\})*)\\}))?', "g"), m;
+    while ((m = re.exec(src || ""))) out[m[1]] = m[2] != null ? m[2] : (m[3] != null ? m[3] : true);
+    return out;
+  }
+
+  function dilOpen(tag, a) {
+    if (tag === "icon") return DIL_ICONS[a.name] ? '<span class="jr-dil-icon" aria-hidden="true">' + esc(DIL_ICONS[a.name]) + "</span>" : "";
+    if (tag === "divider") return "<hr>";
+    if (tag === "spacer") return '<div class="jr-dil-spacer"></div>';
+    if (tag === "badge") return '<span class="jr-dil-badge">'; // one grey look: the style guide has no badge colours
+    if (tag === "text") {
+      var tc = (a.size === "xs" || a.size === "sm" ? "jr-dil-small" : "") + (a.color === "secondary" ? " jr-dil-muted" : "");
+      return a.weight === "bold" || a.weight === "semibold" ? "<strong>" : '<span class="' + tc.trim() + '">';
+    }
+    var cls = ["jr-dil", "jr-dil-" + tag];
+    if (tag === "grid") cls.push("jr-dil-cols-" + Math.min(4, Math.max(1, parseInt(a.columns, 10) || 2)));
+    if (a.justify === "between") cls.push("jr-dil-between");
+    if (a.border) cls.push("jr-dil-border");
+    if (a.background) cls.push("jr-dil-bg");
+    if (a.align === "center") cls.push("jr-dil-center");
+    if (a.direction === "row") cls.push("jr-dil-row");
+    if (a.width === "100%") cls.push("jr-dil-full");
+    return '<div class="' + cls.join(" ") + '">';
+  }
+  function dilClose(tag, attrs) {
+    if (tag === "badge") return "</span>";
+    if (tag === "text") return attrs && (attrs.weight === "bold" || attrs.weight === "semibold") ? "</strong>" : "</span>";
+    return "</div>";
+  }
+
+  /** Swap the component tags (not those in code) for placeholders; returns { md, parts }. */
+  function componentize(md) {
+    var comps = JR.site.answerComponents || { block: [], inline: [] };
+    var parts = [], open = [];
+    // While streaming, the text can end inside a tag ("…<box border radius=\"x"): hide it until it is complete
+    var names = comps.block.concat(comps.inline).join("|");
+    if (names) md = md.replace(new RegExp("<\\/?(?:" + names + ")(?=[\\s/]|$)[^<>]*$"), "");
+    // Inside a component ChatGPT shows every line as its own line (markdown would join them);
+    // a line that starts a list item or a table row is left alone
+    function lines(text) { return open.length ? text.replace(/([^\n])\n(?!\s*(?:[-*+]\s|\d+[.)]\s|\|))/g, "$1\n\n") : text; }
+    function swap(all, tick, slash, tag, attrSrc, self) {
+      if (tick) return all; // inline code
+      var block = comps.block.indexOf(tag) !== -1;
+      if (!block && comps.inline.indexOf(tag) === -1) return all;
+      var html;
+      if (slash) {
+        var top = open.length ? open[open.length - 1] : null;
+        if (!top || top.tag !== tag) return ""; // a closing tag with no matching opening one
+        open.pop();
+        html = dilClose(tag, top.attrs);
+      } else {
+        var a = dilAttrs(attrSrc);
+        html = dilOpen(tag, a);
+        if (!self && tag !== "icon" && tag !== "divider" && tag !== "spacer") open.push({ tag: tag, attrs: a });
+      }
+      parts.push(html);
+      var ph = "\u0002" + (parts.length - 1) + "\u0003";
+      return block ? "\n\n" + ph + "\n\n" : ph;
+    }
+    var chunks = md.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m); // fenced code stays as it is
+    for (var c = 0; c < chunks.length; c += 2) {
+      var text = chunks[c], out = "", last = 0, m;
+      TAG_RE.lastIndex = 0;
+      while ((m = TAG_RE.exec(text))) {
+        out += lines(text.slice(last, m.index)) + swap.apply(null, m);
+        last = TAG_RE.lastIndex;
+      }
+      chunks[c] = out + lines(text.slice(last));
+    }
+    return { md: chunks.join(""), parts: parts };
+  }
+
   JR.renderMarkdown = function (md) {
+    var c = componentize((md || "").replace(/\r/g, ""));
+    if (!c.parts.length) return renderMarkdownText(c.md);
+    return renderMarkdownText(c.md)
+      .replace(/<p>\s*((?:\u0002\d+\u0003\s*)+)<\/p>/g, "$1") // a component alone is not a paragraph
+      .replace(/\u0002(\d+)\u0003/g, function (_, i) { return c.parts[+i]; });
+  };
+
+  function renderMarkdownText(md) {
     var lines = (md || "").replace(/\r/g, "").split("\n");
     var out = [];
     var para = [];

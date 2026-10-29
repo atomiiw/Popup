@@ -422,6 +422,40 @@ JR.showSentAttachments(aq, { _failedFiles: [] });
 check("Step 2: showing a version again clears its old note", !noteIn(aq) && !JR.stripAbove(aq));
 aq.remove();
 
+// R13: answers read back from ChatGPT's data carry its component markup (collab/evidence/r13/sample-1.txt):
+// Popup draws the components instead of showing the tags as text.
+var dil = JR.renderMarkdown('Before:\n\n<box border radius="lg" padding={3} gap={2} align="center"> <box background="surface-secondary" radius="md" padding={3} width="100%" align="center"> **DNS**：查询服务器 IP 地址 </box> <icon name="arrow-down" color="secondary"/> <box background="surface-secondary" radius="md"> TCP：与服务器建立连接 </box> </box> <caption>简化的流程。</caption>\n\nAfter `<box>` in code.\n\n```\n<box padding={1}>kept</box>\n```');
+var dd = document.createElement("div"); dd.innerHTML = dil;
+check("R13: no component tag is shown as text", !/<\/?(box|icon|caption)\b/.test(dd.textContent.replace("<box>", "").replace("<box padding={1}>kept</box>", "")), dd.textContent);
+check("R13: boxes are drawn (outer with a border, inner with a background), nested", !!dd.querySelector(".jr-dil-box.jr-dil-border .jr-dil-box.jr-dil-bg"), dil);
+check("R13: markdown inside a box still works", !!dd.querySelector(".jr-dil-box strong") && dd.querySelector(".jr-dil-box strong").textContent === "DNS");
+check("R13: an arrow icon becomes an arrow", !!dd.querySelector(".jr-dil-icon") && dd.querySelector(".jr-dil-icon").textContent === "\u2193");
+check("R13: a caption is a caption", !!dd.querySelector(".jr-dil-caption") && dd.querySelector(".jr-dil-caption").textContent.indexOf("简化的流程") !== -1);
+check("R13: tags inside code stay code", dd.querySelector("code").textContent === "<box>" && dd.querySelector("pre code").textContent.indexOf("<box padding={1}>kept</box>") !== -1);
+// The richer components of F6 (collab/evidence/r13/sample-3): two-column cards with a title row and badges.
+var cards = JR.renderMarkdown('<grid columns={2} gap={3}> <grid-item> <box border={{size:1,color:"rgba(230,155,45,0.35)"}} radius="xl" padding={3} gap={3} height="100%"> <row align="center" justify="between"> <title size="xl" color="default">TCP</title> <badge color="info">可靠传输</badge> </row> <text color="secondary" size="xs">Transmission Control Protocol</text> <divider color="subtle"/> <box gap={1}> <icon name="check-circle" color="success" inline/> 核心特点\n\n- 面向连接\n- 可靠传输\n </box> <spacer/> </box> </grid-item> <grid-item> <box border radius="xl"> <title size="xl">UDP</title> </box> </grid-item> </grid>');
+var cd = document.createElement("div"); cd.innerHTML = cards;
+check("R13: no tag of the richer components is left as text (border={{…}} included)", !/<\/?(grid|grid-item|box|row|title|badge|text|divider|icon|spacer)\b/.test(cd.textContent), cd.textContent);
+check("R13: a two-column grid of bordered cards", !!cd.querySelector(".jr-dil-grid.jr-dil-cols-2 > .jr-dil-grid-item > .jr-dil-box.jr-dil-border"), cards);
+check("R13: a title row with a badge, spread to both ends", !!cd.querySelector(".jr-dil-row.jr-dil-between .jr-dil-title") && !!cd.querySelector(".jr-dil-row .jr-dil-badge"));
+check("R13: small secondary text, a divider, a check icon and a markdown list inside a box",
+  !!cd.querySelector(".jr-dil-small") && !!cd.querySelector(".jr-dil hr") && cd.querySelector(".jr-dil-icon").textContent === "\u2713" && cd.querySelectorAll(".jr-dil-box li").length === 2);
+
+// Inside a component every line is its own line (sample-3: the points of a card were run together)
+var lines = JR.renderMarkdown('<box gap={1}> 核心特点\n面向连接，需要三次握手\n保证字节流按序交付\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n</box>\n\nOutside\nstill one line'), ld = document.createElement("div"); ld.innerHTML = lines;
+check("R13: the lines inside a box stay separate lines; lists, tables and text outside are unchanged",
+  ld.querySelectorAll(".jr-dil-box p").length === 3 && ld.querySelectorAll(".jr-dil-box li").length === 2 && !!ld.querySelector(".jr-dil-box table td") &&
+  Array.prototype.some.call(ld.querySelectorAll("p"), function (p) { return p.textContent === "Outside still one line"; }), lines);
+
+// While streaming, a component tag cut off at the end is not shown as text for a moment
+var cut = document.createElement("div"); cut.innerHTML = JR.renderMarkdown('Intro\n\n<box border radius="x');
+var cut2 = document.createElement("div"); cut2.innerHTML = JR.renderMarkdown('a <b and <boxer');
+check("R13: a half-written component tag at the end is hidden; other text is kept",
+  cut.textContent === "Intro" && cut2.textContent === "a <b and <boxer", [cut.textContent, cut2.textContent]);
+
+var evil = JR.renderMarkdown('<box background="x\" onmouseover=alert(1) \"">hi</box>'), ed = document.createElement("div"); ed.innerHTML = evil;
+check("R13: attribute values never reach the page (a malformed tag stays text)", !ed.querySelector("[onmouseover]") && ed.textContent.indexOf("onmouseover=alert(1)") !== -1 && !ed.querySelector("div"), evil);
+
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
 var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,

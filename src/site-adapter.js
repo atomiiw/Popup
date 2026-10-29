@@ -436,6 +436,17 @@
     chartPlotSelector: ".recharts-wrapper",
     noWrapHostSelector: "[data-client-defined-widget]",
 
+    /**
+     * Component tags in the text of ChatGPT's rich answers (2026-10; seen in answers
+     * read back from its data, collab/evidence/r13): <box …>…</box>, <icon …/>,
+     * <caption>…</caption>. Popup draws them itself (qa-content.js) where ChatGPT's
+     * renderer never ran. Tags not listed here stay text.
+     */
+    answerComponents: {
+      block: ["box", "row", "column", "stack", "grid", "grid-item", "card", "caption", "callout", "divider", "title", "spacer"],
+      inline: ["icon", "badge", "text"],
+    },
+
     /** Text that is in the DOM but not on screen (a chart's screen-reader data table). */
     hiddenTextSelector: ".sr-only",
 
