@@ -552,6 +552,7 @@
         hiddenTurns: JR.state.hiddenTurnKeys ? JR.state.hiddenTurnKeys.size : 0,
         cachedQA: JR.qa ? JR.qa.cacheSize() : 0,
         conversationApi: JR.qa ? JR.qa.apiStatus : null,
+        fileUrlStatus: JR.qa ? JR.qa.fileUrlStatus || null : null, // last /backend-api/files/download answer (Step 2c)
         pendingRestore: JR.pendingRestoreCount ? JR.pendingRestoreCount() : 0,
       },
       perf: JR.perf ? JR.perf.snapshot() : null,
