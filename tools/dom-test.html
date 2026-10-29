@@ -227,17 +227,20 @@ var tsp = ch.querySelectorAll("tspan");
 var chr = document.createRange(); chr.setStart(tsp[1].firstChild, 0); chr.setEnd(tsp[3].firstChild, 1);
 var chw = JR.highlightRange(chr);
 check("R4 chart: nothing inserted into the SVG", ch.querySelector("svg").outerHTML === svgHTML0, ch.querySelector("svg").outerHTML);
-check("R4 chart: a proxy stands over the selected text", chw.length === 1 && chw[0].classList.contains("jr-hl-proxy") && chw[0].parentElement.matches("[data-client-defined-widget]"), chw.length);
+check("R4 chart: one painting proxy per selected label, in the widget", chw.length === 3 && chw.every(function (w) { return w.classList.contains("jr-hl-paint") && w.parentElement.matches("[data-client-defined-widget]"); }) &&
+  chw.map(function (w) { return w.getAttribute("data-jr-text"); }).join() === "2,3,4", chw.map(function (w) { return w.className + "=" + w.getAttribute("data-jr-text"); }).join("|"));
+var paintColor = getComputedStyle(chw[0], "::before").color, markText = getComputedStyle(document.documentElement).getPropertyValue("--jr-mark-text").trim();
+check("R4 chart: label text drawn in the mark text colour (white in light mode)", paintColor === "rgb(255, 255, 255)" && markText === "#fff", paintColor + " / " + markText);
 var chRect = JR.getHighlightRect(chw);
 var selRect = chr.getBoundingClientRect();
 check("R4 chart: popup anchor is where the text is", Math.abs(chRect.left - selRect.left) < 2 && Math.abs(chRect.top - selRect.top) < 2 && chRect.width > 0,
   JSON.stringify([chRect.left, chRect.top, chRect.width, selRect.left, selRect.top]));
-check("R4 chart: text painted by the Highlight API", !!(CSS.highlights && CSS.highlights.get("jr-mark") && CSS.highlights.get("jr-mark").size === 1));
+check("R4 chart: SVG text is not left to the Highlight API (it can't recolour it)", !CSS.highlights.get("jr-mark") || CSS.highlights.get("jr-mark").size === 0);
 check("R4 chart: proxy knows its text", JR.spanTextNode(chw[0]) === tsp[1].firstChild && JR.spanRange(chw[0]).toString() === chr.toString(), JR.spanRange(chw[0]).toString());
 // From the paragraph above into the chart: a span for the paragraph part, a proxy for the chart part.
 var mix = document.createRange(); mix.setStart(ch.querySelector("p").firstChild, 7); mix.setEnd(tsp[1].firstChild, 1);
 var mixw = JR.highlightRange(mix);
-check("R4 text into chart: span then proxy", mixw.length === 2 && !mixw[0].classList.contains("jr-hl-proxy") && mixw[0].textContent === "size over time." && mixw[1].classList.contains("jr-hl-proxy"),
+check("R4 text into chart: span then proxies", mixw.length === 3 && !mixw[0].classList.contains("jr-hl-proxy") && mixw[0].textContent === "size over time." && mixw[1].classList.contains("jr-hl-paint") && mixw[2].classList.contains("jr-hl-paint"),
   mixw.map(function (w) { return w.className + ":" + w.textContent; }).join("|"));
 check("R4 text into chart: SVG still untouched", ch.querySelector("svg").outerHTML === svgHTML0);
 ch.remove();

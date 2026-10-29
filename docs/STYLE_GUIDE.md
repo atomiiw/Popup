@@ -28,7 +28,7 @@ Defined on `:root` and overridden for dark mode.
 | `--jr-radius` | `8px` | `8px` | Border radius for cards, popups, dropdowns |
 | `--jr-radius-pill` | `12px` | `12px` | Border radius for pill shapes |
 | `--jr-mark-bg` | `#1944f1` | `#a9bfd8` | The only highlight color — page highlights and quote marks, no hover/open shades (light: white text on blue; dark: dark text on ice blue) |
-| `--jr-mark-text` | `#fff` | `#111821` | Text on a highlight |
+| `--jr-mark-text` | `#fff` | `#111821` | Text on a highlight — always this colour, whatever the text's own colour (grey chart labels, coloured code): white in light mode, dark in dark mode |
 | `--jr-shadow` | `0 2px 8px rgba(0,0,0,0.12), 0 0.5px 4px rgba(0,0,0,0.06)` | `0 2px 8px rgba(0,0,0,0.4), 0 0.5px 4px rgba(0,0,0,0.2)` | Two-layer elevation shadow |
 | `--jr-focus-ring` | `rgba(25,68,241,0.25)` | `rgba(157,183,213,0.35)` | Focus-visible outline glow |
 | `--jr-link` | `#1944f1` | `#9db7d5` | Link color in response text |

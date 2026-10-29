@@ -21,7 +21,7 @@
   function paintProxyRanges() {
     if (!window.CSS || !CSS.highlights) return;
     var h = new Highlight();
-    proxyGroups.forEach(function (g) { h.add(g.range); });
+    proxyGroups.forEach(function (g) { if (!g.paint) h.add(g.range); });
     CSS.highlights.set("jr-mark", h);
   }
 
@@ -40,18 +40,43 @@
     return out;
   }
 
+  // The Highlight API can't recolour SVG text (only its background), and text in a
+  // highlight is always white (dark in dark mode). So in charts each selected label
+  // gets its own proxy that paints the highlight itself: mark background, and the
+  // label's characters drawn by CSS (data-jr-text) in the mark text colour.
+  function svgPieces(range) {
+    var out = [], root = range.commonAncestorContainer, n;
+    var walker = document.createTreeWalker(root.nodeType === Node.TEXT_NODE ? root.parentNode : root, NodeFilter.SHOW_TEXT, null);
+    while ((n = walker.nextNode())) {
+      if (!range.intersectsNode(n)) continue;
+      var r = document.createRange();
+      r.setStart(n, n === range.startContainer ? range.startOffset : 0);
+      r.setEnd(n, n === range.endContainer ? range.endOffset : n.data.length);
+      var b = r.getBoundingClientRect();
+      if (r.toString().trim() && b.width) out.push({ left: b.left, right: b.right, top: b.top, bottom: b.bottom, text: r.toString(), el: n.parentElement });
+    }
+    return out;
+  }
+
+  function proxyBoxes(g) { return g.paint ? svgPieces(g.range) : lineRects(g.range); }
+
   function layoutProxies(g) {
     if (!g.range.startContainer.isConnected) { // the editor or chart rebuilt its text
       var r = JR.findTextRange(g.host, g.text, 0);
       if (r) g.range = r;
     }
-    var box = g.host.getBoundingClientRect(), rects = lineRects(g.range);
+    var box = g.host.getBoundingClientRect(), rects = proxyBoxes(g);
     g.proxies.forEach(function (p, i) {
       var r = rects[i] || { left: box.left, right: box.left, top: box.top, bottom: box.top };
       p.style.setProperty("--jr-proxy-x", (r.left - box.left) + "px");
       p.style.setProperty("--jr-proxy-y", (r.top - box.top) + "px");
       p.style.setProperty("--jr-proxy-w", (r.right - r.left) + "px");
       p.style.setProperty("--jr-proxy-h", (r.bottom - r.top) + "px");
+      if (r.el) {
+        var cs = getComputedStyle(r.el);
+        p.setAttribute("data-jr-text", r.text);
+        p.style.setProperty("--jr-proxy-font", cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily);
+      }
     });
   }
 
@@ -91,10 +116,11 @@
 
   function makeProxies(range, zone) {
     var host = zone.closest(JR.site.noWrapHostSelector) || zone.parentElement;
-    var g = { range: range.cloneRange(), zone: zone, host: host, text: range.toString(), proxies: [] };
-    lineRects(range).forEach(function () {
+    var g = { range: range.cloneRange(), zone: zone, host: host, text: range.toString(), proxies: [],
+      paint: zone.namespaceURI === "http://www.w3.org/2000/svg" };
+    proxyBoxes(g).forEach(function () {
       var p = document.createElement("span");
-      p.className = "jr-source-highlight jr-hl-proxy";
+      p.className = "jr-source-highlight jr-hl-proxy" + (g.paint ? " jr-hl-paint" : "");
       p._jrProxyGroup = g;
       g.proxies.push(p);
     });

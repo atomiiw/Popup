@@ -343,6 +343,17 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   background: transparent;
   z-index: 2;
 }
+/* A chart label: the proxy is the highlight, its text drawn over the label */
+.jr-source-highlight.jr-hl-proxy.jr-hl-paint { background: var(--jr-mark-bg); }
+.jr-hl-paint::before {
+  content: attr(data-jr-text);
+  display: block;
+  font: var(--jr-proxy-font);
+  line-height: var(--jr-proxy-h);
+  color: var(--jr-mark-text);
+  white-space: pre;
+  text-align: center;
+}
 
 /* ChatGPT's \boxed{} formulas draw their frame as a layer over the text, so
    a drag selects nothing: let the mouse reach the characters under the frame. */
