@@ -10,7 +10,7 @@ import glob, json, os, re, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOARD = os.path.join(ROOT, "collab", "BOARD.md")
-CODEX = {"operator": "01a179db-04f9-7810-9e55-5159ed57b7f3"}
+CODEX = {"operator": "01a18502-a2c1-7b30-9ab2-94531782c571"}
 HDR = re.compile(r"^### \[(.+?)\] (.+?) → (.+?) \| 需要回复：(\S+)")
 
 
