@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Popup - Ask inline follow-ups in ChatGPT",
   "version": "1.2.10",
-  "version_name": "1.2.10-dev.7",
+  "version_name": "1.2.10-dev.8",
   "description": "Ask ChatGPT where questions come up. Highlight. Ask. Keep reading. Stay in your flow.",
   "permissions": [
     "storage"

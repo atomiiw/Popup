@@ -286,6 +286,20 @@ check("removing a code highlight leaves CodeMirror's text nodes alone", cmLine2.
   cmLine2.childNodes.length + " nodes (was " + cmBefore + ")");
 cm.remove();
 
+// R10: a selection across a map widget: its marker labels are user-select:none, so the
+// browser leaves them out of the selection, and so must the highlight (structure: collab/evidence/f4/5-map-cross.html).
+var mp = document.createElement("div");
+mp.setAttribute("data-dil-message-id", "");
+mp.innerHTML = '<h2>Mission coffee map</h2><div data-client-defined-widget="map"><div data-testid="businesses-map-widget">' +
+  '<div style="user-select:none"><button><span>4.0</span></button><span aria-hidden="true">Four Barrel Coffee</span></div></div></div><h2>My top six</h2>';
+document.body.appendChild(mp);
+var mph = mp.querySelectorAll("h2");
+var mpr = document.createRange(); mpr.setStart(mph[0].firstChild, 8); mpr.setEnd(mph[1].firstChild, 6);
+var mpw = JR.highlightRange(mpr);
+check("R10 map: marker labels the browser does not select are not highlighted",
+  mpw.length === 2 && mpw.every(function (w) { return !w.closest('[data-client-defined-widget="map"]'); }), mpw.map(function (w) { return w.textContent; }).join("|"));
+mp.remove();
+
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
 var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,

@@ -13,6 +13,14 @@
   var proxyGroups = new Set(); // { range, zone, host, text, proxies }
   var hostWatchers = new Map(); // host → [MutationObserver, ResizeObserver]
 
+  /** Text the browser never puts in a selection (user-select: none, e.g. map labels). */
+  function unselectable(node) {
+    var el = node.parentElement;
+    if (!el) return false;
+    var cs = getComputedStyle(el);
+    return (cs.userSelect || cs.webkitUserSelect) === "none";
+  }
+
   function zoneOf(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return el && el.closest ? el.closest(JR.site.noWrapSelector) : null;
@@ -183,7 +191,7 @@
     if (z) return [z];
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n;
     while ((n = walker.nextNode())) {
-      if (!range.intersectsNode(n) || !(z = zoneOf(n))) continue;
+      if (!range.intersectsNode(n) || unselectable(n) || !(z = zoneOf(n))) continue;
       if (zones.indexOf(z) === -1) zones.push(z);
     }
     return zones;
@@ -240,7 +248,7 @@
       var node;
       var displayCache = new Map(); // cache getComputedStyle results per element
       while ((node = walker.nextNode())) {
-        if (range.intersectsNode(node) && !JR.isHiddenMath(node) && !(skipZones && zoneOf(node))) {
+        if (range.intersectsNode(node) && !JR.isHiddenMath(node) && !(skipZones && zoneOf(node)) && !unselectable(node)) {
           // Skip whitespace-only text nodes between block elements
           // (they're layout-invisible; wrapping them in spans disrupts spacing)
           if (/^\s*$/.test(node.nodeValue)) {
