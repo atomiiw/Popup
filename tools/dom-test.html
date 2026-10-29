@@ -332,11 +332,12 @@ var pdf = new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" });
 var pasteEv = filesEvent("paste", [png]);
 check("Step 2: a pasted image is taken (not pasted as text)", pasteEv.defaultPrevented && att.files().length === 1 && att.files()[0] === png);
 filesEvent("drop", [pdf]);
-var strip = qd.querySelector(".jr-popup-attach");
+var strip = JR.stripAbove(qd);
 check("Step 2: a dropped PDF is taken too", att.files().length === 2 && att.files()[1] === pdf);
-check("Step 2: strip above the text: thumbnail for the image, chip with the name for the PDF",
-  !!strip && strip === qd.firstElementChild && !strip.hidden && !!strip.querySelector("img.jr-attach-thumb") &&
-  strip.querySelector(".jr-attach-chip") && strip.querySelector(".jr-attach-chip").textContent.indexOf("notes.pdf") !== -1, strip && strip.outerHTML);
+check("Step 2: a row of squares just above the question row: thumbnail for the image, PDF tile for the PDF",
+  !!strip && strip === qd.previousElementSibling && !strip.hidden && !!strip.querySelector("img.jr-attach-thumb") &&
+  strip.querySelector(".jr-attach-chip") && strip.querySelector(".jr-attach-chip").textContent === "PDF" &&
+  strip.querySelector(".jr-attach-chip").title === "notes.pdf", strip && strip.outerHTML);
 strip.querySelectorAll(".jr-attach-remove")[0].click();
 check("Step 2: x removes that file", att.files().length === 1 && att.files()[0] === pdf && changes >= 3, att.files().length + " / " + changes);
 var textPaste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
@@ -349,6 +350,7 @@ qi.dispatchEvent(new ClipboardEvent("paste", { clipboardData: officeDt, bubbles:
 check("Step 2: text copied from Word/Excel (it also carries a picture) is pasted as text", att.files().length === 1);
 att.clear();
 check("Step 2: clear empties the strip", att.files().length === 0 && strip.hidden);
+att.remove();
 qd.remove();
 
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.

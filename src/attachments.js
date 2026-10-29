@@ -1,6 +1,7 @@
 // attachments.js — Files added to a popup question by paste or drop. They stay in
-// memory and show as a strip above the text: images as thumbnails, other files as
-// chips (icon + name). Sending hands them to ChatGPT's own upload (chat.js).
+// memory and show as a row of small squares between the quote and the question:
+// images as thumbnails, other files as a file icon with their extension. Sending
+// hands them to ChatGPT's own upload (chat.js).
 (function () {
   "use strict";
 
@@ -32,8 +33,13 @@
       var chip = document.createElement("span");
       chip.className = "jr-attach-chip";
       chip.innerHTML = FILE_SVG;
-      chip.appendChild(document.createTextNode(file.name));
+      var ext = document.createElement("span");
+      ext.className = "jr-attach-ext";
+      var m = /\.([^.]{1,5})$/.exec(file.name);
+      ext.textContent = m ? m[1].toUpperCase() : "FILE";
+      chip.appendChild(ext);
       chip.title = file.name;
+      chip.setAttribute("aria-label", file.name);
       item.appendChild(chip);
     }
     if (onRemove) {
@@ -75,6 +81,17 @@
     return strip;
   };
 
+  /** Place a strip as the layer just above a question row (between it and the quote). */
+  JR.placeStripAbove = function (strip, questionDiv) {
+    if (questionDiv.parentNode && strip.nextSibling !== questionDiv) questionDiv.parentNode.insertBefore(strip, questionDiv);
+  };
+
+  /** The attachment strip just above a question row, if any. */
+  JR.stripAbove = function (questionDiv) {
+    var prev = questionDiv && questionDiv.previousElementSibling;
+    return prev && prev.classList.contains("jr-popup-attach") ? prev : null;
+  };
+
   /**
    * Let a popup question take files: paste into inputEl, or drop onto
    * questionDiv (it shows a dashed outline while files are dragged over it).
@@ -87,7 +104,6 @@
     var strip = document.createElement("div");
     strip.className = "jr-popup-attach";
     strip.hidden = true;
-    questionDiv.insertBefore(strip, questionDiv.firstChild);
 
     // Clicking a thumbnail or × must not take focus from the text (an edit ends on blur)
     strip.addEventListener("mousedown", function (e) { e.preventDefault(); });
@@ -99,6 +115,7 @@
         strip.appendChild(JR.attachmentItem(f, function () { files.splice(i, 1); render(); }));
       });
       strip.hidden = !files.length;
+      JR.placeStripAbove(strip, questionDiv); // the row may be placed in the popup after this was set up
       if (onChange) onChange();
     }
     function add(list) {
@@ -117,24 +134,26 @@
       e.stopImmediatePropagation();
       add(dt.files);
     }, true);
-    questionDiv.addEventListener("dragover", function (e) {
+    [questionDiv, strip].forEach(function (zone) { zone.addEventListener("dragover", function (e) {
       if (!hasFiles(e.dataTransfer) || !isOn()) return;
       e.preventDefault();
       questionDiv.classList.add("jr-attach-drop");
-    });
+    }); });
     questionDiv.addEventListener("dragleave", function (e) {
       if (!questionDiv.contains(e.relatedTarget)) questionDiv.classList.remove("jr-attach-drop");
     });
-    questionDiv.addEventListener("drop", function (e) {
+    [questionDiv, strip].forEach(function (zone) { zone.addEventListener("drop", function (e) {
       questionDiv.classList.remove("jr-attach-drop");
       if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length || !isOn()) return;
       e.preventDefault();
       add(e.dataTransfer.files);
-    });
+    }); });
 
+    JR.placeStripAbove(strip, questionDiv);
     return {
       files: function () { return files.slice(); },
       clear: function () { files = []; render(); },
+      remove: function () { files = []; render(); strip.remove(); },
     };
   };
 })();

@@ -734,12 +734,12 @@
       displayText.textContent = question;
       displayInner.appendChild(displayText);
       var files = attach.files();
-      attach.clear(); // frees the input strip's previews (the input row goes away)
+      attach.remove(); // frees the input strip's previews (the input row goes away)
       var sentStrip = files.length ? JR.attachmentStrip(files) : null;
-      if (sentStrip) displayDiv.appendChild(sentStrip);
       displayDiv.appendChild(displayInner);
       var loadingDiv = JR.createLoadingDiv();
       container.appendChild(displayDiv);
+      if (sentStrip) JR.placeStripAbove(sentStrip, displayDiv);
       popup.appendChild(loadingDiv);
 
       // Register highlight immediately so it persists even if popup is dismissed
@@ -1200,7 +1200,7 @@
       questionText.textContent = newQuestion;
     }
     // The input strip becomes the sent question's strip (read-only)
-    var oldStrip = questionDiv && questionDiv.querySelector(".jr-popup-attach");
+    var oldStrip = JR.stripAbove(questionDiv);
     var sentStrip = files.length ? JR.attachmentStrip(files) : null;
     if (oldStrip) { JR.releaseStrip(oldStrip); oldStrip.replaceWith(sentStrip || document.createComment("")); }
 

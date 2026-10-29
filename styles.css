@@ -1058,25 +1058,25 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
 
 
 /* ==========================================================================
-   Attachments in a popup question (Step 2): a strip above the text
+   Attachments in a popup question (Step 2): a row of small squares between
+   the quote and the question
    ========================================================================== */
 
-.jr-popup-attach { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
-/* The question row is a flex row (text + send): the strip takes a line of its own above it */
-.jr-popup-question:has(> .jr-popup-attach:not([hidden])) { flex-wrap: wrap; }
-.jr-popup-question > .jr-popup-attach { flex: 0 0 100%; padding-top: 6px; }
+.jr-popup-attach { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 .jr-popup-attach[hidden] { display: none; }
-.jr-attach-item { position: relative; display: inline-flex; }
+.jr-attach-item { position: relative; display: inline-flex; width: 56px; height: 56px; }
 .jr-attach-thumb {
-  width: 48px; height: 48px; object-fit: cover; cursor: zoom-in;
+  width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; box-sizing: border-box;
   border-radius: var(--jr-radius); border: 1px solid var(--jr-border);
 }
 .jr-attach-chip {
-  display: inline-flex; align-items: center; gap: 4px; max-width: 160px; height: 28px; padding: 0 8px;
+  width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   border-radius: var(--jr-radius); border: 1px solid var(--jr-border); background: var(--jr-highlight-bg);
-  color: var(--jr-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--jr-text-muted);
 }
-.jr-attach-chip svg { width: 14px; height: 14px; flex: none; color: var(--jr-text-muted); }
+.jr-attach-chip svg { width: 22px; height: 22px; }
+.jr-attach-ext { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; line-height: 1; }
 .jr-attach-remove {
   position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 3px;
   border: none; border-radius: 50%; background: var(--jr-text); color: var(--jr-bg); cursor: pointer;
