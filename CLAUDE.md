@@ -31,11 +31,12 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 ## Docs
 - [Features](docs/FEATURES.md)
 - [Style Guide](docs/STYLE_GUIDE.md)
-- [TODO](docs/TODO.md) — **read this before every task**
+- [TODO 2026 H2](docs/TODO-2026H2.md) — current steps; **read this before every task**
+- [TODO 2026 H1](docs/TODO.md) — development-phase steps (closed)
 
 ## Dev Rules
-- **Read `docs/TODO.md`, `docs/FEATURES.md`, and `docs/STYLE_GUIDE.md` before every task.** No exceptions.
-- **Follow the TODO steps in order.** Only work on the current step. Do not add features, fix-forward, or jump to later steps — even if the user reports a trivial issue. If a bug report relates to a stub or placeholder from the current step, explain that it's expected behavior for this step.
+- **Read `docs/TODO-2026H2.md`, `docs/FEATURES.md`, and `docs/STYLE_GUIDE.md` before every task.** No exceptions.
+- **Follow the steps in `docs/TODO-2026H2.md` in order.** Only work on the current step. Do not add features, fix-forward, or jump to later steps — even if the user reports a trivial issue. If a bug report relates to a stub or placeholder from the current step, explain that it's expected behavior for this step.
 - Always match the style guide for any UI changes (see docs/STYLE_GUIDE.md)
 - Keep all styles in `styles.css` — no inline styles in JS
 - Test on ChatGPT (light and dark, English and another UI language) before considering a feature done; run `tools/net-tap-test.js`, `tools/qa-content-test.js`, `tools/dom-test.html`

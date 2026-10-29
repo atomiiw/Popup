@@ -1,4 +1,6 @@
-# TODO — Implementation Steps
+# TODO — Implementation Steps (2026 H1: Development)
+
+**Closed.** Current work: [TODO-2026H2.md](TODO-2026H2.md) (maintenance & updates).
 
 Work through these steps **in order**. Do not skip ahead or add features from later steps.
 
@@ -267,13 +269,3 @@ Work through these steps **in order**. Do not skip ahead or add features from la
 - 9i Formulas: exact TeX in questions, rendered formulas in quotes, partial-formula highlights, \\boxed selection — DONE (DEBUG #54)
 - 9d Release: version 1.2.0, store zip built (`dist/Popup-1.2.0.zip`, not in git) — upload to the Chrome Web Store is the user's step
 
-## Step 10: Special Response Formats (ChatGPT) — CURRENT
-- Plan and test matrix: `collab/PLAN-next.md`, section "特殊回答格式审查". Must be done before Step 11 and Step 12.
-- Known bugs: R1 a quote spanning list items repeats a bullet; R2 the same for ChatGPT's new step cards; R3 code blocks get no page highlight, and their quote includes toolbar text and loses line breaks; R4 highlighting chart axis labels breaks the SVG chart and throws the popup to the bottom of the page
-- 10a Inventory ChatGPT's high-risk answer components (lists, step cards, tables, code, math, charts/widgets, citations, collapsibles)
-- 10b Offline fixtures in `tools/dom-test.html` for each component; checks C1–C9
-- 10c Fixes (design confirmed with the user first), then live verification and full regression
-
-## Step 11: Images in Popups (ChatGPT) — plan approved, step 0 done (`collab/PLAN-next.md`)
-
-## Step 12: DeepSeek Support — feasibility done (`collab/PLAN-next.md`); claude.ai on hold
