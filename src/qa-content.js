@@ -281,13 +281,19 @@
     });
   };
 
-  /** A short-lived address for an uploaded file (to show an image again). Null if unavailable. */
+  /**
+   * A short-lived address for an uploaded file (to show an image again), asked once
+   * per file this session (JR.qa.forgetFileUrl once it stops working). Null if unavailable.
+   */
+  var fileUrls = new Map();
   JR.qa.fileUrl = function (fileId) {
-    return apiGet("/backend-api/files/download/" + encodeURIComponent(fileId))
+    if (!fileUrls.has(fileId)) fileUrls.set(fileId, apiGet("/backend-api/files/download/" + encodeURIComponent(fileId))
       .then(function (r) { JR.qa.fileUrlStatus = "HTTP " + r.status; return r.ok ? r.json() : null; })
       .then(function (j) { return (j && j.download_url) || null; })
-      .catch(function (e) { JR.qa.fileUrlStatus = "failed: " + (e && e.message); return null; });
+      .catch(function (e) { JR.qa.fileUrlStatus = "failed: " + (e && e.message); return null; }));
+    return fileUrls.get(fileId);
   };
+  JR.qa.forgetFileUrl = function (fileId) { fileUrls.delete(fileId); };
 
   /**
    * Read these Q&A turns from the conversation data into the session cache,

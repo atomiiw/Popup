@@ -51,7 +51,8 @@
   function nameMatcher(fileName) {
     var m = /^(.*?)(\.[^.]*)?$/.exec(fileName);
     var esc = function (s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); };
-    return new RegExp(esc(m[1]) + "(?: ?\\(\\d+\\))?" + esc(m[2]));
+    // A whole word of the label ("Remove <name>", "<name>"): chart.png never matches piechart.png
+    return new RegExp("(?:^|\\s)(" + esc(m[1]) + "(?: ?\\(\\d+\\))?" + esc(m[2]) + ")(?=\\s|$)");
   }
 
   /**
@@ -59,13 +60,14 @@
    * (two files both called clipboard.png get two different cards). remove is the
    * card's × (the longest label holding the name: "Remove <name>").
    */
-  function cardsFor(composer, files) {
-    var buttons = JR.site.composerButtons(composer), taken = {}, out = new Map();
+  function cardsFor(composer, files, before) {
+    var old = new Set(before || []);
+    var buttons = JR.site.composerButtons(composer).filter(function (b) { return !old.has(b); }), taken = {}, out = new Map();
     files.forEach(function (f) {
       var re = nameMatcher(f.name), name = null;
       buttons.forEach(function (b) {
         var m = re.exec(b.getAttribute("aria-label"));
-        if (m && !name && !taken[m[0]]) name = m[0];
+        if (m && !name && !taken[m[1]]) name = m[1];
       });
       if (!name) return;
       taken[name] = true;
@@ -76,9 +78,12 @@
     return out;
   }
 
+  // The composer's buttons just before Popup's paste: those cards are the user's own.
+  var buttonsBeforePaste = [];
+
   /** Remove the cards of Popup's files from ChatGPT's composer (never the user's own). */
   function removeComposerAttachments(composer, files) {
-    var cards = cardsFor(composer, files || []);
+    var cards = cardsFor(composer, files || [], buttonsBeforePaste);
     cards.forEach(function (c) { if (c.remove) c.remove.click(); });
   }
 
@@ -376,11 +381,12 @@
     if (box) box.setAttribute("data-jr-attaching", "");
     var dt = new DataTransfer();
     files.forEach(function (f) { dt.items.add(f); });
+    buttonsBeforePaste = JR.site.composerButtons(composer);
     composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     var t0 = Date.now(), readySince = 0;
     (function check() {
       var elapsed = Date.now() - t0;
-      var cards = cardsFor(composer, files);
+      var cards = cardsFor(composer, files, buttonsBeforePaste);
       var carded = files.filter(function (f) { return cards.has(f); });
       var btn = JR.site.sendButton(composer);
       var idle = btn && !btn.disabled && !JR.site.attachmentsUploading(composer);
@@ -390,7 +396,7 @@
       readySince = looksReady ? (readySince || Date.now()) : 0;
       var ready = looksReady && Date.now() - readySince >= 1500;
       var nothingCame = carded.length === 0 && elapsed > 5000;
-      if (!ready && !nothingCame && elapsed < 60000) { setTimeout(check, 250); return; }
+      if (!ready && !nothingCame && (elapsed < 60000 || readySince)) { setTimeout(check, 250); return; }
       var sent = ready ? carded : [];
       var failed = files.filter(function (f) { return sent.indexOf(f) === -1; }).map(function (f) {
         return { file: f, reason: !ready && carded.length ? "upload timed out" : "ChatGPT did not accept it" };
@@ -465,7 +471,7 @@
     if (w.editOpts) {
       var newItemId = crypto.randomUUID();
       memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", turnKeys: [],
-        _files: memEntry._editFiles, attachments: (memEntry._editFiles || []).length });
+        _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
       memEntry.activeItemIndex = memEntry.items.length - 1;
       memEntry.question = w.question;
       memEntry.responseHTML = "__TIMEOUT__";
@@ -784,7 +790,7 @@
         // Edit: create a new version item with __TIMEOUT__
         var newItemId = crypto.randomUUID();
         memEntry.items.push({ id: newItemId, question: question, responseHTML: "__TIMEOUT__", turnKeys: hideKeys,
-          _files: memEntry._editFiles, attachments: (memEntry._editFiles || []).length });
+          _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
         memEntry.activeItemIndex = memEntry.items.length - 1;
         memEntry.question = question;
         memEntry.responseHTML = "__TIMEOUT__";
@@ -1040,7 +1046,7 @@
         var newItemId = crypto.randomUUID();
         if (memEntry) {
           memEntry.items.push({ id: newItemId, question: question, responseHTML: responseHTML, turnKeys: qaKeys.slice(),
-            _files: memEntry._editFiles, _failedFiles: memEntry._editFailed });
+            _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
           memEntry.activeItemIndex = memEntry.items.length - 1;
           memEntry.question = question;
           memEntry.responseHTML = responseHTML;
@@ -1059,6 +1065,7 @@
           turnKeys: qaKeys,
           active: true,
           wholeResponse: memEntry ? !!memEntry.wholeResponse : false,
+          attachments: memEntry ? (memEntry._editFiles || []).length : 0,
         });
 
         // Rebuild popup UI if it's still open for this highlight

@@ -1142,7 +1142,7 @@
               contentContainer: contentContainer,
               parentId: child.parentId || null,
               parentItemId: child.parentItemId || null,
-              items: [{ id: child.id, question: child.question || null, responseHTML: child.responseHTML, turnKeys: child.turnKeys || [] }],
+              items: [{ id: child.id, question: child.question || null, responseHTML: child.responseHTML, turnKeys: child.turnKeys || [], attachments: child.attachments || 0 }],
               activeItemIndex: 0,
               wholeResponse: true,
             });
@@ -1192,6 +1192,7 @@
   function submitEdit(popup, hlId, entry, contentContainer, newQuestion, mode, files) {
     files = files || [];
     entry._editFiles = files; // the new version's files (chat.js stores their count with it)
+    entry._editFailed = null;
     if (extensionWasUpdated(popup)) return;
     // Exit edit mode, enter generating state
     popup.classList.add("jr-popup--generating");
@@ -1557,9 +1558,10 @@
         JR.enqueueMessage({ // queued like any send: two live watches would fight over shared state
           message: retryMessage,
           files: retryFiles,
-          onAttached: function (res) {
+          onAttached: function (res) { // the version shows what the retry really sent
+            if (activeItem) { activeItem._files = res.sent; activeItem._failedFiles = res.failed; }
             var q = popup.querySelector(".jr-popup-question");
-            if (q) JR.showAttachmentNote(q, res.failed);
+            if (q) JR.showSentAttachments(q, activeItem);
           },
           waitOpts: {
             popup: popup, text: text, sentence: sentence,
@@ -1879,6 +1881,7 @@
     // Find the upper card and strip question/version nav from it
     var upper = popup.querySelector(".jr-popup-upper");
     if (upper) {
+      upper.querySelectorAll(".jr-popup-attach").forEach(function (s) { JR.releaseStrip(s); s.remove(); });
       var questionDiv = upper.querySelector(".jr-popup-question");
       if (questionDiv) questionDiv.remove();
       var versionNav = upper.querySelector(".jr-popup-version-nav");

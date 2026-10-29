@@ -14,11 +14,11 @@
    * One thumbnail (image) or chip (other file). With onRemove it gets an × that
    * calls it; without, it is a read-only copy (the question after sending).
    */
-  JR.attachmentItem = function (file, onRemove) {
+  JR.attachmentItem = function (file, onRemove, readyUrl) {
     var item = document.createElement("span");
     item.className = "jr-attach-item";
-    if (isImage(file)) {
-      var url = URL.createObjectURL(file);
+    if (readyUrl || isImage(file)) {
+      var url = readyUrl || URL.createObjectURL(file);
       var img = document.createElement("img");
       img.className = "jr-attach-thumb";
       img.src = url;
@@ -28,7 +28,7 @@
         if (JR.openLightbox) JR.openLightbox(item.closest(".jr-popup-response") || item, [url], 0);
       });
       item.appendChild(img);
-      item._jrRevoke = function () { URL.revokeObjectURL(url); };
+      if (!readyUrl) item._jrRevoke = function () { URL.revokeObjectURL(url); };
     } else {
       var chip = document.createElement("span");
       chip.className = "jr-attach-chip";
@@ -76,19 +76,14 @@
   /** A read-only item for an attachment known only from ChatGPT's data ({ id, name, mime }). */
   JR.attachmentItemFromMeta = function (a) {
     if (!/^image\//.test(a.mime) || !JR.qa || !JR.qa.fileUrl) return JR.attachmentItem({ name: a.name, type: a.mime }, null);
-    var item = document.createElement("span");
+    var item = document.createElement("span"); // a placeholder until the address arrives
     item.className = "jr-attach-item";
     JR.qa.fileUrl(a.id).then(function (url) {
-      if (!url) { item.replaceWith(JR.attachmentItem({ name: a.name, type: "" }, null)); return; } // shown as a file instead
-      var img = document.createElement("img");
-      img.className = "jr-attach-thumb";
-      img.src = url;
-      img.alt = a.name;
-      img.addEventListener("click", function (e) {
-        e.stopPropagation();
-        if (JR.openLightbox) JR.openLightbox(item.closest(".jr-popup-response") || item, [url], 0);
-      });
-      item.appendChild(img);
+      var asFile = function (el) { el.replaceWith(JR.attachmentItem({ name: a.name, type: "" }, null)); }; // shown as a file instead
+      if (!url) { asFile(item); return; }
+      var real = JR.attachmentItem({ name: a.name, type: a.mime }, null, url);
+      real.querySelector("img").addEventListener("error", function () { JR.qa.forgetFileUrl(a.id); asFile(real); });
+      item.replaceWith(real);
     });
     return item;
   };
@@ -109,7 +104,8 @@
       strip = JR.attachmentStrip(item._files);
     } else {
       var key = (item.turnKeys || [])[0];
-      if (!key || !JR.qa || !JR.qa.attachmentsOf) return;
+      // Only questions sent with attachments: reading the conversation data costs a big download
+      if (!key || !(item.attachments > 0) || !JR.qa || !JR.qa.attachmentsOf) return;
       strip = document.createElement("div");
       strip.className = "jr-popup-attach";
       strip.hidden = true;

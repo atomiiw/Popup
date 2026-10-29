@@ -20,7 +20,9 @@
 <script>JR.state = JR.state || {}; </script>
 <script src="../src/popup-helpers.js"></script>
 <script src="../src/attachments.js"></script>
+<script src="../src/qa-content.js"></script>
 <script src="../src/chat.js"></script>
+<script src="../src/popup.js"></script>
 <script>
 var out = [], failed = 0, asyncChecks = [];
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
@@ -366,7 +368,7 @@ JR.qa = {
     { id: "file-2", name: "shot.png", mime: "image/png" }, { id: "file-3", name: "gone.png", mime: "image/png" }]); },
   fileUrl: function (id) { return Promise.resolve(id === "file-2" ? "data:image/png;base64,iVBORw0KGgo=" : null); },
 };
-JR.showSentAttachments(sq, { turnKeys: ["turn-1"] });
+JR.showSentAttachments(sq, { turnKeys: ["turn-1"], attachments: 3 });
 check("Step 2c: switching version replaces the strip", sq.parentNode.querySelectorAll(".jr-popup-attach").length === 1);
 asyncChecks.push(new Promise(function (resolve) { setTimeout(function () {
   var st2 = JR.stripAbove(sq);
@@ -376,6 +378,22 @@ asyncChecks.push(new Promise(function (resolve) { setTimeout(function () {
   sq.remove(); if (st2) st2.remove();
   resolve();
 }, 50); }));
+
+// After an answer the popup is rebuilt: exactly one attachment row above the question.
+var rb = document.createElement("div"); rb.className = "jr-popup";
+rb.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+document.body.appendChild(rb);
+var rbUpper = rb.querySelector(".jr-popup-upper"), rbQ = document.createElement("div");
+rbQ.className = "jr-popup-question"; rbUpper.appendChild(rbQ);
+JR.placeStripAbove(JR.attachmentStrip([png]), rbQ); // the strip doSend put above the sent question
+JR.state.completedHighlights.set("rb-hl", { question: "q", responseHTML: "<p>a</p>", spans: [], items: [{ id: "rb-1", question: "q", responseHTML: "<p>a</p>", turnKeys: [], _files: [png] }], activeItemIndex: 0 });
+// storage.js needs chrome.storage: minimal stand-ins for what a rebuild reads and writes
+if (typeof getChildHighlights === "undefined") window.getChildHighlights = function () { return Promise.resolve([]); };
+if (typeof updateHighlightFields === "undefined") window.updateHighlightFields = function () { return Promise.resolve(); };
+if (typeof setActiveItem === "undefined") window.setActiveItem = function () { return Promise.resolve(); };
+try { JR.rebuildPopupAfterEdit(rb, "rb-hl"); } catch (e) { out.push("NOTE rebuild threw: " + e.message); }
+check("Step 2c: one attachment row after the popup is rebuilt", rb.querySelectorAll(".jr-popup-attach:not([hidden])").length === 1, rb.querySelectorAll(".jr-popup-attach").length);
+JR.state.completedHighlights.delete("rb-hl"); rb.remove();
 
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
@@ -410,16 +428,28 @@ fakeComposer.addEventListener("paste", function (e) {
   });
 });
 asyncChecks.push(new Promise(function (resolve) {
+  // The user's own unsent shot.png already sits in ChatGPT's box: never Popup's card, never removed.
+  var userCard = document.createElement("div"); userCard.className = "fake-card user-card";
+  userCard.innerHTML = '<button type="button" aria-label="Remove shot.png"></button>';
+  fakeForm.insertBefore(userCard, fakeComposer); seenNames["shot.png"] = 1;
+  var piechart = new File(["p"], "piechart.png", { type: "image/png" }), chart = new File(["c"], "chart.png", { type: "image/png" });
   var png2 = new File([new Uint8Array([137, 80, 78, 71, 1])], "shot.png", { type: "image/png" });
   JR.attachToComposer([png, png2, pdf], function (res) {
     check("Step 2: two files with the same name (ChatGPT shows shot(1).png) and a PDF are all sent", res.sent.length === 3 && res.failed.length === 0, JSON.stringify(res.failed.map(function (x) { return x.file.name; })));
+    check("Step 2: the user's own card that was there before is not taken for Popup's file", fakeForm.querySelectorAll(".fake-card").length === 4, fakeForm.querySelectorAll(".fake-card").length);
     check("Step 2: the composer box is hidden while files are handed over", fakeForm.hasAttribute("data-jr-attaching"));
-    fakeForm.querySelectorAll(".fake-card").forEach(function (c) { c.remove(); });
+    fakeForm.querySelectorAll(".fake-card:not(.user-card)").forEach(function (c) { c.remove(); });
     fakeForm.removeAttribute("data-jr-attaching");
-    refuse["notes.pdf"] = true;
-    JR.attachToComposer([png, pdf], function (res2) {
-      check("Step 2: a file whose card ChatGPT takes away again is reported, the other one is sent",
-        res2.sent.length === 1 && res2.sent[0] === png && res2.failed.length === 1 && res2.failed[0].file === pdf, JSON.stringify(res2.failed.map(function (x) { return x.file.name; })));
+    refuse["notes.pdf"] = true; refuse["chart.png"] = true;
+    var userCard = document.createElement("div"); userCard.className = "fake-card user-card"; // the user's own draft file again
+    userCard.innerHTML = '<button type="button" aria-label="Remove shot.png"></button>';
+    fakeForm.insertBefore(userCard, fakeComposer);
+    var shot3 = new File(["s"], "shot.png", { type: "image/png" }); refuse["shot.png"] = true;
+    JR.attachToComposer([pdf, piechart, chart, shot3], function (res2) {
+      check("Step 2: refused files are reported (chart.png is not mistaken for piechart.png, shot.png not for the user's card), the other one is sent",
+        res2.sent.length === 1 && res2.sent[0] === piechart && res2.failed.length === 3, JSON.stringify(res2.failed.map(function (x) { return x.file.name; })));
+      check("Step 2: the user's own card is never removed by Popup", userCard.isConnected);
+      userCard.remove();
       fakeForm.querySelectorAll(".fake-card").forEach(function (c) { c.remove(); });
       resolve();
     });
