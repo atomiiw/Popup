@@ -215,20 +215,22 @@
   var convFetch = null;   // { id, promise }
   JR.qa.apiStatus = "unused";
 
+  /** GET a ChatGPT backend URL as the signed-in user (the page's own session token). */
+  function apiGet(url) {
+    return fetch("/api/auth/session", { credentials: "include" })
+      .then(function (r) { return r.json(); })
+      .then(function (session) {
+        if (!session || !session.accessToken) throw new Error("no session token");
+        return fetch(url, { credentials: "include", headers: { Authorization: "Bearer " + session.accessToken } });
+      });
+  }
+
   function fetchConversation() {
     var id = JR.site.conversationId();
     if (!id) return Promise.resolve(null);
     if (convFetch && convFetch.id === id) return convFetch.promise;
     JR.qa.apiStatus = "loading";
-    var promise = fetch("/api/auth/session", { credentials: "include" })
-      .then(function (r) { return r.json(); })
-      .then(function (session) {
-        if (!session || !session.accessToken) throw new Error("no session token");
-        return fetch("/backend-api/conversation/" + id, {
-          credentials: "include",
-          headers: { Authorization: "Bearer " + session.accessToken },
-        });
-      })
+    var promise = apiGet("/backend-api/conversation/" + id)
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -266,6 +268,26 @@
     }
     return answer;
   }
+
+  /**
+   * The attachments of a Popup question ({ id, name, mime }), from the conversation
+   * data: user message metadata.attachments (verified T7). Empty if unknown.
+   */
+  JR.qa.attachmentsOf = function (turnKey) {
+    return fetchConversation().then(function (conv) {
+      var node = conv && conv.mapping[turnKey];
+      var list = node && node.message && node.message.metadata && node.message.metadata.attachments;
+      return (list || []).map(function (a) { return { id: a.id, name: a.name || "file", mime: a.mime_type || "" }; });
+    });
+  };
+
+  /** A short-lived address for an uploaded file (to show an image again). Null if unavailable. */
+  JR.qa.fileUrl = function (fileId) {
+    return apiGet("/backend-api/files/download/" + encodeURIComponent(fileId))
+      .then(function (r) { JR.qa.fileUrlStatus = "HTTP " + r.status; return r.ok ? r.json() : null; })
+      .then(function (j) { return (j && j.download_url) || null; })
+      .catch(function (e) { JR.qa.fileUrlStatus = "failed: " + (e && e.message); return null; });
+  };
 
   /**
    * Read these Q&A turns from the conversation data into the session cache,

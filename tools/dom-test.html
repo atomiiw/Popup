@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- dom-test.html — text matching in a real browser DOM (src/text-extraction.js + src/highlight.js).
      Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
-          --allow-file-access-from-files --virtual-time-budget=15000 --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
+          --allow-file-access-from-files --virtual-time-budget=20000 --dump-dom "file://$PWD/tools/dom-test.html" | grep -E "PASS|FAIL"
      or open it in Chrome and read the page. -->
 <html><head><meta charset="utf-8"><title>dom-test</title><link rel="stylesheet" href="../styles.css"></head><body>
 <div id="answer"><p>Read <b>the cache</b> first. Later, read the cache again; the cache wins.</p></div>
@@ -22,7 +22,7 @@
 <script src="../src/attachments.js"></script>
 <script src="../src/chat.js"></script>
 <script>
-var out = [], failed = 0;
+var out = [], failed = 0, asyncChecks = [];
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
 var root = document.getElementById("answer");
 var html0 = root.innerHTML;
@@ -353,6 +353,30 @@ check("Step 2: clear empties the strip", att.files().length === 0 && strip.hidde
 att.remove();
 qd.remove();
 
+// Step 2c: an answered question shows the attachments of its version: from memory this session,
+// from ChatGPT's conversation data after a reload (stubbed here).
+var sq = document.createElement("div"); sq.className = "jr-popup-question"; document.body.appendChild(sq);
+JR.showSentAttachments(sq, { _files: [png, pdf], _failedFiles: [{ file: { name: "empty.txt" }, reason: "ChatGPT did not accept it" }] });
+var sqStrip = JR.stripAbove(sq);
+check("Step 2c: this session: the version's files above its question", !!sqStrip && sqStrip.children.length === 2 && !!sqStrip.querySelector("img"));
+check("Step 2c: ...and the note on what was not sent survives the popup being rebuilt", !!sq.querySelector(".jr-attach-note") && sq.querySelector(".jr-attach-note").textContent.indexOf("empty.txt") !== -1);
+var realQa = JR.qa;
+JR.qa = {
+  attachmentsOf: function () { return Promise.resolve([{ id: "file-1", name: "notes.pdf", mime: "application/pdf" },
+    { id: "file-2", name: "shot.png", mime: "image/png" }, { id: "file-3", name: "gone.png", mime: "image/png" }]); },
+  fileUrl: function (id) { return Promise.resolve(id === "file-2" ? "data:image/png;base64,iVBORw0KGgo=" : null); },
+};
+JR.showSentAttachments(sq, { turnKeys: ["turn-1"] });
+check("Step 2c: switching version replaces the strip", sq.parentNode.querySelectorAll(".jr-popup-attach").length === 1);
+asyncChecks.push(new Promise(function (resolve) { setTimeout(function () {
+  var st2 = JR.stripAbove(sq);
+  var kinds = st2 ? Array.prototype.map.call(st2.children, function (it) { return it.querySelector("img") ? "img" : (it.querySelector(".jr-attach-ext") || {}).textContent; }).join(",") : "none";
+  check("Step 2c: after a reload: PDF tile, image thumbnail, an image without an address as a PNG tile", kinds === "PDF,img,PNG", kinds);
+  JR.qa = realQa;
+  sq.remove(); if (st2) st2.remove();
+  resolve();
+}, 50); }));
+
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
 var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,
@@ -367,29 +391,36 @@ Object.keys(chatPages).forEach(function (path) {
 var fakeForm = document.createElement("form");
 fakeForm.innerHTML = '<div class="ProseMirror" data-composer-markdown contenteditable="true"></div><button type="button" aria-label="Send">Send</button>';
 document.body.appendChild(fakeForm);
-var fakeComposer = fakeForm.querySelector(".ProseMirror"), refuse = {};
+// Like ChatGPT (T7): a taken name gets "(n)" before the extension; a file card has a button with its
+// name and its × ("Remove <name>"); a refused file's card shows up briefly and goes away.
+var fakeComposer = fakeForm.querySelector(".ProseMirror"), refuse = {}, seenNames = {};
 fakeComposer.addEventListener("paste", function (e) {
   Array.prototype.forEach.call(e.clipboardData.files, function (f) {
-    if (refuse[f.name]) return;
+    var n = seenNames[f.name] = (seenNames[f.name] || 0) + 1;
+    var shown = n === 1 ? f.name : f.name.replace(/(\.[^.]*)$/, "(" + (n - 1) + ")$1");
     setTimeout(function () {
-      var b = document.createElement("button"); b.type = "button"; b.setAttribute("aria-label", "Remove " + f.name);
-      b.addEventListener("click", function () { b.remove(); });
-      fakeForm.insertBefore(b, fakeComposer);
+      var card = document.createElement("div"); card.className = "fake-card";
+      card.innerHTML = '<button type="button"></button><button type="button"></button>';
+      card.children[0].setAttribute("aria-label", shown);
+      card.children[1].setAttribute("aria-label", "Remove " + shown);
+      card.children[1].addEventListener("click", function () { card.remove(); });
+      fakeForm.insertBefore(card, fakeComposer);
+      if (refuse[f.name]) setTimeout(function () { card.remove(); }, 400);
     }, 50);
   });
 });
-var asyncChecks = [];
 asyncChecks.push(new Promise(function (resolve) {
-  JR.attachToComposer([png, pdf], function (res) {
-    check("Step 2: both files taken by ChatGPT are sent", res.sent.length === 2 && res.failed.length === 0, JSON.stringify(res.failed));
+  var png2 = new File([new Uint8Array([137, 80, 78, 71, 1])], "shot.png", { type: "image/png" });
+  JR.attachToComposer([png, png2, pdf], function (res) {
+    check("Step 2: two files with the same name (ChatGPT shows shot(1).png) and a PDF are all sent", res.sent.length === 3 && res.failed.length === 0, JSON.stringify(res.failed.map(function (x) { return x.file.name; })));
     check("Step 2: the composer box is hidden while files are handed over", fakeForm.hasAttribute("data-jr-attaching"));
-    fakeForm.querySelectorAll('button[aria-label^="Remove"]').forEach(function (b) { b.remove(); });
+    fakeForm.querySelectorAll(".fake-card").forEach(function (c) { c.remove(); });
     fakeForm.removeAttribute("data-jr-attaching");
     refuse["notes.pdf"] = true;
     JR.attachToComposer([png, pdf], function (res2) {
-      check("Step 2: a file ChatGPT refuses is reported, the other one is sent",
-        res2.sent.length === 1 && res2.sent[0] === png && res2.failed.length === 1 && res2.failed[0].file === pdf, JSON.stringify(res2.failed));
-      fakeForm.querySelectorAll('button[aria-label^="Remove"]').forEach(function (b) { b.remove(); });
+      check("Step 2: a file whose card ChatGPT takes away again is reported, the other one is sent",
+        res2.sent.length === 1 && res2.sent[0] === png && res2.failed.length === 1 && res2.failed[0].file === pdf, JSON.stringify(res2.failed.map(function (x) { return x.file.name; })));
+      fakeForm.querySelectorAll(".fake-card").forEach(function (c) { c.remove(); });
       resolve();
     });
   });

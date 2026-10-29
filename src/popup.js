@@ -841,6 +841,7 @@
           if (sentStrip) { JR.releaseStrip(sentStrip); sentStrip.replaceWith(res.sent.length ? (sentStrip = JR.attachmentStrip(res.sent)) : document.createComment("")); }
           JR.showAttachmentNote(displayDiv, res.failed);
           pendingEntry.items[0]._files = res.sent;
+          pendingEntry.items[0]._failedFiles = res.failed;
           pendingEntry.items[0].attachments = res.sent.length;
           updateHighlightFields(sendItemId, { attachments: res.sent.length }, location.href);
         },
@@ -1061,9 +1062,11 @@
       entry.responseHTML = v.responseHTML;
       setActiveItem(hlId, v.id);
 
-      // Update question text
+      // Update question text and its attachments
       var qText = container.querySelector(".jr-popup-question-text");
       if (qText) qText.textContent = v.question || "";
+      var qRow = container.querySelector(".jr-popup-question");
+      if (qRow) JR.showSentAttachments(qRow, v);
 
       // Replace response and loading — each version has its own state
       var oldResp = popup.querySelector(".jr-popup-response");
@@ -1200,6 +1203,7 @@
       questionText.textContent = newQuestion;
     }
     // The input strip becomes the sent question's strip (read-only)
+    if (questionDiv && questionDiv._jrSentStrip) { JR.releaseStrip(questionDiv._jrSentStrip); questionDiv._jrSentStrip.remove(); questionDiv._jrSentStrip = null; }
     var oldStrip = JR.stripAbove(questionDiv);
     var sentStrip = files.length ? JR.attachmentStrip(files) : null;
     if (oldStrip) { JR.releaseStrip(oldStrip); oldStrip.replaceWith(sentStrip || document.createComment("")); }
@@ -1235,6 +1239,7 @@
         if (sentStrip) { JR.releaseStrip(sentStrip); sentStrip.replaceWith(res.sent.length ? (sentStrip = JR.attachmentStrip(res.sent)) : document.createComment("")); }
         if (questionDiv) JR.showAttachmentNote(questionDiv, res.failed);
         entry._editFiles = res.sent;
+        entry._editFailed = res.failed;
       },
       beforeSend: function (w) {
         JR.prepareSend(w, entry.spans.length > 0 ? entry.spans[0] : null);
@@ -1388,6 +1393,7 @@
           sel.addRange(range);
         }
         lastCaretRange = null;
+        if (questionDiv._jrSentStrip) questionDiv._jrSentStrip.classList.add("jr-attach-away");
         if (versionNav) versionNav.style.display = "none";
         sendWrapper.style.display = "";
         sendBtn.disabled = true;
@@ -1402,6 +1408,7 @@
         questionText.contentEditable = "false";
         questionText.textContent = originalText;
         editAttach.clear();
+        if (questionDiv._jrSentStrip) questionDiv._jrSentStrip.classList.remove("jr-attach-away");
         if (versionNav) versionNav.style.display = "";
         sendWrapper.style.display = "none";
         sendBtn.disabled = true;
@@ -1459,6 +1466,7 @@
       });
 
       upper.appendChild(questionDiv);
+      JR.showSentAttachments(questionDiv, entry.items && entry.items[entry.activeItemIndex]);
     }
 
     // Remove any stale loading div before adding response

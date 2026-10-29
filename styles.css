@@ -1063,7 +1063,7 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
    ========================================================================== */
 
 .jr-popup-attach { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
-.jr-popup-attach[hidden] { display: none; }
+.jr-popup-attach[hidden], .jr-popup-attach.jr-attach-away { display: none; }
 .jr-attach-item { position: relative; display: inline-flex; width: 56px; height: 56px; }
 .jr-attach-thumb {
   width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; box-sizing: border-box;

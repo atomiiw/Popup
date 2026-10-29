@@ -73,6 +73,55 @@
     Array.prototype.forEach.call(strip.children, function (it) { if (it._jrRevoke) it._jrRevoke(); });
   };
 
+  /** A read-only item for an attachment known only from ChatGPT's data ({ id, name, mime }). */
+  JR.attachmentItemFromMeta = function (a) {
+    if (!/^image\//.test(a.mime) || !JR.qa || !JR.qa.fileUrl) return JR.attachmentItem({ name: a.name, type: a.mime }, null);
+    var item = document.createElement("span");
+    item.className = "jr-attach-item";
+    JR.qa.fileUrl(a.id).then(function (url) {
+      if (!url) { item.replaceWith(JR.attachmentItem({ name: a.name, type: "" }, null)); return; } // shown as a file instead
+      var img = document.createElement("img");
+      img.className = "jr-attach-thumb";
+      img.src = url;
+      img.alt = a.name;
+      img.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (JR.openLightbox) JR.openLightbox(item.closest(".jr-popup-response") || item, [url], 0);
+      });
+      item.appendChild(img);
+    });
+    return item;
+  };
+
+  /**
+   * Above an answered question: the attachments that version carried, from memory
+   * in this session (item._files), else from ChatGPT's conversation data (after a
+   * reload). Replaces the strip shown for another version.
+   */
+  JR.showSentAttachments = function (questionDiv, item) {
+    if (questionDiv._jrSentStrip) { JR.releaseStrip(questionDiv._jrSentStrip); questionDiv._jrSentStrip.remove(); }
+    questionDiv._jrSentStrip = null;
+    Array.prototype.forEach.call(questionDiv.querySelectorAll(".jr-attach-note"), function (n) { n.remove(); });
+    if (!item) return;
+    JR.showAttachmentNote(questionDiv, item._failedFiles); // what didn't go out (this session)
+    var strip;
+    if (item._files && item._files.length) {
+      strip = JR.attachmentStrip(item._files);
+    } else {
+      var key = (item.turnKeys || [])[0];
+      if (!key || !JR.qa || !JR.qa.attachmentsOf) return;
+      strip = document.createElement("div");
+      strip.className = "jr-popup-attach";
+      strip.hidden = true;
+      JR.qa.attachmentsOf(key).then(function (list) {
+        list.forEach(function (a) { strip.appendChild(JR.attachmentItemFromMeta(a)); });
+        strip.hidden = !list.length;
+      });
+    }
+    questionDiv._jrSentStrip = strip;
+    JR.placeStripAbove(strip, questionDiv);
+  };
+
   /** A strip of read-only items for files that were sent. */
   JR.attachmentStrip = function (files) {
     var strip = document.createElement("div");

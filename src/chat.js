@@ -47,12 +47,39 @@
     else if (kind === "done") st.netActive = Math.max(0, st.netActive - 1);
   });
 
+  /** A file's name as ChatGPT may show it: the same, or with "(n)" / " (n)" before the extension. */
+  function nameMatcher(fileName) {
+    var m = /^(.*?)(\.[^.]*)?$/.exec(fileName);
+    var esc = function (s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); };
+    return new RegExp(esc(m[1]) + "(?: ?\\(\\d+\\))?" + esc(m[2]));
+  }
+
+  /**
+   * The composer card of each file: { file → { name, remove } }, one card per file
+   * (two files both called clipboard.png get two different cards). remove is the
+   * card's × (the longest label holding the name: "Remove <name>").
+   */
+  function cardsFor(composer, files) {
+    var buttons = JR.site.composerButtons(composer), taken = {}, out = new Map();
+    files.forEach(function (f) {
+      var re = nameMatcher(f.name), name = null;
+      buttons.forEach(function (b) {
+        var m = re.exec(b.getAttribute("aria-label"));
+        if (m && !name && !taken[m[0]]) name = m[0];
+      });
+      if (!name) return;
+      taken[name] = true;
+      var remove = buttons.filter(function (b) { return b.getAttribute("aria-label").indexOf(name) !== -1; })
+        .sort(function (a, b) { return b.getAttribute("aria-label").length - a.getAttribute("aria-label").length; })[0];
+      out.set(f, { name: name, remove: remove });
+    });
+    return out;
+  }
+
   /** Remove the cards of Popup's files from ChatGPT's composer (never the user's own). */
   function removeComposerAttachments(composer, files) {
-    (files || []).forEach(function (f) {
-      var b = JR.site.attachmentRemoveButton(composer, f.name);
-      if (b) b.click();
-    });
+    var cards = cardsFor(composer, files || []);
+    cards.forEach(function (c) { if (c.remove) c.remove.click(); });
   }
 
   /** Show ChatGPT's composer again after Popup handed it files. */
@@ -350,14 +377,18 @@
     var dt = new DataTransfer();
     files.forEach(function (f) { dt.items.add(f); });
     composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    var t0 = Date.now();
+    var t0 = Date.now(), readySince = 0;
     (function check() {
       var elapsed = Date.now() - t0;
-      var carded = files.filter(function (f) { return !!JR.site.attachmentRemoveButton(composer, f.name); });
+      var cards = cardsFor(composer, files);
+      var carded = files.filter(function (f) { return cards.has(f); });
       var btn = JR.site.sendButton(composer);
       var idle = btn && !btn.disabled && !JR.site.attachmentsUploading(composer);
-      // A file ChatGPT refuses never gets a card: after 5 s the others go without it.
-      var ready = carded.length > 0 && idle && (carded.length === files.length || elapsed > 5000);
+      // A file ChatGPT refuses never gets a card (or loses it): after 5 s the others go without it.
+      var looksReady = carded.length > 0 && idle && (carded.length === files.length || elapsed > 5000);
+      // ...and only once that has held for a moment (a refused card can show up briefly)
+      readySince = looksReady ? (readySince || Date.now()) : 0;
+      var ready = looksReady && Date.now() - readySince >= 1500;
       var nothingCame = carded.length === 0 && elapsed > 5000;
       if (!ready && !nothingCame && elapsed < 60000) { setTimeout(check, 250); return; }
       var sent = ready ? carded : [];
@@ -1008,7 +1039,8 @@
         var memEntry = st.completedHighlights.get(hlId);
         var newItemId = crypto.randomUUID();
         if (memEntry) {
-          memEntry.items.push({ id: newItemId, question: question, responseHTML: responseHTML, turnKeys: qaKeys.slice() });
+          memEntry.items.push({ id: newItemId, question: question, responseHTML: responseHTML, turnKeys: qaKeys.slice(),
+            _files: memEntry._editFiles, _failedFiles: memEntry._editFailed });
           memEntry.activeItemIndex = memEntry.items.length - 1;
           memEntry.question = question;
           memEntry.responseHTML = responseHTML;

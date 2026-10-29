@@ -296,16 +296,14 @@
     },
 
     /**
-     * The × of the composer's attachment card for a file: a button whose aria-label
-     * holds the file name ("Remove <name>" in English; the name is the same in every
-     * UI language, and only Popup's own files are ever matched).
+     * The labelled buttons of the composer box. An attachment card has one whose
+     * aria-label holds the file name as ChatGPT shows it ("Remove clipboard(3).png";
+     * a file card also has one with just the name). T7: ChatGPT renames a file whose
+     * name is taken by adding "(n)" before the extension.
      */
-    attachmentRemoveButton: function (composer, fileName) {
+    composerButtons: function (composer) {
       var box = JR.site.composerBox(composer);
-      if (!box) return null;
-      return Array.prototype.find.call(box.querySelectorAll("button[aria-label]"), function (b) {
-        return b.getAttribute("aria-label").indexOf(fileName) !== -1;
-      }) || null;
+      return box ? Array.prototype.slice.call(box.querySelectorAll("button[aria-label]")) : [];
     },
 
     /** True while some card in the composer is still uploading. */
