@@ -42,19 +42,20 @@
   }
 
   /**
-   * The shape of a request's user message, never its text: content type, the type of
-   * each part, and the keys of each attachment (#jr-netlog; how attachments travel).
+   * The shape of a user message, never its text: content type, the type of each
+   * part, and the keys of each attachment (how attachments travel; #jr-netlog,
+   * #jr-attachlog).
    */
+  function messageShape(m) {
+    var parts = (m.content && m.content.parts) || [];
+    return {
+      content_type: m.content && m.content.content_type,
+      parts: parts.map(function (p) { return typeof p === "string" ? "text" : Object.keys(p).join("|") + ":" + p.content_type; }),
+      attachments: ((m.metadata && m.metadata.attachments) || []).map(function (a) { return Object.keys(a).join("|") + ":" + a.mime_type; }),
+    };
+  }
   function bodyShape(body) {
-    try {
-      var j = JSON.parse(body), m = (j.messages || [])[0] || {};
-      var parts = (m.content && m.content.parts) || [];
-      return JSON.stringify({
-        content_type: m.content && m.content.content_type,
-        parts: parts.map(function (p) { return typeof p === "string" ? "text" : Object.keys(p).join("|") + ":" + p.content_type; }),
-        attachments: ((m.metadata && m.metadata.attachments) || []).map(function (a) { return Object.keys(a).join("|") + ":" + a.mime_type; }),
-      });
-    } catch (e) { return "unreadable"; }
+    try { return JSON.stringify(messageShape((JSON.parse(body).messages || [])[0] || {})); } catch (e) { return "unreadable"; }
   }
 
   function emit(detail) {
@@ -182,6 +183,14 @@
   function newStatus() { return { pages: 0, removedTurns: 0, removedMessages: 0, fallback: null, detail: [] }; }
   var filterStatus = newStatus();
 
+  // Popup questions with attachments as the page loads them (Step 2c: read back after a reload)
+  var attachLog = [];
+  function noteAttachmentShape(m) {
+    if (attachLog.length >= 10) return;
+    attachLog.push(messageShape(m));
+    writeNode("jr-attachlog", attachLog);
+  }
+
   function writeNode(id, data) {
     var el = document.getElementById(id);
     if (!el && document.body) { el = document.createElement("div"); el.id = id; el.hidden = true; document.body.appendChild(el); }
@@ -208,6 +217,7 @@
     for (var i = 0; i < j.messages.length; i++) {
       var m = j.messages[i];
       if (!m || !m.author || m.author.role !== "user" || !isPopupQuestion(partsText(m))) continue;
+      if (m.metadata && m.metadata.attachments && m.metadata.attachments.length) noteAttachmentShape(m);
       var ex = m.metadata && m.metadata.turn_exchange_id;
       if (!ex) { filterStatus.fallback = "Popup message without turn_exchange_id"; return null; }
       drop[ex] = true;
