@@ -453,6 +453,23 @@ var cut2 = document.createElement("div"); cut2.innerHTML = JR.renderMarkdown('a 
 check("R13: a half-written component tag at the end is hidden; other text is kept",
   cut.textContent === "Intro" && cut2.textContent === "a <b and <boxer", [cut.textContent, cut2.textContent]);
 
+// Formats in a narrow popup (300 px, the width a popup can be dragged down to): task lists,
+// wide tables and card grids stay readable
+var narrow = document.createElement("div"); narrow.className = "jr-popup"; narrow.style.cssText = "position:static;width:300px;max-height:none;opacity:1";
+var nr = document.createElement("div"); nr.className = "jr-popup-response"; narrow.appendChild(nr); document.body.appendChild(narrow);
+nr.innerHTML = JR.renderMarkdown('- [ ] open task\n- [x] done task\n\n| c1 | c2 | c3 | c4 | c5 | c6 | c7 |\n|---|---|---|---|---|---|---|\n| a long cell text | 2 | 3 | 4 | 5 | 6 | 7 |\n\n<grid columns={3}> <grid-item> <box border> A </box> </grid-item> <grid-item> <box border> B </box> </grid-item> <grid-item> <box border> C </box> </grid-item> </grid>');
+var boxes = nr.querySelectorAll("input[type=checkbox]");
+check("formats: a task list shows checkboxes (the second ticked), not [ ] / [x]",
+  boxes.length === 2 && !boxes[0].checked && boxes[1].checked && boxes[0].disabled && nr.textContent.indexOf("[") === -1, nr.innerHTML);
+var ths = nr.querySelectorAll("th"), wrap = nr.querySelector("table").parentElement;
+check("formats: a wide table in a narrow popup scrolls sideways instead of squeezing its columns",
+  Array.prototype.every.call(ths, function (th) { return th.offsetWidth >= 40; }) && wrap.scrollWidth > wrap.clientWidth && narrow.scrollWidth <= 300,
+  Array.prototype.map.call(ths, function (th) { return th.offsetWidth; }));
+var gi = nr.querySelectorAll(".jr-dil-grid-item");
+check("formats: a 3-column card grid in a narrow popup uses fewer columns (each card at least 120 px)",
+  gi.length === 3 && Array.prototype.every.call(gi, function (g) { return g.offsetWidth >= 120; }), Array.prototype.map.call(gi, function (g) { return g.offsetWidth; }));
+narrow.remove();
+
 var evil = JR.renderMarkdown('<box background="x\" onmouseover=alert(1) \"">hi</box>'), ed = document.createElement("div"); ed.innerHTML = evil;
 check("R13: attribute values never reach the page (a malformed tag stays text)", !ed.querySelector("[onmouseover]") && ed.textContent.indexOf("onmouseover=alert(1)") !== -1 && !ed.querySelector("div"), evil);
 

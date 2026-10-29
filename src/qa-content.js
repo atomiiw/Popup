@@ -660,8 +660,8 @@
         var rows = [];
         for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(cells(lines[i]));
         i--;
-        out.push("<table><thead><tr><th>" + head.join("</th><th>") + "</th></tr></thead><tbody>" +
-          rows.map(function (r) { return "<tr><td>" + r.join("</td><td>") + "</td></tr>"; }).join("") + "</tbody></table>");
+        out.push('<div class="jr-table-wrap"><table><thead><tr><th>' + head.join("</th><th>") + "</th></tr></thead><tbody>" +
+          rows.map(function (r) { return "<tr><td>" + r.join("</td><td>") + "</td></tr>"; }).join("") + "</tbody></table></div>");
         continue;
       }
       var li = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
@@ -679,7 +679,8 @@
           if (top && top.indent === indent && top.type === type) out.push("</li><li>");
           else { if (top && top.indent === indent) out.push("</li></" + lists.pop().type + ">"); out.push("<" + type + "><li>"); lists.push({ type: type, indent: indent }); }
         }
-        out.push(inline(li[3]));
+        var task = /^\[([ xX])\]\s+(.*)$/.exec(li[3]); // - [ ] / - [x] task list item
+        out.push(task ? '<input type="checkbox" class="jr-task" disabled' + (task[1] === " " ? "" : " checked") + "> " + inline(task[2]) : inline(li[3]));
         continue;
       }
       if (lists.length && /^\s+\S/.test(line)) { out.push(" " + inline(line.trim())); continue; } // list item continuation
