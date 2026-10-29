@@ -380,6 +380,8 @@
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
+    /** Bold text: <strong>/<b>, and the 2026-10 answer renderer's bold spans. */
+    strongSelector: "strong, b, [data-d-default-strong]",
     /**
      * The part of the thread the user actually sees, in viewport coordinates:
      * below the app header, above the bottom area (composer, plus the

@@ -13,7 +13,7 @@
 <pre id="out"></pre>
 <script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
 <script src="../src/jr-namespace.js"></script>
-<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code", mathSelector: ".katex", mathTexSelector: 'annotation[encoding="application/x-tex"]', mathVisibleSelector: ".katex-html", mathDisplaySelector: ".katex-display", hiddenMathSelector: ".katex-mathml", citationSelector: "a.citation" };</script>
+<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code", mathSelector: ".katex", mathTexSelector: 'annotation[encoding="application/x-tex"]', mathVisibleSelector: ".katex-html", mathDisplaySelector: ".katex-display", hiddenMathSelector: ".katex-mathml", citationSelector: "a.citation", strongSelector: "strong, b, [data-d-default-strong]" };</script>
 <script src="../src/dom-helpers.js"></script>
 <script src="../src/text-extraction.js"></script>
 <script src="../src/highlight.js"></script>
@@ -129,6 +129,54 @@ var bare = document.getElementById("bare"), bbase = bare.querySelector(".base").
 var br2 = document.createRange(); br2.setStart(bbase, 9); br2.setEnd(bbase, 13);
 var bsent = JR.extractSentenceInContainer(br2, null, bare);
 check("bare display formula is the sentence", bsent === "\\[\\frac{2}{3}c(1\\text{ ns}) = 0.2\\]", JSON.stringify(bsent));
+
+// R5: "Reply" quotes a popup's whole answer — without Popup's own buttons (Reply, code header).
+var pr = document.createElement("div");
+pr.innerHTML = '<p>Hi there.</p><div class="jr-code-block"><div class="jr-code-header"><span class="jr-code-lang">python</span><div class="jr-code-header-btns"><button>Copy</button></div></div><pre><code>x = 1</code></pre></div>' +
+  '<p>Use <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>a</mi></mrow><annotation encoding="application/x-tex">a^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">a2</span></span> now.</p>' +
+  '<button type="button" class="jr-reply-whole-btn"><svg></svg> Reply</button>';
+var whole = JR.popupResponseText(pr);
+check("reply quote has the answer, not Popup's buttons", whole === "Hi there.\nx = 1\nUse \\(a^2\\) now.", JSON.stringify(whole));
+
+// R1/R2: ChatGPT's 2026-10 answers (DIL renderer) wrap each list item's text in li > div > div > p,
+// and bold is span[data-d-default-strong]. Structure from collab/evidence/formats/r1.html, r2.html.
+function dilItem(title, body) {
+  var strong = '<span data-d-component="text" data-d-default-strong="" data-d-inline="">' + title + '</span>';
+  return '<li data-d-component="list-item"><span aria-hidden="true" data-d-marker="number"></span><div class="Content"><div data-d-list-item-content="">' +
+    (body === undefined ? '<p data-d-component="text">' + strong + '：' + title.length + ' items here.</p>'
+                        : '<p data-d-component="text">' + strong + '</p><p data-d-component="text">' + body + '</p>') + '</div></div></li>';
+}
+function selectBetween(root, startText, startOff, endText, endOff) {
+  var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, s, e;
+  // the end is the first match after the start's text node
+  while ((n = w.nextNode())) { if (s && !e && n.data.indexOf(endText) !== -1) e = n; if (!s && n.data.indexOf(startText) !== -1) s = n; }
+  var r = document.createRange();
+  r.setStart(s, s.data.indexOf(startText) + startOff); r.setEnd(e, e.data.indexOf(endText) + endOff);
+  return r;
+}
+var dl = document.createElement("div");
+dl.setAttribute("data-dil-message-id", "");
+dl.innerHTML = '<ul data-d-component="list" data-d-marker="bullet">' + dilItem("1:40") + dilItem("2:10") + dilItem("2:35") + '</ul>';
+document.body.appendChild(dl);
+var dlTypes = [];
+var dlSent = JR.extractSentenceInContainer(selectBetween(dl, "4 items", 2, "4 items", 0), dlTypes, dl);
+check("R1 bullets across items: each item once", dlSent === "1:40：4 items here.\n2:10：4 items here.", JSON.stringify(dlSent));
+check("R1 each item starts with its bullet", dlTypes.map(function (t) { return t.tag; }).join() === "LI,LI", JSON.stringify(dlTypes.map(function (t) { return t.tag; })));
+check("R1 bold label kept", !!dlTypes[0] && JSON.stringify(dlTypes[0].bolds) === '[{"start":0,"end":4}]', dlTypes[0] && JSON.stringify(dlTypes[0].bolds));
+dl.remove();
+
+var sc = document.createElement("div");
+sc.setAttribute("data-dil-message-id", "");
+sc.innerHTML = '<div data-d-component="box"><ol data-d-component="list" data-d-marker="number" data-d-marker-layout="custom">' +
+  dilItem("12:45 Walk", "Take a walk. Breathe a bit.") + dilItem("12:55 Wash", "Start the washer. Shower while it runs.") +
+  dilItem("1:20 Dry", "Dry the clothes. Tidy only what matters.") + '</ol></div>';
+document.body.appendChild(sc);
+var scTypes = [];
+var scSent = JR.extractSentenceInContainer(selectBetween(sc, "Shower while", 3, "Dry the clothes", 4), scTypes, sc);
+check("R2 step cards: each item once", scSent === "Shower while it runs.\n1:20 Dry\nDry the clothes.", JSON.stringify(scSent));
+check("R2 step cards: number on the item's first line", scTypes.map(function (t) { return t.tag + t.listType + t.listStart; }).join() === "LI_CONTol2,LIol3,LI_CONTol3",
+  JSON.stringify(scTypes.map(function (t) { return t.tag + t.listType + t.listStart; })));
+sc.remove();
 
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");

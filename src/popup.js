@@ -1566,6 +1566,20 @@
         }
       });
 
+      // Like clicking a highlight: an open reply popup comes back to the top
+      // (or stays as it is); otherwise it opens on top of this popup.
+      var ownPopup = replyBtn.closest(".jr-popup");
+      var peelUntil = function (done) {
+        while (st.activePopup && st.popupStack.length > 0 && !done()) JR.removePopup();
+      };
+      var replyOpen = existingReplyId && (st.activeHighlightId === existingReplyId ||
+        st.popupStack.some(function (s) { return s.highlightId === existingReplyId; }));
+      if (replyOpen) {
+        peelUntil(function () { return st.activeHighlightId === existingReplyId; });
+        return;
+      }
+      peelUntil(function () { return st.activePopup === ownPopup; });
+
       if (existingReplyId) {
         JR.pushPopupState();
         JR.createPopup({ completedId: existingReplyId });
@@ -1573,7 +1587,7 @@
       }
 
       // Truncate response text for display
-      var fullText = responseDiv.textContent || "";
+      var fullText = JR.popupResponseText(responseDiv);
       var truncated = fullText;
       if (fullText.length > 200) {
         var cutoff = 200;

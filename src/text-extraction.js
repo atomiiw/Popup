@@ -50,7 +50,7 @@
         pills.push({ start: start, end: raw.length });
         return;
       }
-      var nowBold = inBold || n.tagName === "STRONG" || n.tagName === "B";
+      var nowBold = inBold || n.matches(JR.site.strongSelector);
       for (var child = n.firstChild; child; child = child.nextSibling) {
         walk(child, nowBold);
       }
@@ -118,12 +118,8 @@
         // A display formula placed straight in the answer (no paragraph around it) is one unit too.
         if (node.matches(JR.site.mathDisplaySelector) && !hasBlockAncestor(node, container)) return NodeFilter.FILTER_ACCEPT;
         if (!BLOCK_TAGS.has(node.tagName)) return NodeFilter.FILTER_SKIP;
-        var child = node.firstElementChild;
-        while (child) {
-          if (BLOCK_TAGS.has(child.tagName) || isCodeBlock(child) || child.querySelector(JR.site.codeBlockSelector)) return NodeFilter.FILTER_SKIP;
-          child = child.nextElementSibling;
-        }
-        return NodeFilter.FILTER_ACCEPT;
+        // Only the innermost blocks: current answers nest li > div > div > p
+        return node.querySelector(innerBlockSelector()) ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT;
       }
     });
     var leafNode;
@@ -246,7 +242,7 @@
             }
           }
           var tag;
-          var isFirstBlk = !closestLI || node === closestLI || closestLI.firstElementChild === node;
+          var isFirstBlk = !closestLI || node === closestLI || closestLI.querySelector(innerBlockSelector()) === node;
           if (!closestLI) {
             tag = node.tagName;
           } else if (closestLI === prevLI) {
@@ -428,6 +424,11 @@
     var rect = range.getBoundingClientRect();
     return { text: text, sentence: null, blockTypes: null, rect: rect, article: anchorArticle, range: range };
   };
+
+  /** Elements that make their ancestor block not the innermost one. */
+  function innerBlockSelector() {
+    return Array.from(BLOCK_TAGS).join(", ") + ", " + JR.site.codeBlockSelector;
+  }
 
   /** A code block counts as one block for sentence extraction (old <pre> or current [data-code-block]). */
   function isCodeBlock(node) {
