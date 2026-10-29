@@ -355,6 +355,7 @@
 
   function onTurnsMounted() {
     mountTimer = null;
+    if (!JR.site.isChatPage()) return; // R8: never hides or saves anything outside chats
     var turns = JR.site.turns();
     var newlyLoaded = [];
     for (var i = 0; i < turns.length; i++) {
@@ -425,6 +426,12 @@
 
   /** (Re)attach the observer to the current scroll container. Safe to call often. */
   JR.watchTurnMounts = function () {
+    if (!JR.site.isChatPage()) { // R8: no page observers outside chats
+      if (mountObserver) mountObserver.disconnect();
+      if (observedRoot) observedRoot.removeEventListener("scroll", refreshDiagnosticsSoon);
+      mountObserver = null; observedRoot = null;
+      return;
+    }
     var root = JR.site.scrollContainer();
     if (!root || root === observedRoot) return;
     if (mountObserver) mountObserver.disconnect();

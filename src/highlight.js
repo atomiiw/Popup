@@ -656,6 +656,7 @@
     var url = location.href;
     pendingL1 = [];
     st.restoreReady = false; // qa-content's self-heal waits for this (it needs the stored items)
+    if (!JR.site.isChatPage()) { JR.watchTurnMounts(); return; } // R8: off outside chats (stops the observer)
 
     getHiddenTurnKeys(url).then(function (keys) {
       if (gen !== restoreGen) return;

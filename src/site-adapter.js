@@ -451,6 +451,15 @@
       var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.pathname);
       return m ? m[1] : null;
     },
+
+    /**
+     * Popup works only in chats: a /c/<id> path (normal, GPT and project chats).
+     * Off everywhere else: new-chat page, temporary chats (no id, nothing saved),
+     * settings, GPTs, library, project home pages, shared links.
+     */
+    isChatPage: function (path) {
+      return !!JR.site.conversationId(path);
+    },
   };
 
   // --- Self-check ---

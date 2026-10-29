@@ -418,6 +418,7 @@
    * Sentence extraction is deferred to when the trigger is clicked.
    */
   JR.getSelectedTextQuick = function () {
+    if (!JR.site.isChatPage()) return null; // R8: no Popup button outside chats
     var selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
 

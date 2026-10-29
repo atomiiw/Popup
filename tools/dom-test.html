@@ -286,6 +286,15 @@ check("removing a code highlight leaves CodeMirror's text nodes alone", cmLine2.
   cmLine2.childNodes.length + " nodes (was " + cmBefore + ")");
 cm.remove();
 
+// R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
+var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
+var chatPages = { ["/c/" + U]: true, ["/g/g-abc123-writer/c/" + U]: true, ["/g/g-p-6789abcd-iceburg/c/" + U]: true,
+  "/": false, "/?temporary-chat=true": false, "/gpts": false, "/library": false, "/codex": false,
+  "/g/g-p-6789abcd-iceburg/project": false, ["/share/" + U]: false, "/#settings": false };
+Object.keys(chatPages).forEach(function (path) {
+  check("R8 chat page? " + path, JR.site.isChatPage(path) === chatPages[path], JR.site.isChatPage && JR.site.isChatPage(path));
+});
+
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";
