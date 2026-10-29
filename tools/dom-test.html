@@ -13,7 +13,7 @@
 <pre id="out"></pre>
 <script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
 <script src="../src/jr-namespace.js"></script>
-<script>JR.site = { codeBlockSelector: "[data-code-block], pre", codeSourceSelector: "[data-code-block-source], code", mathSelector: ".katex", mathTexSelector: 'annotation[encoding="application/x-tex"]', mathVisibleSelector: ".katex-html", mathDisplaySelector: ".katex-display", hiddenMathSelector: ".katex-mathml", citationSelector: "a.citation", strongSelector: "strong, b, [data-d-default-strong]" };</script>
+<script src="../src/site-adapter.js"></script>
 <script src="../src/dom-helpers.js"></script>
 <script src="../src/text-extraction.js"></script>
 <script src="../src/highlight.js"></script>
@@ -148,10 +148,14 @@ function dilItem(title, body) {
 }
 function selectBetween(root, startText, startOff, endText, endOff) {
   var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, s, e;
-  // the end is the first match after the start's text node
-  while ((n = w.nextNode())) { if (s && !e && n.data.indexOf(endText) !== -1) e = n; if (!s && n.data.indexOf(startText) !== -1) s = n; }
+  // the end is the first match at or after the start
+  var si, ei;
+  while ((n = w.nextNode())) {
+    if (!s && (si = n.data.indexOf(startText)) !== -1) s = n;
+    if (s && !e && (ei = n.data.indexOf(endText, n === s ? si : 0)) !== -1 && (n !== s || ei + endOff > si + startOff)) e = n;
+  }
   var r = document.createRange();
-  r.setStart(s, s.data.indexOf(startText) + startOff); r.setEnd(e, e.data.indexOf(endText) + endOff);
+  r.setStart(s, si + startOff); r.setEnd(e, ei + endOff);
   return r;
 }
 var dl = document.createElement("div");
@@ -177,6 +181,37 @@ check("R2 step cards: each item once", scSent === "Shower while it runs.\n1:20 D
 check("R2 step cards: number on the item's first line", scTypes.map(function (t) { return t.tag + t.listType + t.listStart; }).join() === "LI_CONTol2,LIol3,LI_CONTol3",
   JSON.stringify(scTypes.map(function (t) { return t.tag + t.listType + t.listStart; })));
 sc.remove();
+
+// R3: current code blocks are a CodeMirror editor (one div.cm-line per line, no "\n" in the DOM)
+// under a toolbar ("Python", Run). Structure from collab/evidence/formats/r3.html.
+var cb = document.createElement("div");
+cb.setAttribute("data-dil-message-id", "");
+cb.innerHTML = '<p>Run this:</p><div data-client-defined-widget="code_block"><div data-code-block="true">' +
+  '<div data-markdown-copy="exclude" contenteditable="false"><div>Python</div><div data-code-block-controls="true"><button>Run</button></div></div>' +
+  '<div class="cm-editor"><div class="cm-scroller"><div contenteditable="true" class="cm-content" data-language="python">' +
+  '<div class="cm-line"><span>async</span> def fetch(client, path):</div>' +
+  '<div class="cm-line">    print(path, response.http_version,</div>' +
+  '<div class="cm-line">          response.status_code)</div>' +
+  '<div class="cm-line"><br></div></div></div></div></div></div><p>Then install it.</p>';
+document.body.appendChild(cb);
+var cbTypes = [];
+var cbSent = JR.extractSentenceInContainer(selectBetween(cb, "print(path", 10, "print(path", 27), cbTypes, cb);
+check("R3 code quote: the touched line, indented, no toolbar", cbSent === "    print(path, response.http_version,", JSON.stringify(cbSent));
+check("R3 code quote is typed as code", cbTypes.length === 1 && cbTypes[0].tag === "PRE", JSON.stringify(cbTypes));
+cbTypes = [];
+cbSent = JR.extractSentenceInContainer(selectBetween(cb, "print(path", 6, "response.status", 8), cbTypes, cb);
+check("R3 code quote across lines keeps line breaks", cbSent === "    print(path, response.http_version,\n          response.status_code)", JSON.stringify(cbSent));
+check("R3 two code lines are one code block", cbTypes.length === 1 && cbTypes[0].tag === "PRE" && cbTypes[0].lineCount === 2, JSON.stringify(cbTypes));
+var whole = JR.site.codeText(cb.querySelector(".cm-content"));
+check("R3 whole code text has line breaks", whole === "async def fetch(client, path):\n    print(path, response.http_version,\n          response.status_code)\n", JSON.stringify(whole));
+var cbFound = JR.findTextRange(cb, "response.http_", 0);
+check("R3 code text is found again after reload (not taken for toolbar)", !!cbFound, cbFound);
+cb.remove();
+var qc = document.createElement("div");
+JR.renderSentenceContext(qc, "    print(path, response.http_version,\n          response.status_code)", "response.http_", [{ tag: "PRE", depth: 0, lineCount: 2, pills: [], bolds: null }], false);
+var qcCode = qc.querySelector(".jr-popup-context-code"), qcMark = qc.querySelector(".jr-popup-mark");
+check("R3 quoted code renders as one code block with the selection marked",
+  qc.querySelectorAll(".jr-popup-context-code").length === 1 && qcCode.textContent.indexOf("    print") === 0 && !!qcMark && qcMark.textContent === "response.http_", qc.innerHTML);
 
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");

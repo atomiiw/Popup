@@ -287,6 +287,12 @@
       var singlePills = singleMeta ? singleMeta.pills : null;
       var singleBolds = singleMeta ? singleMeta.bolds : null;
       var isBullet = singleMeta && singleMeta.tag === "LI";
+      if (singleMeta && singleMeta.tag === "PRE") {
+        var codeDiv = document.createElement("div");
+        codeDiv.className = "jr-popup-context-block jr-popup-context-code";
+        container.appendChild(codeDiv);
+        container = codeDiv;
+      }
       var hasSegments = (singlePills && singlePills.length > 0) || (singleBolds && singleBolds.length > 0);
 
       if (isBullet) {
@@ -391,6 +397,8 @@
         div.className = "jr-popup-context-block";
         if (/^H[1-6]$/.test(meta.tag)) {
           div.classList.add("jr-popup-context-heading");
+        } else if (meta.tag === "PRE") {
+          div.classList.add("jr-popup-context-code");
         }
         fillWithHighlight(div, block.text, blockStart, blockEnd, meta.pills, meta.bolds);
         container.appendChild(div);

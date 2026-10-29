@@ -163,7 +163,7 @@
       var prevLI = null;
       for (var bi = 0; bi < selectedBlocks.length; bi++) {
         var node = selectedBlocks[bi];
-        var extracted = JR.extractBlockText(node);
+        var extracted = isCodeBlock(node) ? { text: codeLines(node, range), pills: [], bolds: [] } : JR.extractBlockText(node);
         var nodeHasMath = !!node.querySelector(JR.site.mathSelector);
         var blockText = extracted.text;
         var blockPills = extracted.pills;
@@ -243,7 +243,9 @@
           }
           var tag;
           var isFirstBlk = !closestLI || node === closestLI || closestLI.querySelector(innerBlockSelector()) === node;
-          if (!closestLI) {
+          if (isCodeBlock(node)) {
+            tag = "PRE";
+          } else if (!closestLI) {
             tag = node.tagName;
           } else if (closestLI === prevLI) {
             tag = "LI_CONT";
@@ -272,7 +274,11 @@
     if (!blockText) return null;
     var blockHasMath = !!startBlock.querySelector(JR.site.mathSelector);
 
-    if (isCodeBlock(startBlock)) return codeBlockText(startBlock).trim();
+    if (isCodeBlock(startBlock)) {
+      var code = codeLines(startBlock, range);
+      if (blockTypes && code) blockTypes.push({ tag: "PRE", depth: 0, lineCount: code.split("\n").length, pills: [], bolds: null });
+      return code || null;
+    }
 
     var startOffset = JR.getOffsetInBlock(startBlock, range.startContainer, range.startOffset);
     var endOffset = Math.min(
@@ -435,10 +441,26 @@
     return node.tagName === "PRE" || !!(node.matches && node.matches(JR.site.codeBlockSelector));
   }
 
-  /** Code text of a block, without its toolbar (language label, Copy button). */
-  function codeBlockText(block) {
-    var src = block.tagName === "PRE" ? block : block.querySelector(JR.site.codeSourceSelector);
-    return (src || block).textContent || "";
+  /**
+   * The whole lines of a code block that a range touches (all lines if it covers the
+   * block), without the toolbar; indentation kept.
+   */
+  function codeLines(block, range) {
+    var src = (block.tagName === "PRE" ? block : block.querySelector(JR.site.codeSourceSelector)) || block;
+    var text = JR.site.codeText(src);
+    var from = 0, to = text.length;
+    var cm = src.querySelectorAll(".cm-line");
+    if (cm.length) {
+      var hit = [];
+      for (var i = 0; i < cm.length; i++) if (range.intersectsNode(cm[i])) hit.push(i);
+      if (hit.length) text = text.split("\n").slice(hit[0], hit[hit.length - 1] + 1).join("\n");
+    } else {
+      if (src.contains(range.startContainer)) from = JR.getOffsetInBlock(src, range.startContainer, range.startOffset);
+      if (src.contains(range.endContainer)) to = JR.getOffsetInBlock(src, range.endContainer, range.endOffset);
+      var a = text.lastIndexOf("\n", from - 1) + 1, b = text.indexOf("\n", Math.max(from, to - 1));
+      text = text.slice(a, b === -1 ? text.length : b);
+    }
+    return text.replace(/^\n+|\s+$/g, "");
   }
 
   /**

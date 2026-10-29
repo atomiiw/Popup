@@ -73,7 +73,7 @@
     ],
     // Rich content inside answers (T4).
     codeBlock: ["[data-code-block]", "pre"],
-    codeSource: ["[data-code-block-source]", "code"],
+    codeSource: [".cm-content", "[data-code-block-source]", "code"], // .cm-content: CodeMirror (2026-10)
     codeControls: ["[data-code-block-controls]"],
     imagePreview: ['button[data-testid="generated-image-preview"]'],
     // Turn lifecycle attribute (value "complete" when done). Used as a secondary
@@ -351,9 +351,10 @@
       var out = [];
       var blocks = root.querySelectorAll(C.codeBlock[0]);
       for (var i = 0; i < blocks.length; i++) {
-        var src = blocks[i].querySelector(C.codeSource[0]) || blocks[i];
+        var src = blocks[i].querySelector(JR.site.codeSourceSelector) || blocks[i];
         var code = src.querySelector("code") || src;
-        var lang = "";
+        var lang = src.getAttribute("data-language") || "";
+        if (lang) lang = lang.charAt(0).toUpperCase() + lang.slice(1);
         var m = (code.className || "").match(/language-([\w+#-]+)/);
         if (m) lang = m[1].charAt(0).toUpperCase() + m[1].slice(1);
         if (!lang) {
@@ -376,7 +377,14 @@
 
     /** Selector for code blocks (block-level unit for sentence extraction). */
     codeBlockSelector: C.codeBlock.join(", "),
-    codeSourceSelector: C.codeSource[0],
+    codeSourceSelector: C.codeSource.slice(0, 2).join(", "),
+
+    /** Text of a code source element: CodeMirror keeps one div.cm-line per line and no "\n". */
+    codeText: function (src) {
+      var lines = src.querySelectorAll(".cm-line");
+      if (!lines.length) return src.textContent;
+      return Array.prototype.map.call(lines, function (l) { return l.textContent; }).join("\n");
+    },
 
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',

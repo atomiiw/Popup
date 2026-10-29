@@ -269,6 +269,12 @@ ol.jr-popup-context-list { list-style-type: decimal; }
 .jr-popup-context-list li { margin-bottom: 2px; }
 .jr-popup-context-list li:last-child { margin-bottom: 0; }
 .jr-popup-context-list .jr-li-cont { list-style-type: none; }
+
+/* Quoted code: its lines and indentation as in the answer */
+.jr-popup-context-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em; white-space: pre-wrap;
+}
 .jr-popup-context-list .jr-depth-1 { margin-left: 1.2em; }
 .jr-popup-context-list .jr-depth-2 { margin-left: 2.4em; }
 ul.jr-popup-context-list .jr-depth-1 { list-style-type: circle; }

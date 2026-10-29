@@ -98,7 +98,7 @@
     // inside the <code> element's DOM tree. Strategy: get full textContent, then strip
     // the known toolbar prefix pattern from the start.
     var source = codeEl || pre;
-    var fullText = source.textContent;
+    var fullText = JR.site.codeText(source);
 
     // Detect language from <code> class (ChatGPT sets "language-java", "language-python", etc.)
     if (!lang && codeEl) {
