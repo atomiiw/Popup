@@ -1,6 +1,6 @@
 # HANDOFF — ChatGPT 2026-10 redesign fix (Popup 1.2.0)
 
-**2026-11-01: Step 3 (R15–R32) is in main as 1.2.12-dev.24, unreleased; open: R30 (user drag check), R31/R32 (user checks), R30 look ("太丑", later). Then Step 4 DeepSeek.**
+**2026-11-01: Step 3 (R15–R32) is in main as 1.2.12-dev.24, unreleased; open: R31/R32 (user checks), R30 look ("太丑", later). Then Step 4 DeepSeek.**
 
 Last updated: 2026-10-29 (last day on the old Mac — everything needed to continue is in git; see "Moving to a new computer"). **Current: Popup 1.2.11 (release build; store zip `dist/Popup-1.2.11.zip`, rebuild with the command below), plan `docs/TODO-2026H2.md`.** Step 1 (special answer formats, R1–R14) and Step 2 (attachments in popups) are done, reviewed (ponytail) and verified live by the operator (T1–T18), with evidence screenshots in the TODO. **Next: upload 1.2.11 to the Chrome Web Store (the user does this), then Step 3 (popup height, direction, answer-format gaps; design settled 2026-10-30), then Step 4 DeepSeek — start with a grilling round.** Read in this order: this file → `collab/PROTOCOL.md` (how we work with the user and the Codex operator) → `docs/TODO-2026H2.md` → `collab/PLAN-next.md` (Chinese plans and grilling decisions) → `docs/DEBUG.md` #44–#56.
 
