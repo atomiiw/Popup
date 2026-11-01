@@ -74,11 +74,11 @@ All hover transitions use `0.15s ease`. Press/active states use `scale(1.35)` fo
 
 ### `.jr-popup`
 - `position: absolute`, `z-index: 99`, `display: flex; flex-direction: column`
-- `min(360px, calc(100vw - 32px))` wide, `max-height: min(520px, 70vh)`
+- `min(360px, calc(100vw - 32px))` wide (drag 280–720px); as tall as its content up to `70vh` (a short answer stays short; while it streams the popup grows until 70vh, then the answer scrolls; writing, waiting and the delete confirmation are compact; the side is chosen for 70vh before the answer arrives), drag the edge away from the highlight between 40vh and 70vh (corners: both); the answer area is never under 3 lines
 - `border-radius: var(--jr-radius)` (4px), `box-shadow: 0 0 0 1px border + elevation`
 - Fade-in animation (`jr-fade-in`, 0.15s ease-out)
-- Only `left`, `top`, and `width` are set via JS
-- Height caps: quote scrolls at 6 lines, question scrolls at 4 lines, response fills remaining space and scrolls
+- Only `left`, `top`, `width`, the dragged height (`--jr-popup-h`) and the quote + question height (`--jr-upper-h`, for the 3-line answer minimum) are set via JS
+- Height caps: quote scrolls at 6 lines; attachments + question scroll together at 4 question lines (`.jr-popup-ask`); response fills remaining space and scrolls
 
 ### `.jr-popup-arrow`
 - 18px wide, 9px tall CSS triangle

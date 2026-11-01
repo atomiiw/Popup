@@ -13,7 +13,7 @@
 - **证据图**（仓库是公开的 `atomiiw/Popup`）：
   - 只要「修好以后」的图，不要修复前的图。
   - 用户报告的每个 bug、以及盘点时发现并修好的问题（标「盘点时发现」/「测试时发现」），各一张；用户要求过「每种情况都要一张证据」。
-  - 放在 `docs/TODO-2026H2.md` 的紧凑表格里：`| 情况 | 现在 | <a href="evidence/x.png"><img src="evidence/x.png" width="200~260"></a> |`，图片文件放 `docs/evidence/`。
+  - 放在 `docs/TODO-2026H2.md` 的紧凑表格里：`| 情况 | 现在 | <a href="evidence/stepN/x.png"><img src="evidence/stepN/x.png" width="200~260"></a> |`，图片文件放 `docs/evidence/stepN/`（每个 Step 一个文件夹）。
   - **只截 popup（和相关的回答区域），绝不截 ChatGPT 侧栏和对话标题。** popup 必须完全不透明（打开后至少等 1.5 秒），PNG；operator 的工具只有 1x 分辨率，用户接受。
   - 提交前我自己逐张看过。
 - **高亮颜色规则**：高亮里的文字永远是 `--jr-mark-text`（浅色模式白色、深色模式深色），不管原来什么颜色（灰色坐标轴、彩色代码、链接）。SVG 文字用 `.jr-hl-paint` 代理来画（`src/highlight.js`）。
@@ -62,7 +62,7 @@
 - 需要测量的写成数字标准（例如勾选框 ≥ 12×12、表格 wrap 的 scrollWidth > clientWidth、横滚后 scrollLeft > 0）。
 
 ## operator 能做 / 已知的办法
-- 读 DOM（`#jr-diagnostics[data-json]` 看版本和自检，`#jr-netlog`、`#jr-filterlog`、`#jr-attachlog` 看日志）、点击、键盘、拖拽（拖 popup 左右边缘拉宽，T15 验证过）、1x 截图、在 popup 内滚动分段截图。
+- 读 DOM（`#jr-diagnostics[data-json]` 看版本和自检；它只在页面载入时写一次，要最新的先点隐藏按钮 `#jr-diagnostics-run`，或网址带 `#jr-…` 调试开关时自动更新，`#jr-netlog`、`#jr-filterlog`、`#jr-attachlog` 看日志）、点击、键盘、拖拽（拖 popup 左右边缘拉宽，T15 验证过）、1x 截图、在 popup 内滚动分段截图。
 - 往 popup 或 ChatGPT 输入框贴文件：`tab.clipboard.write` 写入文件原始字节，再按 ⌘V。测试文件在 `tools/fixtures/`。
 - 刷新后 ChatGPT 偶尔显示 "This response couldn't load"（ChatGPT 自己的 bug）：从侧栏重新进入对话即可。
 - 验证结束要收尾：Esc 关 popup、ChatGPT 输入框清空、没有残留附件、临时标签页关掉。

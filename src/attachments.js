@@ -182,11 +182,68 @@
   };
 
   /**
-   * Let a popup question take files: paste into inputEl, or drop onto
-   * questionDiv (it shows a dashed outline while files are dragged over it).
+   * Let a popup question take files: paste into inputEl, or drop onto its
+   * popup (JR.popupDrag; the question shows a dashed outline while files are dragged over it).
    * Returns { files(), clear() }; onChange runs after every change. isOn (optional):
    * files are only taken while it returns true (an answered question while edited).
    */
+  function hasFiles(dt) { return !!dt && Array.prototype.indexOf.call(dt.types || [], "Files") !== -1; }
+
+  /**
+   * A file dragged over a popup goes to the popup, never to ChatGPT, which would take the drop for its
+   * composer (and covers the page with its own "drop here" layer). early-hide.js forwards every drag
+   * event here at document_start, so this runs before ChatGPT's own scripts see it.
+   */
+  var overPopup = false;
+  // ChatGPT shows its "Add anything" layer while a file is over the page: tell it the drag left
+  // (and, after a drop, that it ended) so the layer goes away while the file is over a popup.
+  function releaseChat(target, dropped) {
+    ["dragleave"].concat(dropped ? ["drop"] : []).forEach(function (type) {
+      var ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer(), clientX: 0, clientY: 0, relatedTarget: null });
+      ev._jrCleanup = true;
+      target.dispatchEvent(ev);
+    });
+  }
+
+  var outlined = null; // the question showing the drop outline
+  function outline(q) {
+    if (outlined && outlined !== q) outlined.classList.remove("jr-attach-drop");
+    if (q) q.classList.add("jr-attach-drop");
+    outlined = q;
+  }
+
+  JR.popupDrag = function (e) {
+    if (e._jrCleanup || !hasFiles(e.dataTransfer)) return;
+    if (e.type === "dragleave" && !e.relatedTarget) { // left the window
+      overPopup = false;
+      outline(null);
+      return;
+    }
+    var popups = document.querySelectorAll(".jr-popup"), popup = null;
+    for (var i = popups.length - 1; i >= 0 && !popup; i--) { // the last one opened is on top
+      var r = popups[i].getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) popup = popups[i];
+    }
+    var q = popup && Array.prototype.filter.call(popup.querySelectorAll(".jr-popup-question"), function (el) {
+      return el._jrDrop && el._jrDrop.isOn(); // an answered question takes files only while edited
+    })[0] || null;
+    outline(e.type === "drop" ? null : q);
+    if (window.jrEvLog) window.jrEvLog(e.type, "popup", e, { popup: !!popup, takes: !!q });
+    if (!popup) { overPopup = false; return; }
+    e.stopImmediatePropagation(); // ChatGPT never sees a drag over a popup (moves inside it included)
+    if (e.type === "dragleave") return;
+    e.preventDefault();
+    if (e.type !== "drop") {
+      e.dataTransfer.dropEffect = q ? "copy" : "none";
+      if (!overPopup) releaseChat(e.target, false);
+      overPopup = true;
+      return;
+    }
+    if (q && e.dataTransfer.files.length) q._jrDrop.add(e.dataTransfer.files);
+    releaseChat(e.target, true);
+    overPopup = false;
+  };
+
   JR.acceptAttachments = function (questionDiv, inputEl, onChange, isOn) {
     isOn = isOn || function () { return true; };
     var files = [];
@@ -194,7 +251,7 @@
     strip.className = "jr-popup-attach";
     strip.hidden = true;
 
-    // Clicking a thumbnail or × must not take focus from the text (an edit ends on blur)
+    // Clicking a thumbnail or × must not take focus from the text
     strip.addEventListener("mousedown", function (e) { e.preventDefault(); });
 
     function render() {
@@ -211,32 +268,19 @@
       Array.prototype.forEach.call(list, function (f) { files.push(f); });
       render();
     }
-    function hasFiles(dt) { return !!dt && Array.prototype.indexOf.call(dt.types || [], "Files") !== -1; }
-
     // Capture phase: runs before popup.js's text-paste handler on the same element.
     inputEl.addEventListener("paste", function (e) {
+      if (window.jrEvLog) window.jrEvLog("paste", "popup", e, { on: isOn() });
       var dt = e.clipboardData;
       if (!dt || !dt.files || !dt.files.length || !isOn()) return; // plain text: popup.js pastes it
       // Text copied from Word/Excel/a web page also carries a picture of it: that is a text paste
-      if (Array.prototype.indexOf.call(dt.types || [], "text/html") !== -1) return;
+      // ("Copy image" on a web page carries an <img> tag but no text: that is the picture)
+      if (Array.prototype.indexOf.call(dt.types || [], "text/html") !== -1 && dt.getData("text/plain")) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       add(dt.files);
     }, true);
-    [questionDiv, strip].forEach(function (zone) { zone.addEventListener("dragover", function (e) {
-      if (!hasFiles(e.dataTransfer) || !isOn()) return;
-      e.preventDefault();
-      questionDiv.classList.add("jr-attach-drop");
-    }); });
-    questionDiv.addEventListener("dragleave", function (e) {
-      if (!questionDiv.contains(e.relatedTarget)) questionDiv.classList.remove("jr-attach-drop");
-    });
-    [questionDiv, strip].forEach(function (zone) { zone.addEventListener("drop", function (e) {
-      questionDiv.classList.remove("jr-attach-drop");
-      if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length || !isOn()) return;
-      e.preventDefault();
-      add(e.dataTransfer.files);
-    }); });
+    questionDiv._jrDrop = { isOn: isOn, add: add }; // dropped files: JR.popupDrag
 
     JR.placeStripAbove(strip, questionDiv);
     return {

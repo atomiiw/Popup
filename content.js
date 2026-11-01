@@ -190,6 +190,8 @@
     if (triggerBtn && !triggerBtn.contains(e.target)) {
       removeTriggerBtn();
     }
+    // The open popup is gone from the page (ChatGPT re-rendered what held it, and it could not go back): it is closed
+    if (st.activePopup && !st.activePopup.isConnected) { JR.repositionAll(); if (!st.activePopup.isConnected) JR.removeAllPopups(); }
     if (!st.activePopup && st.popupStack.length === 0) return;
     if (st.confirmingDelete) {
       // Click outside popup cancels delete confirmation
@@ -514,7 +516,7 @@
       if (w === lastW) return;  // height-only change, ignore
       lastW = w;
       // Reposition popups/underlines/arrows and toggle nav widget visibility
-      if (st.resizeHandler) st.resizeHandler();
+      if (st.activePopup && JR.repositionAll) JR.repositionAll();
       if (JR.updateNavWidget) JR.updateNavWidget();
     });
     function attach() {

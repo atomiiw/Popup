@@ -3,7 +3,7 @@
 ## Current
 
 ### Attachments in popups (1.2.11)
-- Paste or drop any file into a popup question; it shows in its own layer between the quote and the question as 45 px squares (images as thumbnails, other files as an icon with the name shortened in the middle, extension kept)
+- Paste any file into a popup question (also an image copied from a web page), or drop it anywhere on the popup (ChatGPT never gets a file dropped on a popup); it shows in its own layer between the quote and the question as 45 px squares (images as thumbnails, other files as an icon with the name shortened in the middle, extension kept)
 - Sending hands the files to ChatGPT's own composer (synthetic paste), waits for the uploads, then sends the hidden Popup question with them; files ChatGPT refuses are listed in a one-line grey note (this session only) and the rest is sent
 - Answered popups show the attachments of each version, also after a reload (read from the conversation data); edits start with no attachments
 - Popup does not send while the user's own files wait in ChatGPT's input box (one-line note instead)
@@ -179,7 +179,7 @@
 ### Edit Question & Response Versions (Step 5e)
 - Clicking the question text of a completed popup enters edit mode: it becomes editable in place with a subtle underline
 - A send arrow appears during edit mode, greyed out until the text actually changes from the original
-- Hovering the send arrow reveals a Brief/Elaborate dropdown (same as initial question); Escape cancels edit mode
+- Hovering the send arrow reveals a Brief/Elaborate dropdown (same as initial question); Escape (or closing the popup) cancels edit mode — losing focus (clicking elsewhere, switching desktops) keeps the typed text
 - On send: the new question is injected into the chat thread, the response is replaced with loading/streaming for the new response
 - Both old and new responses are kept as **versions** — a version nav bar (`◀ 1 / 2 ▶`) appears when multiple versions exist
 - Clicking version nav arrows switches the displayed question text and response HTML

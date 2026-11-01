@@ -588,39 +588,6 @@
     return JR.site.popupHost(wrappers.length > 0 ? JR.site.turnOf(wrappers[0]) : null);
   }
 
-  function attachResizeListener(popup, spans, contentContainer) { // [LAYOUT-LOCKED]
-    if (spans.length === 0) return;
-    st.resizeHandler = function () {
-      if (!spans[0].isConnected) return;
-      var r = JR.getHighlightRect(spans);
-      var cRect = contentContainer.getBoundingClientRect();
-      var popupW = popup.offsetWidth;
-      var popupH = popup.offsetHeight;
-      var cW = contentContainer.clientWidth;
-      var gap = 8;
-
-      // Update left
-      var left = r.left - cRect.left + r.width / 2 - popupW / 2;
-      var minLeft = JR.getPopupMinLeft() - cRect.left;
-      var maxLeft = JR.getPopupMaxRight() - cRect.left - popupW;
-      left = Math.max(minLeft, Math.min(left, cW - popupW - 8, maxLeft));
-      popup.style.left = left + "px";
-
-      // Update top — highlight may have reflowed vertically
-      var dir = popup._jrLockedDirection || popup._jrDirection;
-      if (dir === "above") {
-        var top = r.top - cRect.top - popupH - gap;
-        popup.style.top = top + "px";
-        popup._jrBottomAnchor = top + popupH;
-      } else {
-        popup.style.top = (r.bottom - cRect.top + gap) + "px";
-      }
-
-      JR.updateArrow(popup, r, cRect, left);
-    };
-    window.addEventListener("resize", st.resizeHandler);
-  }
-
   function attachScrollTracking(popup, spans, contentContainer) {
     if (spans.length === 0) return;
     var parentRespDiv = spans[0].closest(".jr-popup-response");
@@ -705,7 +672,7 @@
     rebuildDropdown();
     sendWrapper.appendChild(dropdown);
     questionDiv.appendChild(sendWrapper);
-    container.appendChild(questionDiv);
+    JR.askArea(container).appendChild(questionDiv);
 
     function doSend(mode) {
       var question = readQuestion(questionText);
@@ -739,7 +706,7 @@
       var sentStrip = files.length ? JR.attachmentStrip(files) : null;
       displayDiv.appendChild(displayInner);
       var loadingDiv = JR.createLoadingDiv();
-      container.appendChild(displayDiv);
+      JR.askArea(container).appendChild(displayDiv);
       if (sentStrip) JR.placeStripAbove(sentStrip, displayDiv);
       popup.appendChild(loadingDiv);
 
@@ -949,7 +916,7 @@
           popup.appendChild(savedChildren[ri]);
         }
         popup.style.left = savedLeft;
-        var dir = popup._jrLockedDirection || popup._jrDirection;
+        var dir = popup._jrLockedDirection;
         if (dir === "above" && st.activeSourceHighlights.length > 0 && popup.parentElement) {
           var hRect = JR.getHighlightRect(st.activeSourceHighlights);
           var cRect = popup.parentElement.getBoundingClientRect();
@@ -974,7 +941,7 @@
 
       popup.appendChild(confirmCard);
       // Keep horizontal position — only adjust top for "above" popups
-      var dir = popup._jrLockedDirection || popup._jrDirection;
+      var dir = popup._jrLockedDirection;
       if (dir === "above" && st.activeSourceHighlights.length > 0 && popup.parentElement) {
         var hRect = JR.getHighlightRect(st.activeSourceHighlights);
         var cRect = popup.parentElement.getBoundingClientRect();
@@ -1434,12 +1401,7 @@
       // Track text changes to enable/disable send
       questionText.addEventListener("input", updateEditSend);
 
-      // Blur exits edit mode
-      questionText.addEventListener("blur", function (e) {
-        // Don't exit if clicking send or dropdown
-        if (e.relatedTarget && (e.relatedTarget === sendBtn || e.relatedTarget.closest(".jr-send-mode-dropdown"))) return;
-        setTimeout(function () { exitEditMode(); }, 150);
-      });
+      // Losing focus keeps the edit (switching desktops, clicking elsewhere): only Esc or closing the popup gives it up
 
       // Enter sends edit, Cmd/Ctrl+Enter inserts newline, Escape cancels
       questionText.addEventListener("keydown", function (e) {
@@ -1473,7 +1435,7 @@
         if (submitEdit(popup, id, entry, contentContainer, current, st.responseMode, editAttach.files()) === false) editing = true; // blocked: keep editing
       });
 
-      upper.appendChild(questionDiv);
+      JR.askArea(upper).appendChild(questionDiv);
       JR.showSentAttachments(questionDiv, entry.items && entry.items[entry.activeItemIndex]);
     }
 
@@ -1734,6 +1696,8 @@
     popup._jrChained = isChained;
     var w = isChained ? st.customPopupWidthChained : st.customPopupWidthL1;
     if (w) popup.style.width = w + "px";
+    var h = isChained ? st.customPopupHeightChained : st.customPopupHeightL1;
+    if (h) popup.style.setProperty("--jr-popup-h", h);
 
     // --- Upper card (toolbar + highlight + question) ---
     var upper = document.createElement("div");
@@ -1850,8 +1814,7 @@
     } else {
       st.activeHighlightId = null;
     }
-    // --- Resize + scroll tracking ---
-    attachResizeListener(popup, spans, contentContainer);
+    // --- Scroll tracking (a resize re-places every popup: the chat column observer, content.js) ---
     attachScrollTracking(popup, spans, contentContainer);
 
     // Defer visual-only work (underlines, nav counter) to next frame so the

@@ -409,15 +409,21 @@
       }
     }
     updateTail(turns);
+    // ChatGPT may have replaced the element that hosts popups: watch the new one, put popups back into it
+    watchHostHeight();
+    if (st.activePopup && !st.activePopup.isConnected && JR.repositionAll) JR.repositionAll();
     if (newlyLoaded.length && JR.onQAContentLoaded) JR.onQAContentLoaded(newlyLoaded);
     if (JR.reapplyHighlights) JR.reapplyHighlights();
     refreshDiagnosticsSoon();
   }
 
-  // Keep #jr-diagnostics current for DOM-only test tools: refresh after turns
-  // mount and once scrolling settles (debounced; nothing runs while idle).
-  var diagTimer = null;
+  // #jr-diagnostics for DOM-only test tools: written once a chat's turns mount; kept current (after turns
+  // mount, once scrolling settles) only with a #jr-… debug hash, since it walks the whole page (~30 ms in a
+  // long chat). Otherwise tools click #jr-diagnostics-run for a fresh one.
+  var diagTimer = null, diagDone = false;
   function refreshDiagnosticsSoon() {
+    if (diagDone && location.hash.indexOf("jr-") === -1) return;
+    diagDone = true;
     if (diagTimer) clearTimeout(diagTimer);
     diagTimer = setTimeout(function () { diagTimer = null; JR.diagnose(); }, 500);
   }
@@ -432,7 +438,7 @@
   // highlight moves down; absolutely positioned popups must follow.
   var hostObserver = null;
   var observedHost = null;
-  var lastHostH = 0;
+  var lastHostH = 0, lastHlY = null;
   function watchHostHeight() {
     if (typeof ResizeObserver === "undefined") return;
     var host = JR.site.popupHost(null);
@@ -444,7 +450,13 @@
       var h = observedHost.offsetHeight;
       if (h === lastHostH) return;
       lastHostH = h;
-      if (st.activePopup && st.activePopup.isConnected && JR.repositionPopup) JR.repositionPopup();
+      var hl = st.activePopup && st.activePopup.isConnected && st.activeSourceHighlights[0];
+      if (!hl || !hl.isConnected || !JR.repositionAll) return;
+      // Only when the highlight moved (older history loaded above), not for an answer growing below it
+      var y = hl.getBoundingClientRect().top - observedHost.getBoundingClientRect().top;
+      if (y === lastHlY) return;
+      lastHlY = y;
+      JR.repositionAll();
     });
     hostObserver.observe(host);
   }
@@ -466,6 +478,7 @@
     if (observedRoot) observedRoot.removeEventListener("scroll", refreshDiagnosticsSoon);
     observedRoot = root;
     mountObserver = new MutationObserver(function (mutations) {
+      var checked = new Set(); // a streaming answer adds many nodes per callback: each turn once
       for (var i = 0; i < mutations.length; i++) {
         var added = mutations[i].addedNodes;
         for (var j = 0; j < added.length; j++) {
@@ -477,7 +490,11 @@
             return;
           }
           // An answer filled in after its turn mounted, while a highlight still waits for it
-          if (JR.pendingRestoreCount && JR.pendingRestoreCount() > 0 && n.closest && n.closest(JR.SEL.turn)) {
+          // (never restored yet, or lost when ChatGPT rebuilt the turn)
+          var nt = n.closest && n.closest(JR.SEL.turn);
+          if (!nt || checked.has(nt)) continue;
+          checked.add(nt);
+          if (JR.restoreWaitsFor && JR.restoreWaitsFor(nt)) {
             scheduleMountCheck();
             return;
           }
@@ -592,6 +609,7 @@
     if ((m = /^(\w+)$/.exec(expr))) v = scope[m[1]];
     else if ((m = /^(\w+)\[(\w+)\]$/.exec(expr)) && Array.isArray(scope[m[1]])) v = scope[m[1]][/^\d+$/.test(m[2]) ? +m[2] : scope[m[2]]];
     else if ((m = /^(\w+)(\.filter\(Boolean\))?\.length$/.exec(expr)) && Array.isArray(scope[m[1]])) v = (m[2] ? scope[m[1]].filter(Boolean) : scope[m[1]]).length;
+    else if ((m = /^(\w+)\.(\w+)$/.exec(expr)) && scope[m[1]] && typeof scope[m[1]] === "object") v = scope[m[1]][m[2]];
     return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? v : undefined;
   }
   function fillExpressions(text, scope, known) {
@@ -625,15 +643,27 @@
     text = out + text.slice(i);
     var names = Object.keys(vars);
     var known = names.length ? new RegExp("\\b(?:" + names.join("|") + ")\\b") : /(?!)/;
-    text = text.replace(/\{#each\s+(\w+)\s+as\s+(\w+)\s*(?:,\s*(\w+))?\s*\}([\s\S]*?)\{\/each\}/g, function (all, list, item, index, body) {
-      if (!Array.isArray(vars[list])) return "";
-      return vars[list].map(function (el, n) {
-        var scope = Object.assign({}, vars);
-        scope[item] = el;
-        if (index) scope[index] = n;
-        return fillExpressions(body, scope, /[\s\S]/); // inside the block every {…} is template
-      }).join("\n\n");
-    });
+    // {#each list as item, i}…{/each}: list is a constant or written in place ([{a:"0x00",v:"42"}, …])
+    out = ""; i = 0;
+    while ((j = text.indexOf("{#each", i)) !== -1) {
+      var head = braceEnd(text, j), close = head === -1 ? -1 : text.indexOf("{/each}", head);
+      if (close === -1) break;
+      var h = /^#each\s+([\s\S]+?)\s+as\s+(\w+)\s*(?:,\s*(\w+))?\s*$/.exec(text.slice(j + 1, head - 1));
+      // shortcut: read as JSON after quoting bare keys by pattern: a value containing `, key:` is misread and single-quoted strings drop the block; parse JS properly if answers need it
+      var list = h && (/^\w+$/.test(h[1]) ? vars[h[1]] : parseJSON(h[1].replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":')));
+      var body = text.slice(head, close);
+      out += text.slice(i, j);
+      if (Array.isArray(list)) {
+        out += list.map(function (el, n) {
+          var scope = Object.assign({}, vars);
+          scope[h[2]] = el;
+          if (h[3]) scope[h[3]] = n;
+          return fillExpressions(body, scope, /[\s\S]/); // inside the block every {…} is template
+        }).join("\n\n");
+      }
+      i = close + "{/each}".length;
+    }
+    text = out + text.slice(i);
     text = text.replace(/\{[#:\/]\w[^{}]*\}/g, ""); // other block syntax ({#if}, {:else}, {/if}, a stray {/each})
     return fillExpressions(text, vars, known);
   }
@@ -736,8 +766,10 @@
     if (a.background) cls.push("jr-dil-bg");
     if (a.align === "center") cls.push("jr-dil-center");
     if (a.direction === "row") cls.push("jr-dil-row");
-    if (a.width === "100%") cls.push("jr-dil-full");
-    return '<div class="' + cls.join(" ") + '">';
+    // Its own size (width="12%", height="12px": a relative-size bar), applied by styles.css through attr()
+    var size = (/^\d+(\.\d+)?(%|px)$/.test(a.width) ? ' data-w="' + a.width + '"' : "") +
+      (/^\d+(\.\d+)?(%|px)$/.test(a.height) ? ' data-h="' + a.height + '"' : "");
+    return '<div class="' + cls.join(" ") + '"' + size + ">";
   }
   function dilClose(tag, attrs) {
     if (tag === "badge") return "</span>";
@@ -808,6 +840,12 @@
   }
 
   JR.renderMarkdown = function (md) {
+    // Debug (URL contains #jr-raw): the source text, readable by DOM-only test tools in #jr-rawlog[data-json]
+    if (md && location.hash.indexOf("jr-raw") !== -1) {
+      var raw = document.getElementById("jr-rawlog");
+      if (!raw) { raw = document.createElement("div"); raw.id = "jr-rawlog"; raw.hidden = true; document.body.appendChild(raw); }
+      raw.setAttribute("data-json", JSON.stringify(JSON.parse(raw.getAttribute("data-json") || "[]").concat([md]).slice(-5)));
+    }
     var c = componentize((md || "").replace(/\r/g, ""));
     if (!c.parts.length) return renderMarkdownText(c.md);
     return renderMarkdownText(c.md)

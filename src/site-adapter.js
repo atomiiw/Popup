@@ -169,16 +169,17 @@
 
   // ChatGPT keeps hidden copies of previously visited pages (SPA cache), each with
   // its own scroll container and turns. Everything is scoped to the visible one.
+  // checkVisibility(), not offsetParent: it needs styles only, no layout (this runs per DOM change while streaming).
   var cachedScroller = null;
   function visibleScroller() {
     if (broken.scrollContainer) return null;
-    if (cachedScroller && cachedScroller.isConnected && cachedScroller.offsetParent !== null) return cachedScroller;
+    if (cachedScroller && cachedScroller.isConnected && cachedScroller.checkVisibility()) return cachedScroller;
     cachedScroller = null;
     var list = C.scrollContainer;
     for (var i = 0; i < list.length; i++) {
       var els = document.querySelectorAll(list[i]);
       for (var j = 0; j < els.length; j++) {
-        if (els[j].offsetParent !== null) { used.scrollContainer = list[i]; cachedScroller = els[j]; return els[j]; }
+        if (els[j].checkVisibility()) { used.scrollContainer = list[i]; cachedScroller = els[j]; return els[j]; }
       }
     }
     return null;
@@ -436,13 +437,14 @@
     /** Citation chips, kept as one unit when extracting a sentence. */
     citationSelector: '[data-testid="webpage-citation-pill"], a[data-testid="chatgpt-citation"]',
     /**
-     * Text a highlight span must not be put into: SVG charts (spans are not drawn)
-     * and CodeMirror code (the editor removes them). Proxies go into the widget around it.
+     * Text a highlight span must not be put into: SVG charts (spans are not drawn),
+     * CodeMirror code and the ProseMirror editor of a "Writing" block (draft email
+     * etc.; the editors remove them, P17). Proxies go into the widget around it.
      */
-    noWrapSelector: "svg, .cm-content, .recharts-wrapper",
+    noWrapSelector: 'svg, .cm-content, .recharts-wrapper, [data-testid="chatgpt-writing-block"] .ProseMirror',
     /** A chart's plot: axes, labels, legend, tooltip (Recharts). */
     chartPlotSelector: ".recharts-wrapper",
-    noWrapHostSelector: "[data-client-defined-widget]",
+    noWrapHostSelector: '[data-client-defined-widget], [data-testid="chatgpt-writing-block"]',
 
     /**
      * Component tags in the text of ChatGPT's rich answers (2026-10; seen in answers
@@ -576,6 +578,10 @@
         conversationApi: JR.qa ? JR.qa.apiStatus : null,
         fileUrlStatus: JR.qa ? JR.qa.fileUrlStatus || null : null, // last /backend-api/files/download answer (Step 2c)
         pendingRestore: JR.pendingRestoreCount ? JR.pendingRestoreCount() : 0,
+        popupLost: !!(JR.state.activePopup && !JR.state.activePopup.isConnected), // open, but gone from the page
+        lostOnScreen: Array.from(JR.state.completedHighlights.values()).filter(function (e) { // R24: turn mounted, spans gone
+          return e.sourceTurnKey && !e.parentId && !e.wholeResponse && !(e.spans.length && e.spans[0].isConnected) && JR.site.findTurnByKey(e.sourceTurnKey);
+        }).length,
       },
       perf: JR.perf ? JR.perf.snapshot() : null,
       lastSend: JR.state.lastSendReport || null,

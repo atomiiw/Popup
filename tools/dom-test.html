@@ -271,6 +271,32 @@ check("R4 screen-reader data table stays out of quotes", cqxSent && cqxSent.inde
 check("R4 screen-reader text is not searched", JR.findTextRange(cq, "2022 120", 0) === null);
 cq.remove();
 
+// R31: a "Writing" block (ChatGPT's draft email etc.) is a ProseMirror editor: it removes spans put into it (P17)
+var wb = document.createElement("div");
+wb.setAttribute("data-dil-message-id", "");
+wb.innerHTML = '<div data-testid="chatgpt-writing-block" data-oai-writing-block-surface="" style="position:relative;isolation:isolate;overflow:clip">' +
+  '<div class="ProseMirror" contenteditable="true"><p>Hi everyone,</p><p>Just a quick update that our meeting this Friday has been moved.</p></div></div>';
+document.body.appendChild(wb);
+var wbHTML0 = wb.querySelector(".ProseMirror").innerHTML;
+var wbt = wb.querySelectorAll(".ProseMirror p")[1].firstChild;
+var wbr = document.createRange(); wbr.setStart(wbt, wbt.data.indexOf("our meeting")); wbr.setEnd(wbt, wbt.data.indexOf("our meeting") + "our meeting this Friday".length);
+var wbw = JR.highlightRange(wbr);
+check("R31 Writing block: nothing inserted into its editor", wb.querySelector(".ProseMirror").innerHTML === wbHTML0, wb.querySelector(".ProseMirror").innerHTML.slice(0, 120));
+check("R31 Writing block: a proxy over the selection, inside the block", wbw.length === 1 && wbw[0].classList.contains("jr-hl-proxy") && JR.spanRange(wbw[0]).toString() === "our meeting this Friday" && !!wbw[0].closest('[data-testid="chatgpt-writing-block"]'), wbw.length && JR.spanRange(wbw[0]).toString());
+JR.state.activeSourceHighlights = wbw; JR.removeSourceHighlight();
+check("R31 Writing block: removing it leaves the editor as it was", wb.querySelector(".ProseMirror").innerHTML === wbHTML0 && !wb.querySelector(".jr-hl-proxy"), wb.querySelectorAll(".jr-hl-proxy").length);
+// The editor redraws its text a moment later (real ChatGPT: blue for a second, then gone): the paint follows the new text
+wb.style.cssText = "position:absolute;top:0;left:0;width:600px"; // out of the flow: the layout tests below don't see it
+wbt = wb.querySelectorAll(".ProseMirror p")[1].firstChild;
+wbr = document.createRange(); wbr.setStart(wbt, wbt.data.indexOf("our meeting")); wbr.setEnd(wbt, wbt.data.indexOf("our meeting") + "our meeting this Friday".length);
+wbw = JR.highlightRange(wbr);
+var wbp = wb.querySelectorAll(".ProseMirror p")[1]; wbp.textContent = wbp.textContent;
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var painted = []; CSS.highlights.get("jr-mark").forEach(function (r) { painted.push(r.toString()); });
+  check("R31 Writing block: still painted after the editor redraws its text", painted.indexOf("our meeting this Friday") !== -1 && JR.spanRange(wbw[0]).toString() === "our meeting this Friday", JSON.stringify(painted));
+  JR.state.activeSourceHighlights = wbw; JR.removeSourceHighlight(); wb.remove(); done();
+}, 0); }));
+
 var cm = document.createElement("div");
 cm.setAttribute("data-dil-message-id", "");
 cm.innerHTML = '<div data-client-defined-widget="code_block"><div data-code-block="true"><div class="cm-editor"><div class="cm-scroller"><div contenteditable="true" class="cm-content">' +
@@ -318,14 +344,33 @@ check("highlights restore inside a fading-in popup", JR.highlightRange(fr2).leng
 fade.remove();
 
 // Step 2: files pasted or dropped into a popup question are kept and shown above the text.
+// In a popup, as on ChatGPT; early-hide.js forwards every drag event to JR.popupDrag before ChatGPT's scripts run
+var qpop = document.createElement("div"); qpop.className = "jr-popup";
+qpop.style.cssText = "position:fixed;left:10px;top:10px;width:300px;animation:none";
 var qd = document.createElement("div"), qi = document.createElement("span");
-qi.contentEditable = "true"; qd.appendChild(qi); document.body.appendChild(qd);
+qd.className = "jr-popup-question"; qi.contentEditable = "true"; qi.textContent = " ";
+qd.appendChild(qi); qpop.appendChild(qd); document.body.appendChild(qpop);
+["dragenter", "dragover", "dragleave", "drop"].forEach(function (t) {
+  window.addEventListener(t, function (e) { if (JR.popupDrag) JR.popupDrag(e); }, true);
+});
+var chatGotDrop = 0; // ChatGPT's own drop handling, which takes a file for its composer
+document.addEventListener("drop", function (e) { if (!e._jrCleanup) chatGotDrop++; });
+// ChatGPT's "Add anything" layer: shown while a file is dragged over the page, gone on dragleave or drop
+var chatLayer = false;
+document.addEventListener("dragenter", function () { chatLayer = true; });
+document.addEventListener("dragover", function () { chatLayer = true; });
+document.addEventListener("dragleave", function () { chatLayer = false; });
+document.addEventListener("drop", function () { chatLayer = false; });
 var changes = 0;
 var att = JR.acceptAttachments(qd, qi, function () { changes++; });
 function filesEvent(type, files) {
   var dt = new DataTransfer(); files.forEach(function (f) { dt.items.add(f); });
   var ev = type === "paste" ? new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })
                             : new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+  if (type !== "paste") { // at the question, as the pointer would be
+    var qr = qd.getBoundingClientRect();
+    ev = new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true, clientX: qr.left + 5, clientY: qr.top + 5 });
+  }
   (type === "paste" ? qi : qd).dispatchEvent(ev);
   return ev;
 }
@@ -350,10 +395,34 @@ var officeDt = new DataTransfer();
 officeDt.setData("text/plain", "cell"); officeDt.setData("text/html", "<td>cell</td>"); officeDt.items.add(png);
 qi.dispatchEvent(new ClipboardEvent("paste", { clipboardData: officeDt, bubbles: true, cancelable: true }));
 check("Step 2: text copied from Word/Excel (it also carries a picture) is pasted as text", att.files().length === 1);
+// "Copy image" on a web page: the picture and an <img> tag, no text (P14: nothing happened)
+var imgDt = new DataTransfer();
+imgDt.setData("text/html", '<img src="https://example.com/x.png">'); imgDt.items.add(png);
+qi.dispatchEvent(new ClipboardEvent("paste", { clipboardData: imgDt, bubbles: true, cancelable: true }));
+check("Step 3: an image copied from a web page (no text) is taken as a file", att.files().length === 2 && att.files()[1] === png, att.files().length);
+// A file dragged over a popup goes to the popup, also when ChatGPT's "drop here" layer covers the page
+var cover = document.createElement("div"); cover.style.cssText = "position:fixed;inset:0;z-index:999";
+document.body.appendChild(cover);
+var cr = qpop.getBoundingClientRect(), coverDt = new DataTransfer(); coverDt.items.add(pdf);
+cover.dispatchEvent(new DragEvent("dragenter", { dataTransfer: coverDt, bubbles: true, cancelable: true, clientX: cr.right + 50, clientY: cr.top + 5 }));
+check("Step 3: (stand-in) ChatGPT's layer shows while the file is over the page", chatLayer, chatLayer);
+var overEv = new DragEvent("dragover", { dataTransfer: coverDt, bubbles: true, cancelable: true, clientX: cr.left + 20, clientY: cr.top + 5 });
+cover.dispatchEvent(overEv);
+check("Step 3: dragging a file over a popup is allowed there (and outlined)", overEv.defaultPrevented && qd.classList.contains("jr-attach-drop"), overEv.defaultPrevented);
+check("Step 3: ChatGPT's layer goes away as soon as the file is over a popup", !chatLayer, chatLayer);
+cover.dispatchEvent(new DragEvent("dragover", { dataTransfer: coverDt, bubbles: true, cancelable: true, clientX: cr.left + 30, clientY: cr.top + 6 }));
+check("Step 3: ...and stays away while it moves over the popup", !chatLayer, chatLayer);
+var dropsBefore = chatGotDrop;
+cover.dispatchEvent(new DragEvent("drop", { dataTransfer: coverDt, bubbles: true, cancelable: true, clientX: cr.left + 20, clientY: cr.top + 5 }));
+check("Step 3: a file dropped on a popup goes to its question, not to ChatGPT", att.files().length === 3 && chatGotDrop === dropsBefore && !qd.classList.contains("jr-attach-drop"), att.files().length + " chat=" + (chatGotDrop - dropsBefore));
+var outEv = new DragEvent("drop", { dataTransfer: coverDt, bubbles: true, cancelable: true, clientX: cr.right + 50, clientY: cr.top + 5 });
+cover.dispatchEvent(outEv);
+check("Step 3: a file dropped outside every popup is left to ChatGPT", att.files().length === 3 && chatGotDrop === dropsBefore + 1, att.files().length + " chat=" + (chatGotDrop - dropsBefore));
+cover.remove();
 att.clear();
 check("Step 2: clear empties the strip", att.files().length === 0 && strip.hidden);
 att.remove();
-qd.remove();
+qpop.remove();
 
 // Step 2c: an answered question shows the attachments of its version: from memory this session,
 // from ChatGPT's conversation data after a reload (stubbed here).
@@ -395,7 +464,24 @@ if (typeof updateHighlightFields === "undefined") window.updateHighlightFields =
 if (typeof setActiveItem === "undefined") window.setActiveItem = function () { return Promise.resolve(); };
 try { JR.rebuildPopupAfterEdit(rb, "rb-hl"); } catch (e) { out.push("NOTE rebuild threw: " + e.message); }
 check("Step 2c: one attachment row after the popup is rebuilt", rb.querySelectorAll(".jr-popup-attach:not([hidden])").length === 1, rb.querySelectorAll(".jr-popup-attach").length);
-JR.state.completedHighlights.delete("rb-hl"); rb.remove();
+// Editing a question keeps the typed text when the input loses focus (switching desktops, clicking
+// elsewhere); only Esc (or closing the popup) gives up the edit (user, 2026-10-31)
+var rbText = rb.querySelector(".jr-popup-question-text");
+if (rbText) {
+  rbText.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  rbText.textContent = "q edited";
+  rbText.dispatchEvent(new FocusEvent("blur"));
+  asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+    check("Step 3: an edit survives losing focus", rbText.textContent === "q edited" && rbText.isContentEditable, rbText.textContent + " editable=" + rbText.isContentEditable);
+    rbText.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    check("Step 3: ...and Esc gives it up", rbText.textContent === "q" && !rbText.isContentEditable, rbText.textContent);
+    JR.state.completedHighlights.delete("rb-hl"); rb.remove();
+    done();
+  }, 400); }));
+} else {
+  check("Step 3: the rebuilt popup has a question to edit", false, "none");
+  JR.state.completedHighlights.delete("rb-hl"); rb.remove();
+}
 
 // A note in a question row must not squeeze the question away (T8: its text got 0 px wide).
 var nq = document.createElement("div"); nq.className = "jr-popup-question"; nq.style.width = "300px";
@@ -605,6 +691,395 @@ JR.drainQueue();
 check("Step 2: the queue does not send while files upload", JR.state.messageQueue[0] === queuedOpts);
 JR.state.messageQueue.length = 0;
 JR.state.attaching = false;
+
+// --- Step 3: answer formats (R15, R22), answers captured in P5 ---
+var resp15 = document.createElement("div");
+resp15.className = "jr-popup-response";
+resp15.style.width = "600px";
+document.body.appendChild(resp15);
+function bar15(color, w) {
+  return '<box gap={1}>\n        <box background="surface-tertiary" radius="full" height="12px" clip>\n          <box background="' + color +
+    '" width="' + w + '" height="100%" radius="full"/>\n        </box>\n        <text color="secondary" size="xs">size</text>\n      </box>';
+}
+resp15.innerHTML = JR.renderMarkdown('<grid columns={1} gap={3}>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3} height="100%">\n      ' +
+  bar15("#3B82F6", "12%") + '\n    </box>\n  </grid-item>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3}>\n      ' +
+  bar15("#F59E0B", "52%") + '\n    </box>\n  </grid-item>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3}>\n      ' +
+  bar15("#10B981", "100%") + "\n    </box>\n  </grid-item>\n</grid>");
+var fills15 = Array.prototype.filter.call(resp15.querySelectorAll(".jr-dil"), function (el) { return !el.children.length && !el.textContent.trim(); });
+var ratios15 = fills15.map(function (f) { return Math.round(f.offsetWidth / f.parentElement.clientWidth * 100); });
+check("R15: a relative-size bar is drawn at the width the answer gives (12% / 52% / 100%)", ratios15.join() === "12,52,100", ratios15.join() + " " + resp15.innerHTML.slice(0, 300));
+check("R15: the bar track is as tall as the answer says (12px)", fills15.length && fills15[0].parentElement.offsetHeight === 12, fills15.length && fills15[0].parentElement.offsetHeight);
+check("R15: the filled part is visible against its track",
+  fills15.length && getComputedStyle(fills15[0]).backgroundColor !== getComputedStyle(fills15[0].parentElement).backgroundColor, fills15.length && getComputedStyle(fills15[0]).backgroundColor);
+var bgcard15 = document.createElement("div");
+bgcard15.innerHTML = JR.renderMarkdown('<grid columns={2}>\n  <grid-item>\n    <box background="surface-secondary" padding={4} height="100%">\n      **Card** text\n    </box>\n  </grid-item>\n</grid>');
+resp15.appendChild(bgcard15);
+var bgbox15 = bgcard15.querySelector(".jr-dil-bg");
+check("R15: a background card with height=\"100%\" keeps its padding", bgbox15 && parseFloat(getComputedStyle(bgbox15).paddingLeft) > 0, bgbox15 && getComputedStyle(bgbox15).paddingLeft);
+bgcard15.remove();
+var card15 = resp15.querySelector(".jr-dil-border");
+check("R15: a card with height=\"100%\" keeps its padding", card15 && parseFloat(getComputedStyle(card15).paddingLeft) > 0, card15 && getComputedStyle(card15).paddingLeft);
+resp15.innerHTML = JR.renderMarkdown('<grid columns={4} gap={2}>\n  {#each [{a:"0x00",v:"42"},{a:"0x04",v:"17"},{a:"0x08",v:"255"},{a:"0x1C",v:"12"}] as cell,i}\n    <grid-item>\n' +
+  '      <box border radius="lg" padding={3} gap={2} align="center" background={i===2?"rgba(59,130,246,0.08)":"surface"}>\n' +
+  '        <text size="xs" color="secondary">{cell.a}</text>\n        <divider color="subtle"/>\n        <title size="xl" color="default" tabularNums>{cell.v}</title>\n' +
+  "      </box>\n    </grid-item>\n  {/each}\n</grid>\n\nAfter {braces} stay.");
+var t22 = resp15.textContent;
+check("R22: {#each} over a list written in place repeats its block (4 cells)", resp15.querySelectorAll(".jr-dil-grid-item").length === 4, resp15.querySelectorAll(".jr-dil-grid-item").length);
+check("R22: {cell.a} / {cell.v} are filled in", /0x00[\s\S]*42[\s\S]*0x1C[\s\S]*12/.test(t22) && !/cell\.|#each|\/each/.test(t22), t22.replace(/\s+/g, " ").slice(0, 200));
+check("R22: braces outside templates stay", t22.indexOf("After {braces} stay.") !== -1, t22.slice(-60));
+resp15.remove();
+
+// --- Step 3: popup height and direction (R16, R18-R21) ---
+// A fake chat: a scroll container the size of the window, a host as tall as the conversation, a highlight in it.
+var vh = window.innerHeight / 100, H70 = Math.round(70 * vh);
+var sc3 = document.createElement("div");
+sc3.setAttribute("data-app-action-timeline-scroll", "");
+sc3.style.cssText = "position:absolute;left:0;top:0;width:760px;height:" + window.innerHeight + "px;overflow-y:auto;background:#fff";
+var host3 = document.createElement("div");
+host3.style.cssText = "position:relative";
+var hl3 = document.createElement("span");
+hl3.textContent = "highlight";
+hl3.style.cssText = "position:absolute;left:200px;height:20px";
+host3.appendChild(hl3); sc3.appendChild(host3); document.body.appendChild(sc3);
+function place3(contentH, y, scrollTop) {
+  host3.style.height = contentH + "px"; hl3.style.top = y + "px"; sc3.scrollTop = scrollTop;
+  return hl3.getBoundingClientRect();
+}
+function dir3(contentH, y, scrollTop) { return JR.bestDirection(place3(contentH, y, scrollTop), H70, 8); }
+function popup3(answer) {
+  var p = document.createElement("div");
+  p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"><div class="jr-popup-highlight-inner">quote</div></div>' +
+    '<div class="jr-popup-question"><div class="jr-popup-question-inner"><span class="jr-popup-question-text">question</span></div></div></div>' +
+    '<div class="jr-popup-response">' + answer + "</div>";
+  return p;
+}
+// R18 (positions scale with the window: W = window height, the popup is 0.7 W)
+var W3 = window.innerHeight, C3 = 3000;
+// both sides reachable by scrolling → the side with more room on screen
+check("R18: both sides reachable, highlight high on screen → below", dir3(C3, 1500, 1500 - 0.2 * W3) === "below", dir3(C3, 1500, 1500 - 0.2 * W3));
+check("R18: both sides reachable, highlight low on screen → above", dir3(C3, 1500, 1500 - 0.8 * W3) === "above", dir3(C3, 1500, 1500 - 0.8 * W3));
+// only one side reachable → that side, even if the screen has more room on the other
+check("R18: scrolled to the end, only above reachable → above", dir3(C3, C3 - 0.55 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.55 * W3, C3 - W3));
+check("R18: start of the chat, only below reachable → below", dir3(C3, 0.55 * W3, 0) === "below", dir3(C3, 0.55 * W3, 0));
+// neither side reachable (very short chat) → below: the popup makes the page longer
+check("R18: short chat, neither side reachable → below", dir3(W3 + 50, 50 + 0.5 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.5 * W3, 50));
+
+// R16/R26: a popup with an answer is as tall as the answer, up to 70vh; a longer answer scrolls inside; never capped lower
+var p16 = popup3("short");
+JR.positionPopup(p16, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
+var resp16 = p16.querySelector(".jr-popup-response"), upper16 = p16.querySelector(".jr-popup-upper");
+check("R26: a short answer gets a short popup (as tall as its content)", p16.offsetHeight < H70 - 50 && Math.abs(p16.offsetHeight - upper16.offsetHeight - resp16.scrollHeight - 1) <= 2, p16.offsetHeight + " upper " + upper16.offsetHeight + " answer " + resp16.scrollHeight);
+// streaming: the popup grows with the answer until it reaches 70vh, then the answer scrolls
+var hs16 = [];
+for (var i16 = 0; i16 < 40; i16++) { resp16.insertAdjacentHTML("beforeend", "<p>streamed line</p>"); hs16.push(p16.offsetHeight); }
+check("R26: while the answer streams the popup grows step by step", hs16.every(function (h, i) { return i === 0 || h >= hs16[i - 1]; }) && hs16.filter(function (h) { return h < H70 - 1; }).length > 1, hs16.join(","));
+check("R26: ...and stops at 70vh, the answer scrolls inside", Math.abs(p16.offsetHeight - H70) <= 1 && resp16.scrollHeight > resp16.clientHeight, p16.offsetHeight + " vs " + H70);
+p16.remove();
+var p16b = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(p16b, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, []);
+var r16b = p16b.querySelector(".jr-popup-response");
+check("R16: a long answer keeps the popup at 70vh and scrolls inside", Math.abs(p16b.offsetHeight - H70) <= 1 && r16b.scrollHeight > r16b.clientHeight, p16b.offsetHeight + " vs " + H70);
+p16b.remove();
+
+// A short popup can't be dragged taller or shorter: touching its edge saves no height (it would cap every later popup)
+var p16s = popup3("short"), saved16s = JR.state.customPopupHeightL1;
+JR.positionPopup(p16s, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, []);
+p16s.style.animation = "none";
+JR.addResizeHandlers(p16s);
+var r16s = p16s.getBoundingClientRect();
+p16s.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 2 }));
+document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 7 }));
+document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 7 }));
+check("R26: a slip on a short popup's edge saves no height", !p16s.style.getPropertyValue("--jr-popup-h") && JR.state.customPopupHeightL1 === saved16s, p16s.style.getPropertyValue("--jr-popup-h") + " / " + JR.state.customPopupHeightL1);
+p16s.remove(); JR.state.customPopupHeightL1 = saved16s;
+// A popup with a short answer still picks its side for 70vh (an edit may bring a long answer; the side never flips)
+var p16d = popup3("short");
+JR.positionPopup(p16d, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
+check("R26: a short-answer popup at the end of the chat opens above (side chosen for 70vh)", p16d._jrLockedDirection === "above", p16d._jrLockedDirection);
+p16d.remove();
+
+// R19/R20: drag the far edge (height, 40-70vh, only the answer area changes) or a far corner (both)
+function drag3(p, x, y, dx, dy) {
+  p.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+  document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x + dx, clientY: y + dy }));
+  document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x + dx, clientY: y + dy }));
+}
+var p19 = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(p19, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, []);
+JR.addResizeHandlers(p19);
+var r19 = p19.getBoundingClientRect(), up19 = p19.querySelector(".jr-popup-upper").offsetHeight;
+// the lower limit is 40vh, or the quote + question + a 3-line answer if that is taller (R21, a short window)
+var lo19 = Math.max(Math.round(40 * vh), up19 + Math.ceil(3 * 1.6 * 16 + 28 + 1)); // 3 lines + padding + border
+drag3(p19, r19.left + 100, r19.bottom - 2, 0, -100);
+check("R19: dragging the bottom edge of a below popup up makes it shorter", Math.abs(p19.offsetHeight - Math.max(H70 - 100, lo19)) <= 2, p19.offsetHeight);
+check("R19: ...and only the answer area changes", p19.querySelector(".jr-popup-upper").offsetHeight === up19, p19.querySelector(".jr-popup-upper").offsetHeight + " vs " + up19);
+r19 = p19.getBoundingClientRect();
+drag3(p19, r19.left + 100, r19.bottom - 2, 0, -400);
+check("R19: not below 40vh (or the 3-line answer minimum)", Math.abs(p19.offsetHeight - lo19) <= 2, p19.offsetHeight + " vs " + lo19);
+r19 = p19.getBoundingClientRect();
+drag3(p19, r19.left + 100, r19.bottom - 2, 0, 500);
+check("R19: not above 70vh", Math.abs(p19.offsetHeight - H70) <= 1, p19.offsetHeight);
+r19 = p19.getBoundingClientRect();
+drag3(p19, r19.left + 100, r19.top + 2, 0, 100);
+check("R19: the edge next to the highlight does not resize", Math.abs(p19.offsetHeight - H70) <= 1, p19.offsetHeight);
+r19 = p19.getBoundingClientRect();
+var w19 = p19.offsetWidth;
+drag3(p19, r19.right - 2, r19.bottom - 2, -40, -50);
+check("R20: dragging a far corner changes width and height", Math.abs(p19.offsetWidth - (w19 - 40)) <= 2 && Math.abs(p19.offsetHeight - (H70 - 50)) <= 2, p19.offsetWidth + "x" + p19.offsetHeight);
+p19.remove();
+var pa = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(pa, place3(C3, 1500, 1500 - 0.8 * W3), host3, null, []);
+JR.addResizeHandlers(pa);
+var ra = pa.getBoundingClientRect();
+drag3(pa, ra.left + 100, ra.top + 2, 0, 100);
+var ra2 = pa.getBoundingClientRect();
+check("R19: an above popup is resized from its top edge; its bottom (the arrow side) stays", Math.abs(pa.offsetHeight - Math.max(H70 - 100, lo19)) <= 2 && Math.abs(ra2.bottom - ra.bottom) <= 1, pa.offsetHeight + " bottom " + ra.bottom + "→" + ra2.bottom);
+pa.remove();
+
+// R17: attachments + question share one scroll area of at most 4 question lines
+var p17 = popup3("answer");
+var up17 = p17.querySelector(".jr-popup-upper"), q17 = p17.querySelector(".jr-popup-question");
+host3.appendChild(p17);
+p17.style.top = (sc3.scrollTop + 20) + "px"; // on screen, for elementFromPoint
+p17.style.animation = "none"; // the open fade (a transform) is over by the time anyone hovers
+var ask17 = JR.askArea && JR.askArea(up17);
+check("R17: one shared area per popup", !!ask17 && JR.askArea(up17) === ask17 && up17.querySelectorAll(".jr-popup-ask").length === 1, ask17);
+if (ask17) {
+  ask17.appendChild(q17);
+  q17.querySelector(".jr-popup-question-text").textContent = new Array(12).join("a long question line that wraps ");
+  // one row of tiles (the usual case; with more rows the question itself starts below the fold)
+  var strip17 = JR.attachmentStrip([1, 2, 3, 4].map(function (n) { return new File(["x"], "f" + n + ".txt", { type: "text/plain" }); }));
+  JR.placeStripAbove(strip17, q17);
+  var cap17 = 4 * 1.6 * 16 + 8;
+  var gap17 = Math.round(strip17.getBoundingClientRect().top - p17.querySelector(".jr-popup-highlight").getBoundingClientRect().bottom);
+  check("R17: the attachment row stays 10px under the quote", gap17 === 10, gap17);
+  var x17 = document.createElement("span"); x17.className = "jr-attach-remove";
+  strip17.querySelector(".jr-attach-item").appendChild(x17);
+  check("R17: an attachment's × is not cut off by the scroll area", x17.getBoundingClientRect().top >= ask17.getBoundingClientRect().top - 0.5,
+    x17.getBoundingClientRect().top + " < " + ask17.getBoundingClientRect().top);
+  // the send button stays visible and its menu is not clipped by the scroll area
+  var wrap17 = document.createElement("div"); wrap17.className = "jr-edit-send-wrapper";
+  wrap17.innerHTML = '<button type="button" class="jr-popup-edit-send">→</button><div class="jr-send-mode-dropdown"><button class="jr-send-mode-item">Detailed</button><button class="jr-send-mode-item">Concise</button></div>';
+  q17.appendChild(wrap17);
+  ask17.scrollTop = 0;
+  check("R17: with a long question the send button is in view", wrap17.getBoundingClientRect().bottom <= ask17.getBoundingClientRect().bottom + 0.5,
+    wrap17.getBoundingClientRect().bottom + " > " + ask17.getBoundingClientRect().bottom + " pos=" + getComputedStyle(wrap17).position + " q=" + q17.offsetHeight + " sh=" + ask17.scrollHeight + "/" + ask17.clientHeight + " qparent=" + q17.parentElement.className);
+  wrap17.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  var dd17 = wrap17.querySelector(".jr-send-mode-dropdown"); dd17.style.display = "flex"; // as on hover
+  var ddr = dd17.getBoundingClientRect(), hit17 = document.elementFromPoint(ddr.left + ddr.width / 2, ddr.bottom - 4);
+  check("R17: the send menu is not clipped by the scroll area", !!hit17 && dd17.contains(hit17), (hit17 && hit17.className) + " dd=" + JSON.stringify([ddr.left, ddr.top, ddr.width, ddr.height]) + " pos=" + getComputedStyle(dd17).position + " style=" + dd17.getAttribute("style"));
+  // every item shows: the answer's white scroll-fade edge (a sticky ::before) must not paint over the menu
+  var miss17 = Array.prototype.filter.call(dd17.querySelectorAll(".jr-send-mode-item"), function (it) {
+    var r = it.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !h || !it.contains(h);
+  }).map(function (it) { return it.textContent; });
+  check("R17: every send menu item is visible (none covered by the answer)", miss17.length === 0, miss17.join(","));
+  // the answer's scroll-fade edges (sticky ::before/::after, white shadows reaching 50px out) paint after the
+  // question row: the send button (and its menu) must stack above them (P12b: "Detailed" was painted over)
+  var fade17 = Number(getComputedStyle(p17.querySelector(".jr-popup-response"), "::before").zIndex) || 0;
+  check("R17: the send menu stacks above the answer's fade edges", (Number(getComputedStyle(wrap17).zIndex) || 0) > fade17, getComputedStyle(wrap17).zIndex + " vs " + fade17);
+  dd17.style.display = ""; wrap17.remove();
+  var chev17 = document.createElement("span"); chev17.className = "jr-popup-question-chevron"; chev17.innerHTML = "<svg viewBox=\"0 0 10 10\"></svg>";
+  q17.querySelector(".jr-popup-question-inner").insertBefore(chev17, q17.querySelector(".jr-popup-question-text"));
+  ask17.scrollTop = 0;
+  var cvr = chev17.getBoundingClientRect(), qtr = q17.querySelector(".jr-popup-question-text").getBoundingClientRect();
+  check("R17: the ▸ stays on the question's first line (in view, centred on it)", cvr.top >= qtr.top - 1 && cvr.bottom <= qtr.top + 1.6 * 16 + 1 &&
+    Math.abs((cvr.top + cvr.bottom) / 2 - (qtr.top + 0.8 * 16)) <= 2,
+    JSON.stringify([cvr.top, cvr.bottom, qtr.top]));
+  check("R17: attachments land in the shared area", strip17.parentElement === ask17, strip17.parentElement && strip17.parentElement.className);
+  var room17 = ask17.offsetHeight - 9; // its 9px padding is taken back by its negative margin
+  check("R17: attachments + question are at most 4 question lines tall", room17 <= cap17, room17 + " > " + cap17);
+  check("R17: ...and scroll together", ask17.scrollHeight > ask17.clientHeight && q17.querySelector(".jr-popup-question-text").scrollHeight <= q17.querySelector(".jr-popup-question-text").clientHeight + 1,
+    ask17.scrollHeight + "/" + ask17.clientHeight);
+}
+p17.remove();
+
+var p17n = popup3("answer"), up17n = p17n.querySelector(".jr-popup-upper");
+host3.appendChild(p17n);
+var ask17n = JR.askArea(up17n);
+ask17n.innerHTML = '<div class="jr-popup-attach" hidden></div><div class="jr-attach-note">Send or remove your files in ChatGPT’s box first</div>';
+ask17n.appendChild(p17n.querySelector(".jr-popup-question"));
+var gap17n = Math.round(ask17n.querySelector(".jr-attach-note").getBoundingClientRect().top - up17n.querySelector(".jr-popup-highlight").getBoundingClientRect().bottom);
+check("R17: a note alone (no attachments) is still 10px under the quote", gap17n === 10, gap17n);
+p17n.remove();
+
+// Only a popup with an answer is 70vh: writing the question, waiting for the answer
+// and the delete confirmation keep the compact height they had before Step 3
+var p8 = popup3("x");
+p8.querySelector(".jr-popup-response").remove();
+host3.appendChild(p8);
+var up8 = p8.querySelector(".jr-popup-upper");
+check("R16: writing a question, the popup is only as tall as its content", Math.abs(p8.offsetHeight - up8.offsetHeight) <= 2, p8.offsetHeight + " vs " + up8.offsetHeight);
+var load8 = document.createElement("div"); load8.className = "jr-popup-loading"; load8.textContent = "Waiting for response…";
+p8.appendChild(load8);
+check("R16: waiting for the answer, the popup is still compact", Math.abs(p8.offsetHeight - up8.offsetHeight - load8.offsetHeight) <= 2 && p8.offsetHeight < H70, p8.offsetHeight);
+p8.innerHTML = '<div class="jr-popup-delete-confirm"><span class="jr-popup-confirm-text">Delete this highlight?</span></div>';
+var conf8 = p8.querySelector(".jr-popup-delete-confirm");
+check("R16: the delete confirmation is compact", Math.abs(conf8.offsetHeight - p8.offsetHeight) <= 2 && p8.offsetHeight < 100, conf8.offsetHeight + " vs " + p8.offsetHeight);
+p8.remove();
+// A compact popup opens on the side its 70vh answer will fit (end of the chat → above)
+var p8d = popup3("x"); p8d.querySelector(".jr-popup-response").remove();
+JR.positionPopup(p8d, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
+check("R18: a compact popup chooses its side for the answer's height", p8d._jrLockedDirection === "above", p8d._jrLockedDirection);
+p8d.remove();
+
+// R23: after ChatGPT re-lays the chat (window resize), every open popup, parents first, goes back to its own highlight
+var par23 = popup3("<p>parent answer with <span id=\"cs23\">a child highlight</span></p>");
+par23.style.animation = "none"; // positions are read right away: no open fade (translateY 4px)
+JR.positionPopup(par23, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, [hl3]);
+var cs23 = par23.querySelector("#cs23");
+var ch23 = popup3("child answer");
+ch23.style.animation = "none";
+JR.positionPopup(ch23, cs23.getBoundingClientRect(), host3, null, [cs23]);
+var saved23 = { stack: JR.state.popupStack, popup: JR.state.activePopup, spans: JR.state.activeSourceHighlights };
+JR.state.popupStack = [{ popup: par23, sourceHighlights: [hl3] }];
+JR.state.activePopup = ch23; JR.state.activeSourceHighlights = [cs23];
+hl3.style.top = "1700px"; // the highlight's turn moved 200px down in the chat
+if (JR.repositionAll) JR.repositionAll();
+var hr23 = JR.getHighlightRect([hl3]), pr23 = par23.getBoundingClientRect();
+check("R23: the parent popup follows its highlight", Math.abs(pr23.top - (hr23.bottom + 8)) <= 1, pr23.top + " vs " + (hr23.bottom + 8));
+var cr23 = JR.getHighlightRect([cs23]), chr23 = ch23.getBoundingClientRect();
+var childOk = ch23._jrLockedDirection === "above" ? Math.abs(chr23.bottom - (cr23.top - 8)) <= 1 : Math.abs(chr23.top - (cr23.bottom + 8)) <= 1;
+check("R23: ...and the child popup follows its highlight inside the parent", childOk, ch23._jrLockedDirection + " " + JSON.stringify([chr23.top, chr23.bottom, cr23.top, cr23.bottom]));
+JR.state.popupStack = saved23.stack; JR.state.activePopup = saved23.popup; JR.state.activeSourceHighlights = saved23.spans;
+par23.remove(); ch23.remove(); hl3.style.top = "1500px";
+
+// R21: a tiny window never squeezes the answer area below 3 lines
+var p21 = popup3(new Array(200).join("<p>line</p>"));
+host3.appendChild(p21);
+if (JR.watchUpper) JR.watchUpper(p21);
+p21.style.setProperty("--jr-popup-h", "5vh");
+var lines21 = p21.querySelector(".jr-popup-response");
+lines21.style.setProperty("box-sizing", "border-box"); // as ChatGPT's page reset; styles.css must win
+check("R21: the answer area keeps at least 3 lines", lines21.clientHeight - 28 >= Math.floor(3 * 1.6 * 16), lines21.clientHeight - 28);
+lines21.style.removeProperty("box-sizing");
+check("R21: ...and the popup grows to hold it (nothing spills out)", p21.offsetHeight + 1 >= p21.querySelector(".jr-popup-upper").offsetHeight + lines21.offsetHeight, p21.offsetHeight);
+p21.remove();
+sc3.remove();
+
+// R24: ChatGPT rebuilt a turn (scrolled far and back): the new answer element mounts
+// empty and fills in later; a highlight restored once before must come back then.
+var t24 = document.createElement("div"); t24.setAttribute("data-turn-key", "turn-24");
+t24.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"></div></div>';
+var o24 = document.createElement("div"); o24.setAttribute("data-turn-key", "turn-24b");
+// The real mount observer, on a stand-in chat (this file:// page is not a chat page)
+var sc24 = document.createElement("div"); sc24.appendChild(t24); sc24.appendChild(o24); document.body.appendChild(sc24);
+var site24 = { isChatPage: JR.site.isChatPage, scrollContainer: JR.site.scrollContainer };
+JR.site.isChatPage = function () { return true; };
+JR.site.scrollContainer = function () { return sc24; };
+JR.state.completedHighlights.set("hl-24", { quoteId: "hl-24", text: "comes back later", nth: 0, sourceTurnKey: "turn-24", spans: [document.createElement("span")], items: [] });
+check("R24: a highlight lost from a mounted turn waits for that turn's answer", !!(JR.restoreWaitsFor && JR.restoreWaitsFor(t24)), JR.restoreWaitsFor && JR.restoreWaitsFor(t24));
+check("R24: ...but not for another turn's answer", !!(JR.restoreWaitsFor && !JR.restoreWaitsFor(o24)), JR.restoreWaitsFor && JR.restoreWaitsFor(o24));
+asyncChecks.push(new Promise(function (done) {
+  JR.watchTurnMounts(); // runs a mount pass now: the answer is still empty, no match
+  setTimeout(function () {
+    t24.querySelector(".markdown").innerHTML = "<p>The answer comes back later than its turn.</p>";
+    setTimeout(function () {
+      var s24 = JR.state.completedHighlights.get("hl-24").spans;
+      check("R24: the highlight is wrapped again once the answer fills in", s24.length > 0 && s24[0].isConnected && s24[0].textContent === "comes back later", s24.length && s24[0].textContent);
+      JR.state.completedHighlights.delete("hl-24"); sc24.remove();
+      JR.site.isChatPage = function () { return false; }; JR.watchTurnMounts(); // stops the observer
+      JR.site.isChatPage = site24.isChatPage; JR.site.scrollContainer = site24.scrollContainer;
+      done();
+    }, 1000);
+  }, 1000);
+}));
+
+// Lag fixes (review after P19). Idle callbacks run by hand here, with the deadline we choose.
+var idle25 = [], ric25 = window.requestIdleCallback, nav25 = JR.updateNavWidget;
+JR.updateNavWidget = function () {}; // (needs the chat's turn order; not part of this)
+window.requestIdleCallback = function (fn) { idle25.push(fn); };
+function runIdle25(remaining, timedOut) {
+  var fns = idle25.splice(0);
+  fns.forEach(function (fn) { fn({ didTimeout: !!timedOut, timeRemaining: function () { return remaining; } }); });
+  return fns.length;
+}
+var t25 = document.createElement("div"); t25.setAttribute("data-turn-key", "turn-25");
+t25.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>alpha one. beta two. gamma three.</p></div></div>';
+document.body.appendChild(t25);
+["alpha one", "beta two", "gamma three"].forEach(function (w, i) {
+  JR.state.completedHighlights.set("hl-25" + i, { quoteId: "hl-25" + i, text: w, nth: 0, sourceTurnKey: "turn-25", spans: [document.createElement("span")], items: [] });
+});
+function spans25(i) { var e = JR.state.completedHighlights.get("hl-25" + i); return e.spans.length && e.spans[0].isConnected; }
+// A busy page (streaming): the idle wait times out with no time left — one highlight per slice, the rest later
+JR.reapplyHighlights(); runIdle25(0, true);
+check("Lag: a timed-out restore slice does one highlight and leaves the rest for later", spans25(0) + spans25(1) + spans25(2) <= 1 && idle25.length === 1, [spans25(0), spans25(1), spans25(2), idle25.length].join());
+while (idle25.length) runIdle25(50, false);
+check("Lag: ...the next slices restore the others", spans25(0) && spans25(1) && spans25(2), [spans25(0), spans25(1), spans25(2)].join());
+// The open popup's own highlight is re-wrapped: the popup keeps the new spans
+JR.state.activeHighlightId = "hl-251";
+JR.state.completedHighlights.get("hl-251").spans.forEach(function (sp) { sp.replaceWith(sp.textContent); });
+JR.reapplyHighlights(); while (idle25.length) runIdle25(50, false);
+check("Lag: an open popup gets the re-wrapped spans of its highlight", JR.state.activeSourceHighlights === JR.state.completedHighlights.get("hl-251").spans && spans25(1), JR.state.activeSourceHighlights.length);
+JR.state.activeHighlightId = null; JR.state.activeSourceHighlights = [];
+// An editor that throws our spans out of the same text again and again: wrapping stops
+var wraps25 = 0;
+for (var k25 = 0; k25 < 8; k25++) {
+  var e25 = JR.state.completedHighlights.get("hl-252");
+  if (e25.spans.length && e25.spans[0].isConnected) { wraps25++; e25.spans.forEach(function (sp) { sp.replaceWith(sp.textContent); }); }
+  JR.reapplyHighlights(); while (idle25.length) runIdle25(50, false);
+}
+check("Lag: a highlight its block keeps removing is not wrapped again and again", wraps25 <= 4, wraps25);
+// A highlight known not to be in this answer, first in line, does not stall a busy page's slices
+["0", "1", "2"].forEach(function (i) { JR.state.completedHighlights.delete("hl-25" + i); });
+JR.state.completedHighlights.set("hl-25m", { quoteId: "hl-25m", text: "not in this answer", nth: 0, sourceTurnKey: "turn-25", spans: [document.createElement("span")], items: [] });
+JR.reapplyHighlights(); while (idle25.length) runIdle25(50, false); // looked for once: a known miss
+JR.state.completedHighlights.set("hl-25n", { quoteId: "hl-25n", text: "gamma three", nth: 0, sourceTurnKey: "turn-25", spans: [document.createElement("span")], items: [] });
+JR.reapplyHighlights(); runIdle25(0, true);
+var n25 = JR.state.completedHighlights.get("hl-25n").spans;
+check("Lag: a known miss first in line does not hold up the next highlight on a busy page", n25.length && n25[0].isConnected, n25.length);
+// A highlight that cannot come back wakes a restore only when its answer's text changes (not for hover bits)
+check("Lag: a turn with a lost highlight wakes a restore once...", JR.restoreWaitsFor(t25) === true, "first");
+t25.appendChild(document.createElement("div")); // an underline, a toolbar: no text
+check("Lag: ...not again for a change without text", JR.restoreWaitsFor(t25) === false, "second");
+t25.querySelector("p").appendChild(document.createTextNode(" more text"));
+check("Lag: ...and again when the answer's text grows", JR.restoreWaitsFor(t25) === true, "third");
+["m", "n"].forEach(function (i) { JR.state.completedHighlights.delete("hl-25" + i); });
+t25.remove();
+window.requestIdleCallback = ric25; JR.updateNavWidget = nav25;
+
+// A popup whose host ChatGPT replaced comes back next to its highlight
+var h25a = document.createElement("div"), h25b = document.createElement("div");
+h25a.style.cssText = h25b.style.cssText = "position:relative;width:600px";
+h25b.innerHTML = "<p>see <span class='jr-source-highlight' id='s25'>this text</span> here</p>";
+document.body.appendChild(h25a); document.body.appendChild(h25b);
+var p25 = document.createElement("div"); p25.className = "jr-popup"; p25.innerHTML = "<div class='jr-popup-upper'>q</div>";
+h25a.appendChild(p25); p25._jrLockedDirection = "below";
+var host25 = JR.site.popupHost; JR.site.popupHost = function () { return h25b; };
+h25a.remove(); // ChatGPT re-rendered the element that held the popup
+JR.placePopup(p25, [document.getElementById("s25")]);
+JR.site.popupHost = host25;
+var r25 = document.getElementById("s25").getBoundingClientRect(), want25 = r25.bottom - h25b.getBoundingClientRect().top + 8;
+check("Lag: a popup dropped from the page goes back, next to its highlight", p25.parentElement === h25b && Math.abs(parseFloat(p25.style.top) - want25) <= 1, p25.isConnected + " " + p25.style.top + " vs " + want25);
+h25b.remove();
+
+// Scroll lock: the answer the popup is on, unmounted while the user scrolls away, doesn't pull them back when it remounts.
+// Frames are run by hand (headless virtual time draws only a few).
+var sc26 = document.createElement("div"); sc26.style.cssText = "height:200px;overflow:auto";
+sc26.innerHTML = "<div style='height:3000px;position:relative'><div id='t26' style='position:absolute;top:1500px;height:50px'>x</div></div>";
+document.body.appendChild(sc26); sc26.scrollTop = 1400;
+var raf26 = window.requestAnimationFrame, frames26 = [];
+function frames26run(n) {
+  window.requestAnimationFrame = function (f) { frames26.push(f); return frames26.length; };
+  while (n--) frames26.splice(0).forEach(function (f) { f(); });
+  window.requestAnimationFrame = raf26;
+}
+window.requestAnimationFrame = function (f) { frames26.push(f); return frames26.length; };
+var t26 = document.getElementById("t26"), list26 = t26.parentElement, unlock26 = JR.lockScroll(sc26, t26);
+window.requestAnimationFrame = raf26;
+frames26run(2);
+sc26.dispatchEvent(new WheelEvent("wheel")); // the user scrolls up, past the answer: ChatGPT unmounts it
+t26.remove(); sc26.scrollTop = 200;
+frames26run(2);
+asyncChecks.push(new Promise(function (done) {
+  setTimeout(function () { // the lock holds again; then the answer remounts
+    list26.appendChild(t26);
+    frames26run(3);
+    check("Scroll lock: an answer remounting after the user scrolled away doesn't pull them back", Math.abs(sc26.scrollTop - 200) <= 1, sc26.scrollTop);
+    unlock26(); sc26.remove(); done();
+  }, 900);
+}));
 
 Promise.all(asyncChecks).then(function () {
   fakeForm.remove();

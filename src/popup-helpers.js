@@ -52,6 +52,38 @@
     return Math.max(minLeft, Math.min(left, containerW - popupW - 8, maxLeft));
   }
 
+  // Debug (URL contains #jr-poslog): every popup move with its inputs and caller, readable by DOM-only
+  // test tools in #jr-poslog[data-json] (last 80)
+  JR.posLog = function (fn, popup, info) {
+    if (location.hash.indexOf("jr-poslog") === -1 || !popup) return;
+    var el = document.getElementById("jr-poslog");
+    if (!el) { el = document.createElement("div"); el.id = "jr-poslog"; el.hidden = true; document.body.appendChild(el); }
+    var log = JSON.parse(el.getAttribute("data-json") || "[]");
+    log.push({ t: Math.round(performance.now()), fn: fn, chained: !!popup._jrChained, active: popup === st.activePopup,
+      top: popup.style.top, h: popup.offsetHeight, info: info, stack: (new Error().stack || "").split("\n").slice(2, 6).join(" | ") });
+    el.setAttribute("data-json", JSON.stringify(log.slice(-80)));
+  };
+
+  /** The area under the quote that holds the attachments and the question (one scroll area, R17). */
+  JR.askArea = function (upper) {
+    var area = upper.querySelector(".jr-popup-ask");
+    if (!area) {
+      area = document.createElement("div");
+      area.className = "jr-popup-ask";
+      // The send menu is position: fixed (the area clips): put it under its send button when hovered
+      area.addEventListener("mouseover", function (e) {
+        var wrap = e.target.closest && e.target.closest(".jr-edit-send-wrapper");
+        var menu = wrap && wrap.querySelector(".jr-send-mode-dropdown");
+        if (!menu) return;
+        var r = wrap.getBoundingClientRect();
+        menu.style.left = (r.left + r.width / 2) + "px";
+        menu.style.top = (r.bottom + 4) + "px";
+      });
+      upper.appendChild(area);
+    }
+    return area;
+  };
+
   JR.createLoadingDiv = function () {
     var div = document.createElement("div");
     div.className = "jr-popup-loading";
@@ -413,50 +445,24 @@
   };
 
   /**
-   * Determine the best direction (above/below) for a popup given the highlight
-   * position and popup height. Prefers the side with more viewport space;
-   * falls back to whichever side the popup actually fits.
+   * Which side of the highlight a popup of height popupH opens on. A side is usable
+   * when scrolling the chat can show the whole popup there. Both usable → the side
+   * with more room on screen now; one → that one; neither (a very short chat) →
+   * below, where the popup makes the page longer and can be scrolled to.
+   * scrollBelow: how far the chat can still scroll down (measure it before the popup
+   * is added, which can make the page longer); default: now.
    */
-  JR.bestDirection = function (highlightRect, popupH, gap, contentContainer) {
+  JR.bestDirection = function (highlightRect, popupH, gap, scrollBelow) {
     if (!highlightRect) return "below";
     var band = JR.site.visibleBand();
-    var spaceBelow = band.bottom - highlightRect.bottom - gap;
+    var sc = JR.site.scrollContainer();
     var spaceAbove = highlightRect.top - band.top - gap;
-
-    // Check scroll room: can the user actually scroll to see the popup?
-    // If the popup would open above but there's no scroll room above the
-    // highlight (it's near the top of the scrollable content), force below.
-    // Vice versa for below.
-    if (contentContainer) {
-      var scrollParent = JR.getScrollParent(contentContainer);
-      if (scrollParent && scrollParent !== document.documentElement) {
-        var containerRect = contentContainer.getBoundingClientRect();
-        // Absolute position the popup edges would land at inside the container
-        var aboveTop = highlightRect.top - containerRect.top - popupH - gap;
-        var belowBottom = highlightRect.bottom - containerRect.top + gap + popupH;
-        var scrollH = contentContainer.scrollHeight || contentContainer.offsetHeight;
-        var canScrollToAbove = aboveTop >= 0;
-        var canScrollToBelow = belowBottom <= scrollH;
-
-        if (!canScrollToAbove && canScrollToBelow) return "below";
-        if (!canScrollToBelow && canScrollToAbove) return "above";
-        // Neither fits in scroll space — prefer whichever clips less
-        if (!canScrollToAbove && !canScrollToBelow) {
-          var clipAbove = -aboveTop;         // how much is clipped above
-          var clipBelow = belowBottom - scrollH; // how much is clipped below
-          return clipBelow <= clipAbove ? "below" : "above";
-        }
-      }
-    }
-
-    // Prefer the side with more room
-    if (spaceBelow >= popupH && spaceAbove >= popupH) {
-      return spaceBelow >= spaceAbove ? "below" : "above";
-    }
-    if (spaceBelow >= popupH) return "below";
-    if (spaceAbove >= popupH) return "above";
-    // Neither fits fully — pick the side with more space
-    return spaceBelow >= spaceAbove ? "below" : "above";
+    var spaceBelow = band.bottom - highlightRect.bottom - gap;
+    if (scrollBelow == null) scrollBelow = sc ? sc.scrollHeight - sc.clientHeight - sc.scrollTop : 0;
+    var fitsAbove = spaceAbove + (sc ? sc.scrollTop : 0) >= popupH;
+    var fitsBelow = spaceBelow + scrollBelow >= popupH;
+    if (fitsAbove && fitsBelow) return spaceBelow >= spaceAbove ? "below" : "above";
+    return fitsAbove ? "above" : "below";
   };
 
   /**
@@ -510,7 +516,7 @@
       popup.appendChild(arrow);
     }
     arrow.classList.remove("jr-popup-arrow--up", "jr-popup-arrow--down", "jr-popup-arrow--lower");
-    if (popup._jrDirection === "above") {
+    if (popup._jrLockedDirection === "above") {
       arrow.classList.add("jr-popup-arrow--down");
       // Down arrow touches whichever card is at the bottom
       var hasLower = popup.querySelector(".jr-popup-response, .jr-popup-loading");
@@ -526,6 +532,12 @@
     arrow.style.left = offset + "px";
   };
 
+  // A popup grows with its answer up to its max-height (styles.css), and an edit can bring
+  // a longer answer: its side is chosen for that height so it never has to flip.
+  function answerH(popup) {
+    return parseFloat(getComputedStyle(popup).maxHeight) || popup.offsetHeight;
+  }
+
   /**
    * Position the popup inside the content container.
    * Uses position: absolute relative to the container.
@@ -539,88 +551,32 @@
     }
     contentContainer.style.zIndex = "0";
     var gap = 8;
-
-    // Capture the container's natural scroll height BEFORE we append the popup.
-    // The popup is position:absolute inside contentContainer, so once appended
-    // it can extend the container's scrollHeight (browsers include out-of-flow
-    // descendants that overflow). We use this baseline to flip the popup
-    // before its growth ever expands the container — that's what was leaving
-    // a blank space below the last AI response after the flip.
-    var naturalScrollH = contentContainer.scrollHeight;
+    var sc = JR.site.scrollContainer();
+    var scrollBelow = sc ? sc.scrollHeight - sc.clientHeight - sc.scrollTop : 0; // before the popup can lengthen the page
 
     contentContainer.appendChild(popup);
-    var popupW = popup.offsetWidth;
-    var popupH = popup.offsetHeight;
+    JR.watchUpper(popup); // before measuring: on a tiny window the height limit depends on it
+    popup._jrLockedDirection = forceDirection === "above" || forceDirection === "below"
+      ? forceDirection
+      : JR.bestDirection(rect, Math.max(popup.offsetHeight, answerH(popup)), gap, scrollBelow);
+    placeAt(popup, rect, spans, containerRect);
+    JR.posLog("position", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, cTop: containerRect.top, popupH: popup.offsetHeight });
+  };
 
-    var direction, fullH;
-    if (forceDirection === "above" || forceDirection === "below") {
-      direction = forceDirection;
-    } else {
-      // Choose the side for the popup's full height (its CSS max-height), not its
-      // current one: the answer will grow it, and it must never move or leave the screen.
-      fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
-      direction = JR.bestDirection(rect, Math.max(popupH, fullH), gap, contentContainer);
-    }
-    popup._jrLockedDirection = direction;
-
-    // Use the adjacent line's rect for horizontal centering and arrow
-    var adjRect = (spans && spans.length > 0)
-      ? JR.getAdjacentLineRect(spans, direction)
-      : null;
-    var centerRect = adjRect || rect;
-
-    var left = centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2;
-    var top;
-    if (direction === "above") {
-      top = rect.top - containerRect.top - popupH - gap;
-    } else {
-      top = rect.bottom - containerRect.top + gap;
-    }
-
-    var containerW = contentContainer.clientWidth;
-    left = clampPopupLeft(left, popupW, containerRect, containerW);
-
+  /** Popup on its locked side of rect, centred on the highlight's line next to it. */
+  function placeAt(popup, rect, spans, containerRect) {
+    var direction = popup._jrLockedDirection, gap = 8;
+    var popupW = popup.offsetWidth, popupH = popup.offsetHeight;
+    var centerRect = (spans && spans.length && JR.getAdjacentLineRect(spans, direction)) || rect;
+    var left = clampPopupLeft(centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2,
+      popupW, containerRect, popup.parentElement.clientWidth);
+    var top = direction === "above" ? rect.top - containerRect.top - popupH - gap : rect.bottom - containerRect.top + gap;
     popup.style.left = left + "px";
     popup.style.top = top + "px";
-    popup._jrDirection = direction;
-
-    // For "above" popups, store the bottom anchor so height changes keep the
-    // arrow edge pinned to the highlight.
-    if (direction === "above") {
-      popup._jrBottomAnchor = top + popupH;
-    }
-
-    // Capture the height threshold for streaming-overflow detection on the
-    // "below" side. The "above" case has a moving anchor (attachAboveAnchorObserver
-    // pushes popup.style.top toward 0 as height grows), so it's detected via
-    // popup.style.top < 0. The "below" side has no moving anchor, so we freeze
-    // a fixed threshold here.
-    //
-    // Threshold is the SMALLER of:
-    //   (a) viewport room below the highlight — flip before popup overflows the page edge
-    //   (b) container room below the popup's top — flip before popup expands the
-    //       container's scrollHeight, which is what was leaving the trailing blank
-    //       space after the flip
-    if (direction === "below") {
-      var roomViewport = JR.site.visibleBand().bottom - rect.bottom - gap;
-      var roomContainer = naturalScrollH - top;
-      popup._jrMaxHBelow = Math.min(roomViewport, roomContainer);
-      popup._jrMaxHAbove = null;
-    } else {
-      popup._jrMaxHBelow = null;
-      // Above: room up to the top of the screen and of the container.
-      popup._jrMaxHAbove = Math.min(rect.top - JR.site.visibleBand().top - gap, popup._jrBottomAnchor);
-    }
-    // Neither side fits the full popup (short window): cap it to its side now, so even
-    // an already finished answer never runs under the header or the composer.
-    var roomNow = direction === "above" ? popup._jrMaxHAbove : popup._jrMaxHBelow;
-    fullH = parseFloat(getComputedStyle(popup).maxHeight) || popupH;
-    if (roomNow != null && Math.max(popupH, fullH) > roomNow) {
-      popup.style.setProperty("--jr-popup-cap", Math.max(Math.floor(roomNow), 0) + "px");
-    }
-
+    // "above": height changes keep the bottom edge (the arrow) pinned to the highlight
+    if (direction === "above") popup._jrBottomAnchor = top + popupH;
     JR.updateArrow(popup, centerRect, containerRect, left);
-  };
+  }
 
   /**
    * Attach a ResizeObserver to an "above" popup so that when its height
@@ -632,75 +588,65 @@
     var ro = new ResizeObserver(function () {
       if (popup._jrBottomAnchor == null) return;
       if (popup._jrResizing) return; // drag-resize already handles this
-      var dir = popup._jrLockedDirection || popup._jrDirection;
+      var dir = popup._jrLockedDirection;
       if (dir !== "above") return;
       var newH = popup.offsetHeight;
       popup.style.top = (popup._jrBottomAnchor - newH) + "px";
+      JR.posLog("anchorObserver", popup, { anchor: popup._jrBottomAnchor, newH: newH });
     });
     ro.observe(popup);
     popup._jrAboveObserver = ro;
   };
 
-  /**
-   * While an answer streams, the popup grows. Its side was chosen for its full
-   * height when it opened, so it never moves to the other side (that jump lost
-   * the user's place); if even that side is too small, its height is capped there
-   * and the answer scrolls inside it.
-   * Room (measured when the popup was placed, screen and container):
-   * "below" = _jrMaxHBelow, "above" = _jrMaxHAbove.
-   */
-  JR.checkStreamingOverflow = function () {
-    var popup = st.activePopup;
-    if (!popup) return;
-    var direction = popup._jrLockedDirection || popup._jrDirection;
-    // Screen room is measured now (the chat may have scrolled since the popup opened);
-    // container room was stored at placement.
-    var rect = st.activeSourceHighlights.length ? JR.getHighlightRect(st.activeSourceHighlights) : null;
-    var room = direction === "above" ? popup._jrMaxHAbove : popup._jrMaxHBelow;
-    if (rect && room != null) {
-      var band = JR.site.visibleBand();
-      room = Math.min(room, direction === "above" ? rect.top - band.top - 8 : band.bottom - rect.bottom - 8);
-    }
-    if (room == null || popup.offsetHeight <= room) return;
-    // Only when neither side fits the full popup (small window): stay on screen, scroll inside.
-    popup.style.setProperty("--jr-popup-cap", Math.max(Math.floor(room), 0) + "px"); // floor: sub-pixel rects
-    if (direction === "above") JR.repositionPopup();
+  /** R21: styles.css keeps the popup's height limit above the quote + question + 3 answer lines. */
+  JR.watchUpper = function (popup) {
+    var upper = popup.querySelector(".jr-popup-upper");
+    if (!upper) return;
+    function set() { popup.style.setProperty("--jr-upper-h", upper.offsetHeight + "px"); }
+    set();
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(set).observe(upper);
   };
 
   /**
-   * Recalculate and update the popup's position based on current highlight span positions.
+   * Put a popup back next to its highlight (spans), on its locked side.
+   * Skipped while the highlight is not in the page (its rect would be 0,0).
    */
+  JR.placePopup = function (popup, spans) {
+    if (!popup || !spans || !spans.length || !spans[0].isConnected) return;
+    if (!popup.isConnected) {
+      // ChatGPT re-rendered the element that held it: back next to its highlight (a child: into its parent's host)
+      var parentPopup = spans[0].closest(".jr-popup");
+      var host = parentPopup ? parentPopup.parentElement : JR.site.popupHost(JR.site.turnOf(spans[0]));
+      if (!host) return;
+      if (getComputedStyle(host).position === "static") host.style.position = "relative";
+      host.style.zIndex = "0";
+      popup.classList.add("jr-popup--back");
+      host.appendChild(popup);
+    }
+    var rect = JR.getHighlightRect(spans), containerRect = popup.parentElement.getBoundingClientRect();
+    placeAt(popup, rect, spans, containerRect);
+    JR.posLog("place", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, rectH: rect.height, spans: spans.length, cTop: containerRect.top, popupH: popup.offsetHeight });
+  };
+
+  /** Re-place the open (active) popup. */
   JR.repositionPopup = function () {
-    if (!st.activePopup || st.activeSourceHighlights.length === 0) return;
-    var rect = JR.getHighlightRect(st.activeSourceHighlights);
-    var contentContainer = st.activePopup.parentElement;
-    if (!contentContainer) return;
-    var containerRect = contentContainer.getBoundingClientRect();
-    var popupW = st.activePopup.offsetWidth;
-    var popupH = st.activePopup.offsetHeight;
-    var gap = 8;
-    var direction = st.activePopup._jrLockedDirection || JR.bestDirection(rect, popupH, gap);
+    JR.placePopup(st.activePopup, st.activeSourceHighlights);
+  };
 
-    // Center on the adjacent line's highlight, not the full multi-line rect
-    var adjRect = JR.getAdjacentLineRect(st.activeSourceHighlights, direction);
-    var centerRect = adjRect || rect;
-
-    var left = centerRect.left - containerRect.left + centerRect.width / 2 - popupW / 2;
-    var top;
-    if (direction === "above") {
-      top = rect.top - containerRect.top - popupH - gap;
-    } else {
-      top = rect.bottom - containerRect.top + gap;
-    }
-    var containerW = contentContainer.clientWidth;
-    left = clampPopupLeft(left, popupW, containerRect, containerW);
-    st.activePopup.style.left = left + "px";
-    st.activePopup.style.top = top + "px";
-    st.activePopup._jrDirection = direction;
-    if (direction === "above") {
-      st.activePopup._jrBottomAnchor = top + popupH;
-    }
-    JR.updateArrow(st.activePopup, centerRect, containerRect, left);
+  /**
+   * Re-place every open popup, parents first (a child's highlight is inside its parent):
+   * after ChatGPT re-lays the chat (window resize, sidebar), not only the active one moved.
+   */
+  function placeAll() {
+    st.popupStack.forEach(function (e) { JR.placePopup(e.popup, e.sourceHighlights); });
+    JR.repositionPopup();
+  }
+  var settleTimer = null;
+  JR.repositionAll = function () {
+    placeAll();
+    // The chat may still be mid re-layout (P19: a highlight measured 643px tall, the popup 30000px away): again once it settles
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(placeAll, 300);
   };
 
   /**
@@ -711,11 +657,26 @@
     var MIN_WIDTH = 280;
     var MAX_WIDTH = 720;
 
+    var CORNER_ZONE = 12;
+    // { x: "left"|"right"|null, y: true when on the edge away from the highlight } or null.
+    // The edge next to the highlight (the arrow side) never resizes; the trash button stays a button.
     function getEdge(e) {
+      if (e.target.closest && e.target.closest(".jr-toolbar-delete")) return null;
       var rect = popup.getBoundingClientRect();
-      if (e.clientX <= rect.left + EDGE_ZONE) return "left";
-      if (e.clientX >= rect.right - EDGE_ZONE) return "right";
-      return null;
+      var above = (popup._jrLockedDirection) === "above";
+      var y = above ? e.clientY <= rect.top + EDGE_ZONE : e.clientY >= rect.bottom - EDGE_ZONE;
+      if (y) { // only a popup at its height limit: width only otherwise (read only near that edge)
+        var resp = popup.querySelector(":scope > .jr-popup-response");
+        y = !!resp && resp.scrollHeight > resp.clientHeight;
+      }
+      var zone = y ? CORNER_ZONE : EDGE_ZONE;
+      var x = e.clientX <= rect.left + zone ? "left" : e.clientX >= rect.right - zone ? "right" : null;
+      return x || y ? { x: x, y: y, above: above } : null;
+    }
+    function cursorFor(edge) {
+      if (!edge.y) return "col-resize";
+      if (!edge.x) return "row-resize";
+      return (edge.x === "right") !== edge.above ? "nwse-resize" : "nesw-resize";
     }
 
     popup.addEventListener("mousemove", function (e) {
@@ -725,7 +686,8 @@
         popup.style.cursor = "";
         return;
       }
-      popup.style.cursor = getEdge(e) ? "col-resize" : "";
+      var edge = getEdge(e);
+      popup.style.cursor = edge ? cursorFor(edge) : "";
     });
 
     popup.addEventListener("mouseleave", function () {
@@ -741,9 +703,11 @@
 
       popup._jrResizing = true;
       var startX = e.clientX;
+      var startY = e.clientY;
       var startWidth = popup.offsetWidth;
+      var startHeight = popup.offsetHeight;
       var startLeft = parseFloat(popup.style.left) || 0;
-      var dir = popup._jrLockedDirection || popup._jrDirection;
+      var dir = popup._jrLockedDirection;
       // For "above" popups, anchor the bottom edge so the arrow doesn't move
       var anchorBottom = (dir === "above")
         ? (popup._jrBottomAnchor != null ? popup._jrBottomAnchor : (parseFloat(popup.style.top) || 0) + popup.offsetHeight)
@@ -759,9 +723,17 @@
       }
 
       function onMove(ev) {
+        if (edge.y) {
+          // Height as a share of the window (40-70vh), so it keeps its share when the window resizes
+          var dy = ev.clientY - startY;
+          var h = Math.max(40, Math.min(70, (startHeight + (edge.above ? -dy : dy)) / window.innerHeight * 100));
+          popup.style.setProperty("--jr-popup-h", h + "vh");
+          if (anchorBottom !== null) popup.style.top = (anchorBottom - popup.offsetHeight) + "px";
+        }
+        if (!edge.x) return;
         var dx = ev.clientX - startX;
         var newLeft, newRight;
-        if (edge === "right") {
+        if (edge.x === "right") {
           newLeft = startLeft;
           newRight = startLeft + startWidth + dx;
         } else {
@@ -790,7 +762,7 @@
         var newWidth = newRight - newLeft;
         newWidth = Math.max(MIN_WIDTH, Math.min(newWidth, MAX_WIDTH));
         // Re-derive left from the clamped width depending on which edge is being dragged
-        if (edge === "left") {
+        if (edge.x === "left") {
           newLeft = newRight - newWidth;
         }
 
@@ -801,7 +773,7 @@
           popup.style.top = (anchorBottom - popup.offsetHeight) + "px";
         }
         if (st.activeSourceHighlights.length > 0 && popup.parentElement) {
-          var curDir = popup._jrLockedDirection || popup._jrDirection;
+          var curDir = popup._jrLockedDirection;
           var adjR = JR.getAdjacentLineRect(st.activeSourceHighlights, curDir);
           var hRect2 = adjR || JR.getHighlightRect(st.activeSourceHighlights);
           var cRect2 = popup.parentElement.getBoundingClientRect();
@@ -811,10 +783,13 @@
 
       function onUp() {
         popup._jrResizing = false;
+        var h = popup.style.getPropertyValue("--jr-popup-h") || null;
         if (popup._jrChained) {
           st.customPopupWidthChained = popup.offsetWidth;
+          st.customPopupHeightChained = h;
         } else {
           st.customPopupWidthL1 = popup.offsetWidth;
+          st.customPopupHeightL1 = h;
         }
         // Sync bottom anchor after resize so the ResizeObserver uses the right value
         if (anchorBottom !== null) {
@@ -912,12 +887,10 @@
       popup: st.activePopup,
       sourceHighlights: st.activeSourceHighlights,
       highlightId: st.activeHighlightId,
-      resizeHandler: st.resizeHandler,
     });
     st.activePopup = null;
     st.activeSourceHighlights = [];
     st.activeHighlightId = null;
-    st.resizeHandler = null;
   };
 
   // --- Highlight Navigation (Step 7d) ---
@@ -1276,13 +1249,10 @@
     if (JR.removeTriggerBtn) JR.removeTriggerBtn();
     if (st.cancelResponseWatch) st.cancelResponseWatch(); // detach: the answer keeps saving in the background
     st.activeSourceHighlights = [];
-    if (st.resizeHandler) {
-      window.removeEventListener("resize", st.resizeHandler);
-      st.resizeHandler = null;
-    }
   }
 
   JR.removePopup = function () {
+    JR.posLog("remove", st.activePopup, { stack: st.popupStack.length, sending: !!st.cancelResponseWatch });
     var isCompleted = false;
     var isTemp = false;
     var isReplyAnchor = st.activeSourceHighlights.length > 0 && !!st.activeSourceHighlights[0]._jrReplyAnchor;
@@ -1337,7 +1307,6 @@
       st.activePopup = prev.popup;
       st.activeSourceHighlights = prev.sourceHighlights;
       st.activeHighlightId = prev.highlightId;
-      st.resizeHandler = prev.resizeHandler;
     }
     JR.syncHighlightActive(st.activeHighlightId);
     JR.updateNavWidget();

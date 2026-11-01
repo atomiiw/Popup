@@ -75,7 +75,7 @@
   function proxyBoxes(g) { return g.paint ? svgPieces(g.range) : lineRects(g.range); }
 
   function layoutProxies(g) {
-    if (!g.range.startContainer.isConnected) { // the editor or chart rebuilt its text
+    if (g.range.toString() !== g.text) { // the editor or chart rebuilt its text (the old range collapses)
       var r = JR.findTextRange(g.host, g.text, 0);
       if (r) g.range = r;
     }
@@ -127,9 +127,10 @@
 
   function watchHost(host) {
     if (hostWatchers.has(host)) return;
-    // A proxy removed like any span (dismiss, delete): stop painting its text
-    var mo = new MutationObserver(function () { dropGoneGroups(); paintProxyRanges(); });
-    mo.observe(host, { childList: true });
+    // A proxy removed like any span (dismiss, delete): stop painting its text.
+    // The block redrew its text (the Writing block's editor does, a second after): paint the new text
+    var mo = new MutationObserver(relayoutAll);
+    mo.observe(host, { childList: true, subtree: true, characterData: true });
     var ro = window.ResizeObserver ? new ResizeObserver(queueRelayout) : null;
     if (ro) ro.observe(host);
     hostWatchers.set(host, [mo, ro]);
@@ -146,7 +147,7 @@
       g.proxies.push(p);
     });
     if (!g.proxies.length) return [];
-    host.classList.add("jr-proxy-host");
+    host.setAttribute("data-jr-proxy-host", ""); // not a class: React rewrites class on re-render (Writing block)
     g.proxies.forEach(function (p) { host.appendChild(p); });
     proxyGroups.add(g);
     watchHost(host);
@@ -381,11 +382,6 @@
       JR.unwrapHighlight(span);
     }
     st.activeSourceHighlights = [];
-
-    if (st.resizeHandler) {
-      window.removeEventListener("resize", st.resizeHandler);
-      st.resizeHandler = null;
-    }
   };
 
   /**
@@ -490,6 +486,9 @@
       // Re-applied after ChatGPT remounted the turn: keep the entry, swap in the new spans.
       existing.spans = wrappers;
       existing.contentContainer = contentContainer;
+      // An open popup on it keeps working with the new spans (click to select, reading its turn)
+      if (st.activeHighlightId === hlKey) st.activeSourceHighlights = wrappers;
+      st.popupStack.forEach(function (s) { if (s.highlightId === hlKey) s.sourceHighlights = wrappers; });
     } else {
       st.completedHighlights.set(hlKey, makeEntry(hlKey, hl, wrappers, contentContainer));
     }
@@ -506,6 +505,25 @@
   var restoreGen = 0;
 
   JR.pendingRestoreCount = function () { return pendingL1.length; };
+
+  /**
+   * True if a level-1 highlight still waits for this turn's answer to fill in, and its text changed since
+   * the last ask (our spans and underlines and ChatGPT's hover toolbar don't: they never wake a restore).
+   */
+  JR.restoreWaitsFor = function (turn) {
+    var key = JR.site.turnKey(turn);
+    // Saved before the redesign (no turn key yet): tried on every mount pass, but woken by no answer's text
+    // (else every streamed word, in every answer, restarted a search for it)
+    var waits = pendingL1.some(function (q) { return q.sourceTurnKey === key; });
+    if (!waits) st.completedHighlights.forEach(function (e) {
+      if (e.sourceTurnKey === key && !e.parentId && !e.wholeResponse && !(e.spans.length && e.spans[0].isConnected)) waits = true;
+    });
+    if (!waits) return false;
+    var len = turn.textContent.length;
+    if (turn._jrWaitLen === len) return false;
+    turn._jrWaitLen = len;
+    return true;
+  };
 
   /** Level-1 highlights of this conversation not restored yet (turn not mounted). */
   JR.pendingL1Quotes = function () { return pendingL1.slice(); };
@@ -578,21 +596,34 @@
   // every later mount (ChatGPT rebuilds the element when it re-renders it).
   // The current renderer fills an answer element after it mounts: a miss only
   // counts while the answer's text is unchanged.
-  var noMatch = new WeakMap(); // answer root element → { len: its text length then, ids: Set of quoteIds not found }
+  var noMatch = new WeakMap(); // answer root element → { len: its text length then, ids: quoteIds not found (Map, see marked) }
+  // How often each highlight was wrapped in this root. Lost again and again from the same, unchanged text =
+  // the page removes our spans there (an editor): wrapping more would loop (wrap → removed → wrap), so it stops.
+  var wrappedIn = new WeakMap(); // root → { len, ids: Map quoteId → times }
+  var MAX_REWRAPS = 3; // a re-render or two of the same answer is normal
+  function marked(map, root, len, id) {
+    var m = map.get(root);
+    if (!m || m.len !== len) map.set(root, m = { len: len, ids: new Map() });
+    m.ids.set(id, (m.ids.get(id) || 0) + 1);
+  }
 
+  /** true: wrapped; false: looked and not found; null: nothing to try (known misses only, costs nothing). */
   function tryRestoreL1(q) {
-    var roots = rootsFor(q);
+    var roots = rootsFor(q), tried = false;
     for (var i = 0; i < roots.length; i++) {
       var len = roots[i].textContent.length;
       var missed = noMatch.get(roots[i]);
       if (missed && missed.len !== len) { noMatch.delete(roots[i]); missed = null; }
       if (missed && missed.ids.has(q.quoteId)) continue;
+      var done = wrappedIn.get(roots[i]);
+      if (done && done.len === len && done.ids.get(q.quoteId) >= MAX_REWRAPS) { marked(noMatch, roots[i], len, q.quoteId); continue; }
       var turn = JR.site.turnOf(roots[i]);
+      tried = true;
       if (!JR.restoreHighlightInElement(roots[i], q, JR.site.popupHost(turn))) {
-        if (!missed) noMatch.set(roots[i], missed = { len: len, ids: new Set() });
-        missed.ids.add(q.quoteId);
+        marked(noMatch, roots[i], len, q.quoteId);
         continue;
       }
+      marked(wrappedIn, roots[i], len, q.quoteId);
       if (!q.sourceTurnKey) {
         var key = JR.site.turnKey(turn);
         q.sourceTurnKey = key;
@@ -602,7 +633,7 @@
       }
       return true;
     }
-    return false;
+    return tried ? false : null;
   }
 
   /**
@@ -642,19 +673,24 @@
       if (!q.sourceTurnKey || JR.site.findTurnByKey(q.sourceTurnKey)) work.push(q);
     });
 
-    var changed = false;
+    var changed = false, tried = 0;
     for (var i = 0; i < work.length; i++) {
-      if (i > 0 && !deadline.didTimeout && deadline.timeRemaining() < 3) {
+      // Also when the idle wait timed out (the page is busy, e.g. streaming): then it does one per slice.
+      // Known misses cost nothing and don't count (else one at the head of the list stalls every slice)
+      if (tried > 0 && deadline.timeRemaining() < 3) {
         JR.reapplyHighlights(); // out of idle time: continue in the next slice
         break;
       }
       var q = work[i];
       if (pendingL1.indexOf(q) !== -1 && st.completedHighlights.has(q.quoteId)) continue;
-      if (tryRestoreL1(q)) changed = true;
+      var r = tryRestoreL1(q);
+      if (r !== null) tried++;
+      if (r) changed = true;
     }
     pendingL1 = pendingL1.filter(function (q) { return !st.completedHighlights.has(q.quoteId); });
 
     if (changed) {
+      if (st.activePopup && !st.activePopup.isConnected) JR.repositionAll(); // ChatGPT re-rendered it away with its highlight
       if (st.activeHighlightId) JR.syncHighlightActive(st.activeHighlightId);
       JR.updateNavWidget();
     }

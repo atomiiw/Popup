@@ -8,11 +8,11 @@ session picks up within seconds.
 
   tools/codex_steer.py operator "commander → operator：..."
 """
-import json, os, socket, struct, subprocess, sys, uuid
+import json, os, shutil, socket, struct, subprocess, sys, uuid
 
 SOCK = os.path.expanduser("~/.codex/ipc/ipc.sock")
 INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
-CODEX = os.path.expanduser("~/.local/bin/codex")
+CODEX = shutil.which("codex") or os.path.expanduser("~/.local/bin/codex")
 CWD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = {"initialize": 0, "thread-follower-steer-turn": 1}  # IPC version table in app.asar
 

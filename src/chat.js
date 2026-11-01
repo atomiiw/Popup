@@ -649,14 +649,16 @@
       var anchor = liveAnchor();
       if (userScrolling) {
         savedTop = container.scrollTop;
-        if (anchor) {
-          savedAnchorY = anchor.getBoundingClientRect().top;
-        }
+        // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
+        savedAnchorY = anchor ? anchor.getBoundingClientRect().top : null;
       } else {
-        if (anchor && savedAnchorY !== null) {
+        if (anchor && savedAnchorY === null) {
+          savedAnchorY = anchor.getBoundingClientRect().top;
+        } else if (anchor) {
           var currentY = anchor.getBoundingClientRect().top;
           var drift = currentY - savedAnchorY;
           if (Math.abs(drift) > 1) {
+            if (Math.abs(drift) > 40) JR.posLog("lock", st.activePopup || document.documentElement, { drift: Math.round(drift), top: Math.round(container.scrollTop) });
             container.scrollTop += drift;
             savedTop = container.scrollTop;
           }
@@ -749,8 +751,10 @@
       }
       net.text = d.text || net.text;
       if (d.kind === "done") net.done = true;
-      if (!domAnswerUsable()) renderNetText();
+      if (netRaf) return;
+      netRaf = requestAnimationFrame(function () { netRaf = 0; if (!domAnswerUsable()) renderNetText(); });
     }
+    var netRaf = 0;
     document.addEventListener("jr-net", onNet);
 
     /** ChatGPT's DOM has a usable answer for our turn right now. */
@@ -777,8 +781,6 @@
       syncChildren(Array.prototype.slice.call(tmp.childNodes), responseDiv);
       targetPopup.classList.add("jr-popup--streaming");
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
-      JR.checkStreamingOverflow();
-      if (targetPopup._jrLockedDirection === "above") JR.repositionPopup();
     }
 
     /**
@@ -855,9 +857,10 @@
         cancelAnimationFrame(streamRafId);
         streamRafId = null;
       }
+      if (netRaf) { cancelAnimationFrame(netRaf); netRaf = 0; } // never draws over the finished answer
       if (unlockScroll) unlockScroll();
       document.querySelectorAll(".jr-popup--streaming").forEach(function (p) { p.classList.remove("jr-popup--streaming"); });
-      setTimeout(JR.diagnose, 500); // keep #jr-diagnostics current after each send
+      if (location.hash.indexOf("jr-") !== -1) setTimeout(JR.diagnose, 500); // test tools: keep #jr-diagnostics current after each send
     }
 
     function finishWithTimeout() {
@@ -934,14 +937,8 @@
       // Delegated click handler for links + images (attach once via shared helper)
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
 
-      // Cap the popup on its side once it outgrows the room there (no mid-stream flip)
-      JR.checkStreamingOverflow();
-
-      // Reposition "above" popups so the arrow stays anchored to the highlight
-      // (popup grows upward as content streams in)
-      if (targetPopup._jrLockedDirection === "above" || isNew) {
-        JR.repositionPopup();
-      }
+      // A new answer area: the arrow moves to it ("above" popups then stay pinned by attachAboveAnchorObserver)
+      if (isNew) JR.repositionPopup();
     }
 
     /**

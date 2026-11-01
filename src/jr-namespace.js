@@ -22,13 +22,14 @@
       cancelResponseWatch: null,
       responseWatchActive: false,       // true while waitForResponse is polling (including detached)
       activeSourceHighlights: [],       // wrapper <span> elements in the AI response
-      resizeHandler: null,              // window resize listener
       completedHighlights: new Map(),   // quoteId → { quoteId, spans, text, sentence, items: [{id, question, responseHTML, ...}], activeItemIndex, ... }
       activeHighlightId: null,          // current popup's highlight id (for chaining)
       popupStack: [],                   // saved parent popup states for nested chains
       lastKnownUrl: location.href,
       customPopupWidthL1: null,         // session-persisted width for level-1 popups
       customPopupWidthChained: null,    // session-persisted width for chained (level 2+) popups
+      customPopupHeightL1: null,        // session-persisted height (a vh value) for level-1 popups
+      customPopupHeightChained: null,   // session-persisted height for chained popups
       confirmingDelete: false,          // true while delete confirmation is showing
       navWidget: null,                  // floating highlight navigation widget element
       messageQueue: [],                  // queued messages waiting for generation to finish

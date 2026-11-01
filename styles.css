@@ -146,7 +146,11 @@ html[data-theme="dark"] {
   z-index: 99;
   width: min(360px, calc(100vw - 32px));
   max-width: 720px;
-  max-height: min(520px, 70vh, var(--jr-popup-cap, 100vh)); /* cap: JR.checkStreamingOverflow */
+  /* As tall as its content, up to the same share of the window on every screen (drag 40-70vh,
+     JR.addResizeHandlers); a long answer scrolls inside. On a tiny window the limit stops at
+     the quote + question (--jr-upper-h, JR.watchUpper) + a 3-line answer (+ padding, border;
+     the 3 lines: .jr-popup-response min-height, change both). */
+  max-height: max(var(--jr-popup-h, 70vh), calc(var(--jr-upper-h, 0px) + 3 * 1.6 * 16px + 29px));
   background: var(--jr-bg);
   border: none;
   box-shadow: 0 0 0 1px var(--jr-border), var(--jr-shadow);
@@ -160,6 +164,8 @@ html[data-theme="dark"] {
   display: flex;
   flex-direction: column;
 }
+/* Put back after ChatGPT re-rendered what held it (JR.placePopup): no second fade-in */
+.jr-popup.jr-popup--back { animation: none; }
 
 /* Nested (chained) popup — elevated above parent */
 .jr-popup--chained {
@@ -329,12 +335,13 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 }
 
 /* Chart / code text: painted by the Highlight API; a transparent proxy over each line
-   takes clicks, hover and the underline (src/highlight.js). */
-::highlight(jr-mark) {
+   takes clicks, hover and the underline (src/highlight.js). Scoped to their hosts: the bare
+   ::highlight() rule made Chrome do highlight work on every paint of the whole page. */
+[data-jr-proxy-host] ::highlight(jr-mark) {
   background-color: var(--jr-mark-bg);
   color: var(--jr-mark-text);
 }
-.jr-proxy-host { position: relative; }
+[data-jr-proxy-host] { position: relative; }
 .jr-source-highlight.jr-hl-proxy {
   position: absolute;
   display: block;
@@ -418,6 +425,26 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
    Question row
    ========================================================================== */
 
+/* Attachments + question: together at most 4 question lines (+ the row's 4px top, 2px bottom padding, 1px underline); scroll as one */
+.jr-popup-ask {
+  font-size: 16px;
+  max-height: calc(1.6em * 4 + 7px);
+  overflow-y: auto;
+  padding: 5px 6px 4px; /* room for the tiles' × and the drop outline, taken back by the margin */
+  margin: -5px -6px -4px;
+}
+/* The area scrolls, so its first margin no longer merges with the quote's 8px: 8 + 2 = 10px as before
+   (an empty or edit-hidden strip stays first in the DOM, so the note after it counts as first) */
+.jr-popup-ask > :is(.jr-popup-attach, .jr-attach-note):first-child,
+.jr-popup-ask > :is([hidden], .jr-attach-away):first-child + :is(.jr-popup-attach, .jr-attach-note) { margin-top: 2px; }
+/* A long question scrolls; its send button and version arrows stay in view */
+/* The ▸ sits on the first line (centred on a long question it would scroll out of view) */
+.jr-popup-ask .jr-popup-question-inner { align-items: flex-start; }
+.jr-popup-ask .jr-popup-question-chevron { height: 1.6em; }
+/* sticky makes its own stacking context; z-index 2: above the answer's scroll-fade edges (z-index 1,
+   later in the page), which would paint over the send menu */
+.jr-popup-ask .jr-edit-send-wrapper, .jr-popup-ask .jr-popup-question-controls { position: sticky; bottom: 0; align-self: flex-end; z-index: 2; }
+
 .jr-popup-question {
   margin: 0;
   padding: 4px 0 0 0;
@@ -459,8 +486,6 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   outline: none;
   text-decoration: none;
   cursor: text;
-  max-height: calc(1.6em * 4); /* ~4 lines */
-  overflow-y: auto;
   margin-left: 4px;
   position: relative;
   border: none;
@@ -539,9 +564,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 /* Mode dropdown (inline send) */
 .jr-send-mode-dropdown {
   display: none;
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 50%;
+  position: fixed; /* above the scroll area that holds the question; left/top: JR.askArea */
   transform: translateX(-50%);
   padding: 4px 0;
   font-family: var(--jr-font);
@@ -609,7 +632,8 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   border-top: 1px solid var(--jr-border);
   border-radius: 0 0 calc(var(--jr-radius) - 1px) calc(var(--jr-radius) - 1px);
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: calc-size(max-content, min(size, 1.6em * 3)); /* never squeezed below 3 lines (fewer if the answer is shorter; .jr-popup max-height counts them too) */
+  box-sizing: content-box; /* ChatGPT's reset makes everything border-box: the 3 lines are the text, padding on top */
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: none;
@@ -980,7 +1004,7 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
 
 /* --- Scrollbars — dainty, consistent across all scrollable areas --- */
 .jr-popup .jr-popup-highlight-inner,
-.jr-popup .jr-popup-question-text,
+.jr-popup .jr-popup-ask,
 .jr-popup .jr-popup-response {
   scrollbar-width: thin !important;
   scrollbar-color: var(--jr-highlight-border) transparent !important;
@@ -991,7 +1015,7 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
   height: 3px !important;
 }
 
-.jr-popup .jr-popup-question-text::-webkit-scrollbar {
+.jr-popup .jr-popup-ask::-webkit-scrollbar {
   width: 3px !important;
   height: 3px !important;
 }
@@ -1002,21 +1026,21 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
 }
 
 .jr-popup .jr-popup-highlight-inner::-webkit-scrollbar-track,
-.jr-popup .jr-popup-question-text::-webkit-scrollbar-track,
+.jr-popup .jr-popup-ask::-webkit-scrollbar-track,
 .jr-popup .jr-popup-response::-webkit-scrollbar-track {
   background: transparent !important;
   margin: 4px 0;
 }
 
 .jr-popup .jr-popup-highlight-inner::-webkit-scrollbar-thumb,
-.jr-popup .jr-popup-question-text::-webkit-scrollbar-thumb,
+.jr-popup .jr-popup-ask::-webkit-scrollbar-thumb,
 .jr-popup .jr-popup-response::-webkit-scrollbar-thumb {
   background: var(--jr-highlight-border) !important;
   border-radius: 2px !important;
 }
 
 .jr-popup .jr-popup-highlight-inner::-webkit-scrollbar-thumb:hover,
-.jr-popup .jr-popup-question-text::-webkit-scrollbar-thumb:hover,
+.jr-popup .jr-popup-ask::-webkit-scrollbar-thumb:hover,
 .jr-popup .jr-popup-response::-webkit-scrollbar-thumb:hover {
   background: var(--jr-text-muted) !important;
 }
@@ -1124,7 +1148,12 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
 }
 .jr-popup-response .jr-dil-bg { background: var(--jr-highlight-bg); padding: 8px 12px; }
 .jr-popup-response .jr-dil-center { align-items: center; text-align: center; }
-.jr-popup-response .jr-dil-full { align-self: stretch; }
+/* A box's own size from the answer (data-w / data-h, qa-content.js dilOpen), e.g. a relative-size bar (R15) */
+.jr-popup-response .jr-dil[data-w] { width: attr(data-w type(<length-percentage>)); align-self: flex-start; }
+.jr-popup-response .jr-dil[data-h] { height: attr(data-h type(<length-percentage>)); }
+.jr-popup-response .jr-dil-bg[data-h]:empty,
+.jr-popup-response .jr-dil-bg[data-h]:has(> .jr-dil-bg:empty:only-child) { padding: 0; overflow: hidden; } /* a bar and its track */
+.jr-popup-response .jr-dil-bg .jr-dil-bg:empty { background: var(--jr-text-muted); } /* the filled part of a bar */
 .jr-popup-response .jr-dil-row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
 .jr-popup-response .jr-dil-grid {
   /* ChatGPT's column count at most; fewer when a card would get narrower than 120 px */
