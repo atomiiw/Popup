@@ -789,6 +789,30 @@
   };
 
   /**
+   * ChatGPT's own rendering of these answers arrived (JR.qa.upgrade): use it instead of Popup's Markdown
+   * drawing, and redraw the open popup showing one of them (not while it's being edited or answered).
+   */
+  JR.onQAUpgraded = function (turnKeys) {
+    var refresh = null;
+    st.completedHighlights.forEach(function (entry, qid) {
+      var touched = false;
+      (entry.items || []).forEach(function (it) {
+        if (JR.isPlaceholderHTML(it.responseHTML) || it.responseHTML === "__TIMEOUT__") return;
+        if (!(it.turnKeys || []).some(function (k) { return turnKeys.indexOf(k) !== -1; })) return;
+        var c = JR.qa.get(it.turnKeys);
+        if (c && c.responseHTML) { it.responseHTML = c.responseHTML; touched = true; }
+      });
+      if (touched) {
+        syncActive(entry);
+        if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid) refresh = qid;
+      }
+    });
+    if (refresh && !st.responseWatchActive && !st.activePopup.querySelector(".jr-popup-question--editing")) {
+      JR.rebuildPopupAfterEdit(st.activePopup, refresh);
+    }
+  };
+
+  /**
    * A Popup Q&A turn showed up that no stored item points to: data saved before
    * ChatGPT's redesign, or a send whose turn was never mounted while it was
    * answered (the item then shows "failed"). Link it to the stored item with the

@@ -21,6 +21,7 @@
 <script src="../src/popup-helpers.js"></script>
 <script src="../src/attachments.js"></script>
 <script src="../src/qa-content.js"></script>
+<script src="../src/chatgpt-render.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
 <script>
@@ -1080,6 +1081,201 @@ asyncChecks.push(new Promise(function (done) {
     unlock26(); sc26.remove(); done();
   }, 900);
 }));
+
+// R33: Return in a popup's question (or a click on its send arrow) is not the user scrolling the chat:
+// ChatGPT re-lays the chat ~0.5 s after the send, and the lock must still keep the highlight in place.
+["keydown", "pointerdown"].forEach(function (type) {
+  var sc = document.createElement("div"); sc.style.cssText = "height:200px;overflow:auto";
+  sc.innerHTML = "<div style='height:4000px;position:relative'><div class='sp' style='height:2000px'></div><div class='hl' style='height:20px'>x</div>" +
+    "<div class='jr-popup'><div class='q' contenteditable='true'>q</div></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1950;
+  var hl = sc.querySelector(".hl"), frames = [], raf = window.requestAnimationFrame;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, hl);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var y0 = hl.getBoundingClientRect().top;
+  var target = sc.querySelector(".q");
+  target.addEventListener(type, function () { target.remove(); }); // like doSend: the question box is gone before the event reaches the lock
+  target.dispatchEvent(type === "keydown" ? new KeyboardEvent("keydown", { key: "Enter", bubbles: true }) : new PointerEvent("pointerdown", { bubbles: true }));
+  sc.querySelector(".sp").style.height = "1500px"; // ChatGPT re-lays the chat above the highlight
+  run(3);
+  var y1 = hl.getBoundingClientRect().top;
+  check("R33: " + (type === "keydown" ? "Return in a popup" : "a click in a popup") + " doesn't stop the lock keeping the highlight in place", Math.abs(y1 - y0) <= 1, y0 + " -> " + y1);
+  unlock(); sc.remove();
+});
+
+// R33: Reply (or a nested popup) anchors on something inside a popup, and popups don't move with ChatGPT's list:
+// JR.viewAnchor must give the root highlight (in the answer). A Reply popup has no highlight of its own.
+[".rb", null].forEach(function (anchorSel) {
+  var sc = document.createElement("div"); sc.style.cssText = "height:200px;overflow:auto";
+  sc.innerHTML = "<div style='height:4000px;position:relative'><div class='sp' style='height:2000px'></div><div class='hl' style='height:20px'>x</div>" +
+    "<div class='jr-popup' style='position:absolute;top:1900px'><button class='rb'>Reply</button></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1950;
+  var hl = sc.querySelector(".hl"), frames = [], raf = window.requestAnimationFrame, savedStack = JR.state.popupStack, savedActive = JR.state.activeSourceHighlights;
+  JR.state.popupStack = [{ sourceHighlights: [hl] }];
+  JR.state.activeSourceHighlights = anchorSel ? [sc.querySelector(anchorSel)] : [];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, JR.viewAnchor());
+  window.requestAnimationFrame = raf;
+  run(2);
+  var y0 = hl.getBoundingClientRect().top;
+  sc.querySelector(".sp").style.height = "1500px";
+  run(3);
+  check("R33: Reply (" + (anchorSel ? "anchor in a popup" : "no anchor") + "): the lock keeps the root highlight in place", Math.abs(hl.getBoundingClientRect().top - y0) <= 1, y0 + " -> " + hl.getBoundingClientRect().top);
+  unlock(); sc.remove(); JR.state.popupStack = savedStack; JR.state.activeSourceHighlights = savedActive;
+});
+
+// R33 (T14): ~0.3 s after every send ChatGPT re-creates all turns with placeholder heights: the list
+// collapses (scrollTop clamps), the anchor sits at a fake place, then is gone, then the list comes back.
+// The lock must end where the user was at send time, not at a position measured in the collapsed list.
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:200px;overflow:auto";
+  sc.innerHTML = "<div class='list' style='height:3000px;position:relative'><div class='a' style='position:absolute;top:1500px;height:50px'>x</div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1400;
+  var list = sc.querySelector(".list"), a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var y0 = a.getBoundingClientRect().top;
+  list.style.height = "600px"; a.style.top = "300px"; a.textContent = ""; // collapsed: clamped, anchor a placeholder at a fake place
+  run(2);
+  check("R33: while ChatGPT draws a placeholder the anchor still doesn't move on screen", Math.abs(a.getBoundingClientRect().top - y0) <= 1, a.getBoundingClientRect().top + " vs " + y0);
+  a.textContent = "x";
+  a.remove(); run(2);                                           // anchor turn gone
+  list.style.height = "3000px"; run(2);                         // list back, anchor not yet
+  // a virtual list mounts only the turns near the scroll position: the anchor turn comes back only if the lock went back there
+  if (Math.abs(sc.scrollTop - 1500) < 600) { a.style.top = "1500px"; list.appendChild(a); }
+  run(3);
+  check("R33: after ChatGPT's re-mount the lock ends where the user was", a.isConnected && Math.abs(a.getBoundingClientRect().top - y0) <= 1 && sc.scrollTop === 1400, "scrollTop " + sc.scrollTop + ", anchor " + (a.isConnected ? "back" : "never re-mounted"));
+  unlock(); sc.remove();
+})();
+
+// R36e: a highlight span that wraps onto the next line — the popup above points at its FIRST line,
+// not at the middle of the box around both lines (one span's bounding rect spans both)
+(function () {
+  var box = document.createElement("div");
+  box.style.cssText = "width:300px;font:16px/20px monospace";
+  box.innerHTML = "xxxxxxxxxxxxxxxxxxxxxxxxxx<span id='wrap36'>hello world</span>";
+  document.body.appendChild(box);
+  var span = document.getElementById("wrap36"), lines = span.getClientRects();
+  var r = JR.getAdjacentLineRect([span], "above");
+  check("R36e: popup above a wrapping highlight centres on its first line", lines.length === 2 && r && Math.abs(r.left - lines[0].left) < 1 && Math.abs(r.right - lines[0].right) < 1,
+    lines.length + " lines; got " + (r && Math.round(r.left) + "-" + Math.round(r.right)) + " want " + Math.round(lines[0].left) + "-" + Math.round(lines[0].right));
+  box.remove();
+})();
+
+// R36g: CodeMirror's runtime rules copied from the render frame apply only to answers from that frame load —
+// never to ChatGPT's own code blocks in the chat or to mirrored ones (class names are per document)
+(function () {
+  var css = JR.scopeFrameRules([".ͼ9 .cm-line { white-space: pre; line-height: 20px; }"], 3);
+  var st36 = document.createElement("style"); st36.textContent = css; document.head.appendChild(st36);
+  var box = document.createElement("div");
+  box.innerHTML = "<div class='jr-frame-answer' data-jr-frame='3'><div class='ͼ9'><div class='cm-line' id='in36'>  x</div></div></div>" +
+    "<div class='jr-frame-answer' data-jr-frame='4'><div class='ͼ9'><div class='cm-line' id='other36'>  x</div></div></div>" +
+    "<div class='ͼ9'><div class='cm-line' id='out36'>  x</div></div>";
+  document.body.appendChild(box);
+  var ws = function (id) { return getComputedStyle(document.getElementById(id)).whiteSpace; };
+  check("R36g: frame rules style that frame's answer", ws("in36") === "pre", ws("in36"));
+  check("R36g: frame rules don't touch another frame load's answer or the page", ws("other36") !== "pre" && ws("out36") !== "pre", ws("other36") + " / " + ws("out36"));
+  box.remove(); st36.remove();
+})();
+
+// R36h (user, 2026-11-17: "like ChatGPT's code blocks"): a streaming answer types out a few characters a frame —
+// new text is hidden the moment it arrives, typed text stays visible, and the popup types to the end after streaming
+asyncChecks.push(new Promise(function (done) {
+  var raf = window.requestAnimationFrame; window.requestAnimationFrame = function (f) { return setTimeout(f, 16); }; // headless draws few frames
+  var pop = document.createElement("div"); pop.className = "jr-popup jr-popup--streaming";
+  pop.innerHTML = "<div class='jr-popup-response'><p>hello world</p></div>";
+  document.body.appendChild(pop);
+  var hl = function () { var r = null; CSS.highlights.get("jr-untyped").forEach(function (x) { r = x; }); return r ? r.toString() : ""; };
+  JR.typeAnswer(pop);
+  var first = hl();
+  check("R36h type: a new answer starts hidden, typing from its first characters", first.length > 0 && first.length < 11 && "hello world".endsWith(first), JSON.stringify(first));
+  setTimeout(function () {
+    var resp = pop.querySelector(".jr-popup-response");
+    resp.insertAdjacentHTML("beforeend", "<p>second chunk</p>"); JR.typeAnswer(pop);
+    var after = hl();
+    check("R36h type: a chunk that arrives is hidden at once, not shown whole", after.indexOf("second chunk") !== -1, JSON.stringify(after));
+    pop.classList.remove("jr-popup--streaming");
+    setTimeout(function () {
+      check("R36h type: after streaming it types to the end and stops", pop._jrTyped == null && hl() === "", pop._jrTyped + " " + JSON.stringify(hl()));
+      pop.remove(); window.requestAnimationFrame = raf; done();
+    }, 1500);
+  }, 100);
+}));
+
+// R36 jitter: an "above" popup that streams eases its height to each new line (several frames) instead of
+// jumping a line at once; its bottom (the arrow) stays on the highlight in every frame; after streaming, auto again.
+asyncChecks.push(new Promise(function (done) {
+  var host = document.createElement("div"); host.style.cssText = "position:relative;width:600px;height:900px";
+  document.body.appendChild(host);
+  var pop = document.createElement("div"); pop.className = "jr-popup jr-popup--streaming";
+  pop.innerHTML = "<div class='jr-popup-upper'>q</div><div class='jr-popup-response'><p>line one</p></div>";
+  host.appendChild(pop);
+  pop._jrLockedDirection = "above"; pop._jrBottomAnchor = 800;
+  pop.style.top = (800 - pop.offsetHeight) + "px";
+  var raf = window.requestAnimationFrame; window.requestAnimationFrame = function (f) { return setTimeout(f, 16); }; // headless draws few frames
+  JR.attachAboveAnchorObserver(pop);
+  var h0 = pop.offsetHeight, seen = [], bottoms = [];
+  pop.querySelector(".jr-popup-response").insertAdjacentHTML("beforeend", "<p>line two</p><p>line three</p>");
+  var iv = setInterval(function () { seen.push(pop.offsetHeight); bottoms.push(parseFloat(pop.style.top) + parseFloat(pop.style.height || pop.offsetHeight)); }, 16);
+  setTimeout(function () {
+    clearInterval(iv);
+    var steps = seen.filter(function (h, i) { return h > h0 && (i === 0 || h !== seen[i - 1]); });
+    check("R36 jitter: the streaming above popup grows over several frames", steps.length >= 3 && seen[seen.length - 1] > h0 + 40, h0 + " -> " + seen.join(","));
+    check("R36 jitter: ...with its bottom on the highlight in every frame", bottoms.every(function (b) { return Math.abs(b - 800) < 1; }), bottoms.map(Math.round).join(","));
+    pop.classList.remove("jr-popup--streaming");
+    setTimeout(function () {
+      check("R36 jitter: after streaming the popup is auto-sized again, bottom still on the highlight", pop.style.height === "" && !pop.classList.contains("jr-popup--grow") && Math.abs(parseFloat(pop.style.top) + pop.offsetHeight - 800) < 1, pop.style.height + " " + pop.style.top + " " + pop.offsetHeight);
+      pop._jrAboveObserver.disconnect(); host.remove(); window.requestAnimationFrame = raf; done();
+    }, 600);
+  }, 500);
+}));
+
+// R36 follow: while an answer streams its area scrolls to the end, until the user scrolls in it themselves
+(function () {
+  var pop = document.createElement("div"); pop.className = "jr-popup";
+  var resp = document.createElement("div"); resp.className = "jr-popup-response"; resp.style.cssText = "height:60px;overflow:auto";
+  resp.innerHTML = "<p>1</p><p>2</p><p>3</p><p>4</p><p>5</p><p>6</p>";
+  pop.appendChild(resp); document.body.appendChild(pop);
+  var calls = []; resp.scrollTo = function (o) { calls.push(o.top); };
+  JR.followAnswer(resp);
+  check("R36 follow: a streaming answer taller than its area scrolls to its end", calls.length === 1 && calls[0] === resp.scrollHeight, JSON.stringify(calls));
+  resp.dispatchEvent(new WheelEvent("wheel", { deltaY: -50 }));
+  resp.insertAdjacentHTML("beforeend", "<p>7</p>"); JR.followAnswer(resp);
+  check("R36 follow: ...not after the user scrolled in it", calls.length === 1, JSON.stringify(calls));
+  pop.remove();
+})();
+
+// review #2: only answers Popup drew from Markdown get ChatGPT's drawing, once — never ChatGPT's own mirror
+// (after 100 ms: an earlier test stubs JR.qa for 50 ms)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var realRender = JR.chatgptRender, calls = [];
+  JR.chatgptRender = function (k) { calls.push(k); return Promise.resolve(null); };
+  JR.qa.put("rv2-mirror", { responseHTML: "<div data-markdown-text-style='assistant-message'>a</div>", drawnByPopup: false });
+  JR.qa.put("rv2-md", { responseHTML: "<p>a</p>", drawnByPopup: true });
+  JR.qa.upgrade(["rv2-mirror"]); JR.qa.upgrade(["rv2-md"]);
+  check("review #2: ChatGPT's own drawing is not re-rendered; Popup's is", calls.join() === "rv2-md", calls.join());
+  JR.chatgptRender = realRender;
+  done();
+}, 100); }));
 
 Promise.all(asyncChecks).then(function () {
   fakeForm.remove();

@@ -316,12 +316,34 @@
           text: parsed ? parsed.text : null,
           sentence: parsed ? parsed.sentence : null,
           responseHTML: JR.renderMarkdown(answer),
+          drawnByPopup: true, // JR.qa.upgrade replaces it with ChatGPT's own drawing when it's opened
           isPopup: !!parsed,
         });
         filled.push(k);
       });
       if (filled.length && JR.onQAContentLoaded) JR.onQAContentLoaded(filled);
       return filled;
+    });
+  };
+
+  /**
+   * Answers Popup drew from Markdown get ChatGPT's own rendering (chatgpt-render.js), in memory only;
+   * open popups showing them are refreshed (JR.onQAUpgraded). Once per turn per page.
+   */
+  var upgraded = new Set();
+  JR.qa.upgrade = function (turnKeys) {
+    (turnKeys || []).forEach(function (k) {
+      var c0 = cache.get(k);
+      if (!k || upgraded.has(k) || !JR.chatgptRender || !c0 || !c0.drawnByPopup) return;
+      upgraded.add(k);
+      JR.chatgptRender(k).then(function (html) {
+        if (!html) { upgraded.delete(k); return; }
+        var c = cache.get(k) || {};
+        c.responseHTML = html;
+        c.drawnByPopup = false;
+        cache.set(k, c);
+        if (JR.onQAUpgraded) JR.onQAUpgraded([k]);
+      });
     });
   };
 

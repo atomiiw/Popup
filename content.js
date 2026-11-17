@@ -123,7 +123,7 @@
       if (st.activePopup) {
         var input = st.activePopup.querySelector(".jr-popup-question-text[contenteditable]");
         if (input) {
-          requestAnimationFrame(function () { input.focus(); });
+          requestAnimationFrame(function () { input.focus({ preventScroll: true }); });
         }
       }
     });
@@ -132,6 +132,9 @@
     // the button (selection still exists) before this click lands.
     triggerBtn.addEventListener("mousedown", function (e) {
       e.stopPropagation();
+      // Keep the selection: in a popup answer (user-select: text) a press on the icon started a new
+      // selection, the old one collapsed, the button was removed before mouseup — no click (T21)
+      e.preventDefault();
     });
     triggerBtn.addEventListener("mouseup", function (e) {
       e.stopPropagation();

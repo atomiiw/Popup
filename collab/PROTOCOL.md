@@ -21,6 +21,14 @@
 - 用户偏好的 UI：附件是引用框和问题之间单独一层的 45px 小方块，文件名中间省略、保留扩展名；提示只有一行，放在附件那一层。
 - 用户不是这台 Mac 的管理员：不要求 sudo，Codex 没有 Computer Use 权限；全部通过浏览器扩展完成。
 
+## 2026-11-16 晚起：测试方式（用户决定）
+- **绝不用 DevTools 协议（CDP）驱动 ChatGPT**：带 `--remote-debugging-port` 的测试 Chrome + `tools/cdp.js` 被 ChatGPT 识别为自动化，多个对话 429。`cdp.js`、`r33-live.sh`、`new-test-chat.sh`、`native-send-snap.sh`、`scroll-exp.sh` 只作历史参考。
+- **动手的是 Codex `operator`**：用 Computer Use 在**用户自己的 Chrome** 里操作（真实鼠标键盘，从未被识别），节奏像真人。用 `tools/codex_steer.py operator "…"` 发任务（空闲时直接开新一轮，不排队），它用 `board_post.py` 回报，commander 用 Monitor 盯 `collab/BOARD.md`。
+- **观测的是 commander**：Chrome 菜单 View → Developer → Allow JavaScript from Apple Events 已开；`tools/observe.sh <对话id前缀> "<句子>"` 在页面里装只读观测（发送录制器、逐帧快照、错误/console.error、后端 fetch），operator 发送后 `python3 tools/send-report.py <对话id前缀> <目录>` 读回并打印 SMOOTHNESS / scrollTop 变化 / 锁纠正 / 逐帧快照。录制器在绘制之后取样（量的是用户看到的画面）。
+- Chrome 窗口被别的应用完全挡住时不绘制页面（Computer Use 截图全白、rAF 停）：先把 Chrome 调到前台（`osascript -e 'tell application "Google Chrome" to activate'`）。
+- 测试对话：「介绍光合作用完整过程」6afbb274。发消息：用户批准不限条数，只在测试对话里发。
+- Claude 会话 operator / operator2（用过 CDP）暂停，需要并行时再请用户决定。
+
 ## 角色
 - **commander**：Claude Code 会话。调研、设计、写代码和测试、写任务说明、验收 operator 的证据、改文档、推送。
 - **operator**：Codex 桌面 app 里名为 `operator` 的会话（旧 Mac 上 id `01a18502-a2c1-7b30-9ab2-94531782c571`；新电脑新建一个同名会话即可）。负责一切真实浏览器操作：在用户已登录的 Chrome 里用 ChatGPT-for-Chrome 扩展读 DOM、点击、键盘、写剪贴板、拖拽、截图。**不能**在页面里执行 JS、不能 fetch、不能打开 chrome:// 页面（重载扩展由用户做）。
@@ -29,8 +37,8 @@
 ## 通道
 - **commander → operator（插话，首选）**：`python3 tools/codex_steer.py operator "新任务 Tn：读 collab/evidence/formats/Tn-brief.md 并照做，完成后用 board_post 回报。"`
   - 经桌面 app 自己的 IPC（`~/.codex/ipc/ipc.sock`，`thread-follower-steer-turn`）直接插进 operator 正在跑的这一轮；输出 `STEERED into the running turn …`。
-  - operator 空闲时自动改用 `codex queue`（输出 `Queued message …`），空闲会话几秒内开新一轮。
-  - **不要在 operator 忙时用 `codex queue`**：消息会排队到这一轮结束（用户原话：「queue == 排队 == 两个小时后你才会收到回信」）。
+  - operator 空闲时自动改用 `thread-follower-start-turn`（同一 IPC，版本 2）直接开新一轮，输出 `STARTED a new turn …`，桌面 app 里马上看得到。
+  - **永远不用 `codex queue`**（用户 2026-11-16：「不要排队，直接发，让它看见」；忙时排队会等到这一轮结束：「queue == 排队 == 两个小时后你才会收到回信」）。两种都失败时脚本报 `NOT DELIVERED`，不会排队。
   - 不要用 `tools/codex_send.py`（会经后台 daemon 抢走会话锁，桌面 app 显示 "open in another app"）。
 - **任务说明（brief）**：长任务写成文件 `collab/evidence/formats/Tn-brief.md`（本地），插话里只给路径。格式见下面模板。
 - **operator → commander**：`python3 tools/board_post.py --from operator --to commander --reply 是 --body "Tn 完成：…"`，追加到 `collab/BOARD.md`（本地）。正文 ≤ 6 行：逐项通过 / 不通过、用了几条消息、证据路径；完整矩阵写在 `collab/evidence/.../Tn-report.md`。

@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Popup - Ask inline follow-ups in ChatGPT",
   "version": "1.2.12",
+  "version_name": "1.2.13-dev.27",
   "description": "Ask ChatGPT where questions come up. Highlight. Ask. Keep reading. Stay in your flow.",
   "permissions": [
     "storage"
@@ -43,6 +44,7 @@
         "src/jr-namespace.js",
         "src/site-adapter.js",
         "src/qa-content.js",
+        "src/chatgpt-render.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",
         "src/highlight.js",

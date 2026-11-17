@@ -4,3 +4,6 @@ collab/.operator_seen
 collab/BOARD.md
 collab/evidence/
 dist/
+
+# Claude Code local settings (this Mac only)
+.claude/settings.local.json

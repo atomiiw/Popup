@@ -334,16 +334,28 @@
   };
 
   /**
-   * Shared beforeSend step for every send path: snapshot the turns (to spot the
-   * new one) and keep the user's scroll position while ChatGPT answers.
+   * What the user is looking at, which must stay in place while ChatGPT re-lays its list after a send (R33):
+   * the root highlight of the open popups (popups don't move with ChatGPT's list; a Reply or a stored
+   * span may have no live element), else the first chat turn on screen. The ONE place that decides it.
    */
-  JR.prepareSend = function (w, anchorEl) {
+  JR.viewAnchor = function () {
+    var root = st.popupStack.length ? st.popupStack[0].sourceHighlights : st.activeSourceHighlights;
+    var hl = root && root[0];
+    if (hl && hl.isConnected && !hl.closest(".jr-popup")) return hl;
+    var band = JR.site.visibleBand();
+    return JR.site.turns().filter(function (t) { var r = t.getBoundingClientRect(); return r.height && r.bottom > band.top; })[0] || null;
+  };
+
+  /**
+   * Every send goes through here (called by the queue, never by a send path): snapshot the turns
+   * (to spot the new one) and keep what the user is looking at in place while ChatGPT answers.
+   */
+  JR.prepareSend = function (w) {
     // Freeze here, when the message is really sent (not when it was queued).
     JR.freezeChat();
     w.turnsBefore = JR.snapshotTurns();
     var scroller = JR.site.scrollContainer();
-    var anchor = anchorEl && anchorEl.isConnected ? anchorEl : null;
-    var unlock = scroller ? JR.lockScroll(scroller, anchor) : null;
+    var unlock = scroller ? JR.lockScroll(scroller, JR.viewAnchor()) : null;
     // Page-world guard (scroll-guard.js): ChatGPT's own scroll-to-new-turn is ignored while set.
     document.documentElement.setAttribute("data-jr-scroll-lock", String(Date.now()));
     JR.setTailHidden(true);
@@ -362,7 +374,6 @@
    * @param {object} opts
    * @param {string} opts.message - The injection message
    * @param {object} opts.waitOpts - Args for JR.waitForResponse (popup, text, sentence, blockTypes, parentId, question, editOpts, ...)
-   * @param {function} [opts.beforeSend] - Called right before injection; should call JR.prepareSend(w, anchor).
    */
   /**
    * Put files into ChatGPT's composer the way a user's paste does (ChatGPT uploads
@@ -448,8 +459,7 @@
       return;
     }
     var w = opts.waitOpts;
-    if (opts.beforeSend) opts.beforeSend(w);
-    if (!w.turnsBefore || !w.turnsBefore.keys) w.turnsBefore = JR.snapshotTurns();
+    JR.prepareSend(w);
 
     // Offline check: skip injection entirely, save __TIMEOUT__ immediately
     if (!navigator.onLine) {
@@ -588,9 +598,10 @@
   function syncAnswerInto(responseDiv, turn) {
     var bodies = JR.site.assistantBodies(turn);
     if (!bodies.length) return false;
-    var src = [];
-    for (var i = 0; i < bodies.length; i++) src = src.concat(Array.prototype.slice.call(bodies[i].childNodes));
-    syncChildren(src, responseDiv);
+    // Mirror the markdown roots themselves: ChatGPT scopes all answer styling under the root's class and
+    // data-markdown-* attributes (spacing, sizes, tables, the per-word fade-in while streaming) — copying
+    // only the children lost all of it (R36b/h)
+    syncChildren(bodies, responseDiv);
     return true;
   }
 
@@ -614,8 +625,22 @@
     var userScrolling = false;
     var wheelTimer = null;
     var rafId = null;
+    // After a send ChatGPT's virtual list re-measures the turns (T18: heights above the reader swap to estimates
+    // and back). A ResizeObserver runs after layout and before paint, so a correction made there is never
+    // drawn in the wrong place; the frame loop is only the fallback (R33).
+    var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(function () { correct(); }) : null;
+    var observed = [];
+    function observe(els) {
+      if (!ro || (els[0] === observed[0] && els[1] === observed[1])) return;
+      ro.disconnect();
+      observed = els;
+      els.forEach(function (el) { if (el) ro.observe(el); });
+    }
 
-    function markUser() {
+    function markUser(e) {
+      // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
+      // composedPath: sending removes the question box before the event gets here, so e.target is no longer in the popup
+      if ((e.type === "keydown" || e.type === "pointerdown") && e.composedPath().some(function (n) { return n.classList && n.classList.contains("jr-popup"); })) return;
       userScrolling = true;
       if (wheelTimer) clearTimeout(wheelTimer);
       wheelTimer = setTimeout(function () { userScrolling = false; }, 800);
@@ -636,7 +661,7 @@
       el.removeEventListener("pointerdown", markUser);
     }
 
-    function enforce() {
+    function correct() {
       if (!container.isConnected) {
         var fresh = JR.site.scrollContainer();
         if (!fresh) return;
@@ -647,6 +672,7 @@
       }
 
       var anchor = liveAnchor();
+      observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
       if (userScrolling) {
         savedTop = container.scrollTop;
         // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
@@ -655,25 +681,29 @@
         if (anchor && savedAnchorY === null) {
           savedAnchorY = anchor.getBoundingClientRect().top;
         } else if (anchor) {
+          // The anchor turn stays where it is on screen in every drawn frame — even while ChatGPT draws it
+          // as a placeholder: what the reader looks at doesn't move.
           var currentY = anchor.getBoundingClientRect().top;
           var drift = currentY - savedAnchorY;
           if (Math.abs(drift) > 1) {
             if (Math.abs(drift) > 40) JR.posLog("lock", st.activePopup || document.documentElement, { drift: Math.round(drift), top: Math.round(container.scrollTop) });
+            // savedTop stays where the user was: ChatGPT re-creates every turn after a send, and a correction made
+            // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
-            savedTop = container.scrollTop;
           }
         } else if (container.scrollTop !== savedTop) {
           container.scrollTop = savedTop;
         }
       }
-      rafId = requestAnimationFrame(enforce);
     }
-    rafId = requestAnimationFrame(enforce);
+    function frame() { correct(); rafId = requestAnimationFrame(frame); }
+    rafId = requestAnimationFrame(frame);
 
     addListeners(container);
 
     return function unlock() {
       if (rafId) cancelAnimationFrame(rafId);
+      if (ro) ro.disconnect();
       removeListeners(container);
       if (wheelTimer) clearTimeout(wheelTimer);
     };
@@ -719,14 +749,16 @@
     var detachedSpans = null;
     var detachedHlId = editOpts ? editOpts.hlId : null;
     var streamObserver = null;
-    var streamRafId = null;
-    var streamDirty = false;
     var injectionFailed = false;
 
     // Answer text from ChatGPT's network stream (net-tap.js, MAIN world). Used
     // when the answer's turn isn't in the DOM (virtualized away) or ChatGPT
     // failed to render it; ChatGPT's own DOM rendering is preferred otherwise.
     var net = { matched: false, text: "", done: false };
+    // The popup's mirror of ChatGPT's own rendering, once there is one. ChatGPT's virtual list drops the hidden
+    // Q&A turn when it ends (R36-1: 1 s before done), so the mirror stays the answer: never switch to Popup's
+    // Markdown drawing then (that switch and the later upgrade were the two shifts after streaming, R36f)
+    var mirrorDiv = null;
     var rejected = { count: 0, pending: false };
     function onNet(e) {
       var d;
@@ -765,6 +797,7 @@
     }
 
     function renderNetText() {
+      if (mirrorDiv) return; // ChatGPT's own drawing is already shown: keep it (R36f)
       var targetPopup = getStreamTarget();
       if (!targetPopup || !net.text) return;
       var responseDiv = targetPopup.querySelector(".jr-popup-response");
@@ -781,6 +814,8 @@
       syncChildren(Array.prototype.slice.call(tmp.childNodes), responseDiv);
       targetPopup.classList.add("jr-popup--streaming");
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
+      JR.typeAnswer(targetPopup);
+      JR.followAnswer(responseDiv);
     }
 
     /**
@@ -853,10 +888,6 @@
         streamObserver.disconnect();
         streamObserver = null;
       }
-      if (streamRafId) {
-        cancelAnimationFrame(streamRafId);
-        streamRafId = null;
-      }
       if (netRaf) { cancelAnimationFrame(netRaf); netRaf = 0; } // never draws over the finished answer
       if (unlockScroll) unlockScroll();
       document.querySelectorAll(".jr-popup--streaming").forEach(function (p) { p.classList.remove("jr-popup--streaming"); });
@@ -905,14 +936,13 @@
      * of innerHTML to avoid flicker).
      */
     function syncStreamContent() {
-      streamDirty = false;
-      streamRafId = null;
       if (JR.perf) JR.perf.count("streamSync");
 
       var turn = liveResponseTurn();
       if (!turn) return;
-      if (JR.site.renderFailed(turn)) return; // ChatGPT's "couldn't load" — the network text is shown instead
-      if (JR.site.hasUndrawnWidget(turn) && net.text.trim()) return; // Popup draws it from the network text (domAnswerUsable)
+      // ChatGPT's "couldn't load", or a chart/map it draws only on screen (a copy would be blank): the network text
+      // is drawn instead — drop the mirror so renderNetText and captureResponse use it (review #1)
+      if (JR.site.renderFailed(turn) || (JR.site.hasUndrawnWidget(turn) && net.text.trim())) { mirrorDiv = null; return; }
       // ChatGPT mounts an empty answer placeholder first: keep "Waiting for response…" until text arrives.
       if (!JR.site.assistantText(turn).trim()) return;
       var targetPopup = getStreamTarget();
@@ -927,6 +957,8 @@
         isNew = true;
       }
       if (!syncAnswerInto(responseDiv, turn)) return;
+      mirrorDiv = responseDiv;
+      JR.typeAnswer(targetPopup); // the new text stays hidden until it is typed out, from this same frame on
       targetPopup.classList.add("jr-popup--streaming");
       if (isNew) {
         var loadingEl = targetPopup.querySelector(".jr-popup-loading");
@@ -939,15 +971,14 @@
 
       // A new answer area: the arrow moves to it ("above" popups then stay pinned by attachAboveAnchorObserver)
       if (isNew) JR.repositionPopup();
+      JR.followAnswer(responseDiv);
     }
 
     /**
-     * MutationObserver callback — coalesces into one sync per frame.
+     * MutationObserver callback: copy at once, before this frame paints (no frame of lag behind ChatGPT).
      */
     function onStreamMutation() {
-      if (streamDirty) return;
-      streamDirty = true;
-      streamRafId = requestAnimationFrame(syncStreamContent);
+      syncStreamContent();
     }
 
     function observeStream() {
@@ -1023,17 +1054,16 @@
         streamObserver.disconnect();
         streamObserver = null;
       }
-      if (streamRafId) {
-        cancelAnimationFrame(streamRafId);
-        streamRafId = null;
-      }
 
       var turn = liveResponseTurn();
       var responseHTML = null;
       if (domAnswerUsable()) {
         responseHTML = JR.site.assistantHTML(turn);
+      } else if (mirrorDiv && mirrorDiv.textContent.trim()) {
+        responseHTML = mirrorDiv.innerHTML; // the hidden turn is gone: what the popup mirrored is ChatGPT's rendering (R36f)
       } else if (net.text.trim()) {
         responseHTML = JR.renderMarkdown(net.text); // turn not in the DOM, or ChatGPT failed to render it
+        var drawnByPopup = true;
       } else if (turn) {
         // Empty answer (user stopped, error): save as __TIMEOUT__
         finishWithTimeout();
@@ -1044,8 +1074,9 @@
         responseHTML = "__LOADING__";
       }
       if (responseHTML !== "__LOADING__") qaKeys.forEach(function (k) {
-        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true });
+        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true, drawnByPopup: !!drawnByPopup });
       });
+      if (drawnByPopup) JR.qa.upgrade(qaKeys); // the hidden turn was gone at the end: ChatGPT draws it in the render frame (R34)
       cleanup();
 
       var sourceTurnKey = spans.length > 0 ? JR.getTurnKey(spans[0]) : null;

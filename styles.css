@@ -217,6 +217,14 @@ html[data-theme="dark"] .jr-popup--chained {
 .jr-popup-arrow--up::after { top: 2px; border-bottom: 9px solid var(--jr-bg); }
 
 .jr-popup-arrow--down { bottom: -9px; height: 10px; }
+
+/* A streaming answer types out (JR.typeAnswer): the text not typed yet */
+::highlight(jr-untyped) { color: transparent; text-decoration-color: transparent; text-shadow: none; }
+
+/* An "above" popup streaming: its height eases to the content's (growGently, popup-helpers.js); meanwhile
+   the answer area may be shorter than its text — it clips it (no 3-line floor), without a scrollbar */
+.jr-popup--grow .jr-popup-response { min-height: 0; }
+.jr-popup--grow-fill .jr-popup-response { scrollbar-width: none; }
 .jr-popup-arrow--down::before { bottom: 0; border-top: 9px solid var(--jr-border); }
 .jr-popup-arrow--down::after { bottom: 2px; border-top: 9px solid var(--jr-bg); }
 
@@ -1203,3 +1211,16 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
   width: auto !important; max-width: 100% !important; min-width: 0 !important;
 }
 .jr-popup-response [data-d-table-viewport] { overflow-x: auto !important; }
+
+/* R34: hidden same-origin frame where ChatGPT draws a Popup answer (chatgpt-render.js). Off screen but
+   laid out (display:none would not render), at about a popup's width so ChatGPT sizes tables/code for it. */
+.jr-render-frame {
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  width: 420px;
+  height: 900px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

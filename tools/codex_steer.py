@@ -3,18 +3,18 @@
 
 Uses the desktop app's own IPC router (~/.codex/ipc/ipc.sock; frames = 4-byte LE length
 + JSON): "initialize", then "thread-follower-steer-turn" to the window that owns the thread.
-If the session is idle there is nothing to steer: falls back to `codex queue`, which an idle
-session picks up within seconds.
+If the session is idle there is nothing to steer: starts a new turn with
+"thread-follower-start-turn" (shows in the app at once). Never queues (a queued message
+waits until the user sees it / the turn ends).
 
   tools/codex_steer.py operator "commander → operator：..."
 """
-import json, os, shutil, socket, struct, subprocess, sys, uuid
+import json, os, socket, struct, sys, time, uuid
 
 SOCK = os.path.expanduser("~/.codex/ipc/ipc.sock")
 INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
-CODEX = shutil.which("codex") or os.path.expanduser("~/.local/bin/codex")
 CWD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = {"initialize": 0, "thread-follower-steer-turn": 1}  # IPC version table in app.asar
+VERSION = {"initialize": 0, "thread-follower-steer-turn": 1, "thread-follower-start-turn": 2}  # IPC version table in app.asar
 
 
 def resolve(target):
@@ -59,7 +59,7 @@ def request(s, client_id, method, params):
             send(s, {"type": "client-discovery-response", "requestId": msg["requestId"], "response": {"canHandle": False}})
 
 
-def steer(tid, text):
+def deliver(tid, text, method):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(20)
     s.connect(SOCK)
@@ -67,10 +67,15 @@ def steer(tid, text):
         cid = request(s, "initializing-client", "initialize", {"clientType": "claude-commander"})["result"]["clientId"]
         mid = str(uuid.uuid4())
         item = [{"type": "text", "text": text, "text_elements": []}]
-        return request(s, cid, "thread-follower-steer-turn", {
-            "conversationId": tid, "clientUserMessageId": mid, "input": item,
-            "restoreMessage": {"id": mid, "text": text, "input": item, "cwd": CWD,
-                               "context": {"workspaceRoots": [CWD]}}})
+        restore = {"id": mid, "text": text, "input": item, "cwd": CWD, "createdAt": int(time.time() * 1000),
+                   "context": {"prompt": text, "workspaceRoots": [CWD]}}
+        if method == "thread-follower-steer-turn":
+            params = {"conversationId": tid, "clientUserMessageId": mid, "input": item, "restoreMessage": restore}
+        else:
+            params = {"conversationId": tid, "turnStart": {
+                "request": {"threadId": tid, "clientUserMessageId": mid, "input": item},
+                "context": {"restoreMessage": restore}}}
+        return request(s, cid, method, params)
     finally:
         s.close()
 
@@ -79,15 +84,17 @@ def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     tid, text = resolve(sys.argv[1]), sys.argv[2]
-    try:
-        res = steer(tid, text)
-    except (OSError, ConnectionError, KeyError) as e:  # desktop app not running / IPC changed
-        res = {"error": f"ipc: {e}"}
-    if res.get("resultType") == "success":
-        print(f"STEERED into the running turn of {tid}")
-        return
-    print(f"steer not possible ({res.get('error')}); queueing instead", file=sys.stderr)
-    subprocess.run([CODEX, "queue", "--thread", tid, "--message", text], check=True)
+    for method, done in (("thread-follower-steer-turn", "STEERED into the running turn of"),
+                         ("thread-follower-start-turn", "STARTED a new turn in")):
+        try:
+            res = deliver(tid, text, method)
+        except (OSError, ConnectionError, KeyError) as e:  # desktop app not running / IPC changed
+            res = {"error": f"ipc: {e}"}
+        if res.get("resultType") == "success":
+            print(f"{done} {tid}")
+            return
+        print(f"{method}: {res.get('error')}", file=sys.stderr)
+    sys.exit("NOT DELIVERED (no queue fallback) — is the Codex app open with the operator session?")
 
 
 if __name__ == "__main__":

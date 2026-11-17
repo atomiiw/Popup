@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- claude.ai adapter, offline (Step 4). Fixture DOM from the 2026-11-17 probe (docs/CLAUDEAI.md).
+     Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
+          --allow-file-access-from-files --virtual-time-budget=5000 --dump-dom "file://$PWD/tools/dom-test-claude.html" | grep -E "PASS|FAIL|passed" -->
+<html class="light"><head><meta charset="utf-8"><title>…</title></head><body>
+<div data-autoscroll-container="true" style="height:400px;overflow-y:auto;width:600px">
+  <div data-testid="transcript-list" style="display:flex;flex-direction:column">
+    <div role="feed">
+      <div data-testid="transcript-sizer" data-rocksteady-sizer="" data-sizer-excess="0" style="position:relative;width:100%">
+        <div data-testid="transcript-spacer" style="height:120px"></div>
+        <div data-testid="transcript-row" data-index="4" data-perf-row="human" style="display:flow-root;position:relative"><div><div data-cds="UserMessage" data-turn-key="01a1d45d-47f9-7000-8000-000000000001"><p>用三句话介绍一下长城</p></div></div></div>
+        <div data-testid="transcript-row" data-index="5" data-perf-row="assistant" style="display:flow-root;position:relative"><div role="article"><div data-cds="AssistantMessage" data-testid="assistant-message" data-turn-key="01a1d45d-47f9-7000-8000-000000000001-hub-reply" data-is-streaming="false"><div data-cds="TurnStatus" data-state="done"><div>Searched the web</div></div><div class="prose" data-cds="Prose"><p>长城是中国古代的军事防御工程。</p><pre><code class="language-python">print("hi")
+    x = 1</code></pre></div></div><div data-cds="MessageActions"><button data-testid="action-bar-retry">↻</button></div></div></div>
+        <div data-testid="transcript-row" data-index="6" data-perf-row="human" style="display:flow-root;position:relative"><div><div data-cds="UserMessage" data-turn-key="01a1d45d-47f9-7000-8000-000000000002"><p>Regarding this part of your response: …</p></div></div></div>
+        <div data-testid="transcript-row" data-index="7" data-perf-row="assistant" style="display:flow-root;position:relative"><div role="article"><div data-cds="AssistantMessage" data-testid="assistant-message" data-turn-key="01a1d45d-47f9-7000-8000-000000000002-hub-reply" data-is-streaming="true"><div class="prose" data-cds="Prose"><p>Popup answer…</p></div></div></div></div>
+        <div data-testid="transcript-spacer" style="height:0px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="dock"><div><div contenteditable="true" role="textbox" data-cds="Editor" data-testid="chat-input" class="tiptap ProseMirror"><p>draft</p></div></div><button type="button" disabled data-testid="chat-input-send" aria-label="Send message">↑</button></div>
+<pre id="out"></pre>
+<script>window.JR = {};</script>
+<script src="../src/sites/claude.js"></script>
+<script>
+var out = [], failed = 0, pending = [];
+function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
+var S = JR.sites.claude, K1 = "01a1d45d-47f9-7000-8000-000000000001", K2 = "01a1d45d-47f9-7000-8000-000000000002";
+function row(i) { return document.querySelector('[data-index="' + i + '"]'); }
+
+// --- Turns ---
+check("turns are the assistant rows", S.turns().map(function (t) { return t.getAttribute("data-index"); }).join() === "5,7");
+check("turnKey: the user message uuid (no -hub-reply)", S.turnKey(row(5)) === K1, S.turnKey(row(5)));
+check("turnOf: a node in the human row → its answer row", S.turnOf(row(4).querySelector("p")) === row(5));
+check("turnOf: a node in the answer → the answer row", S.turnOf(row(5).querySelector("p")) === row(5));
+check("findTurnByKey", S.findTurnByKey(K2) === row(7));
+var hidden = Array.prototype.slice.call(document.querySelectorAll(S.turnSelector(K1))).map(function (r) { return r.getAttribute("data-index"); }).join();
+check("turnSelector: both rows of the Q&A, nothing else", hidden === "4,5", hidden);
+check("userText: the question before the answer", S.userText(row(5)) === "用三句话介绍一下长城", JSON.stringify(S.userText(row(5))));
+check("assistantBodies: the reply prose, not the TurnStatus line", S.assistantBodies(row(5)).length === 1 && S.assistantText(row(5)).indexOf("长城是") === 0 && S.assistantText(row(5)).indexOf("Searched") === -1, S.assistantText(row(5)));
+check("codeBlocks: pre > code with its language", S.codeBlocks(row(5))[0].lang === "Python");
+check("frameTurn / frameScroller work on another document (render frame)", S.frameTurn(document, K1) === row(5) && !!S.frameScroller(document) && S.frameTurnCount(document) === 4);
+
+// --- Composer ---
+check("composer: the tiptap editor", S.composer() === document.querySelector("[data-testid=chat-input]"));
+check("composerText", S.composerText(S.composer()) === "draft");
+check("sendButton: null while Claude keeps it disabled", S.sendButton(S.composer()) === null);
+document.querySelector("[data-testid=chat-input-send]").disabled = false;
+check("sendButton: the button once enabled", !!S.sendButton(S.composer()));
+check("isGenerating: a reply marked streaming", S.isGenerating() === true);
+row(7).querySelector("[data-cds=AssistantMessage]").setAttribute("data-is-streaming", "false");
+check("isGenerating: none streaming, no stop button", S.isGenerating() === false);
+
+// --- Pages ---
+check("conversationId", S.conversationId("/chat/938ecde8-1932-4480-8c7b-2b48e553e549") === "938ecde8-1932-4480-8c7b-2b48e553e549" && S.conversationId("/recents") === null);
+check("chatUrl: the page the render frame loads", S.chatUrl("abc") === "/chat/abc");
+check("popupHost: the transcript column", S.popupHost(row(5)) === document.querySelector("[data-testid=transcript-list]"));
+
+// --- The flash's root cause (claude.ai's rocksteady skips a row whose border box is 0×0) ---
+// rocksteady: if (box.blockSize === 0 && box.inlineSize === 0) { skip: keep the old height } (docs/CLAUDEAI.md §5)
+function rocksteadySkips(box) { return box.blockSize === 0 && box.inlineSize === 0; }
+pending.push(new Promise(function (done) {
+  var none = row(6), ours = row(7), seen = {};
+  var st = document.createElement("style");
+  st.textContent = '[data-index="6"] { display: none !important } [data-index="7"] { ' + S.hideDeclaration + " }";
+  document.head.appendChild(st);
+  var ro = new ResizeObserver(function (entries) {
+    entries.forEach(function (e) { seen[e.target.getAttribute("data-index")] = e.borderBoxSize[0]; });
+    if (seen["6"] && seen["7"]) {
+      ro.disconnect();
+      check("display:none → 0×0: rocksteady would skip it (the blank)", rocksteadySkips(seen["6"]), JSON.stringify(seen["6"]));
+      check("hideDeclaration → height 0, width kept: measured as 0 (no blank)", !rocksteadySkips(seen["7"]) && seen["7"].blockSize === 0 && seen["7"].inlineSize > 0, JSON.stringify(seen["7"]));
+      check("hideDeclaration: nothing of the row shows (0 px in the flow)", ours.getBoundingClientRect().height === 0 && row(5).getBoundingClientRect().bottom === document.querySelectorAll('[data-testid="transcript-spacer"]')[1].getBoundingClientRect().top, ours.getBoundingClientRect().height);
+      done();
+    }
+  });
+  ro.observe(none); ro.observe(ours);
+}));
+
+Promise.all(pending).then(function () {
+  out.push(failed ? failed + " FAILED" : "all passed");
+  document.getElementById("out").textContent = out.join("\n");
+  document.title = failed ? "FAIL" : "PASS";
+});
+</script></body></html>

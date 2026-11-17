@@ -473,9 +473,14 @@
     if (!spans || spans.length === 0) return null;
     var rects = [];
     for (var i = 0; i < spans.length; i++) {
-      var r = spans[i].getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) continue;
-      rects.push(r);
+      // One box per line: a span that wraps has a bounding rect spanning both lines, whose middle is
+      // nowhere near the highlight (R36e: the arrow pointed at the paragraph's middle)
+      var lineBoxes = spans[i].getClientRects();
+      for (var b = 0; b < lineBoxes.length; b++) {
+        var r = lineBoxes[b];
+        if (r.width === 0 && r.height === 0) continue;
+        rects.push(r);
+      }
     }
     if (rects.length === 0) return null;
     // Sort by top position
@@ -590,6 +595,8 @@
       if (popup._jrResizing) return; // drag-resize already handles this
       var dir = popup._jrLockedDirection;
       if (dir !== "above") return;
+      if (popup._jrGrowRaf) return; // growGently places it every frame
+      if (popup.classList.contains("jr-popup--streaming")) return growGently(popup);
       var newH = popup.offsetHeight;
       popup.style.top = (popup._jrBottomAnchor - newH) + "px";
       JR.posLog("anchorObserver", popup, { anchor: popup._jrBottomAnchor, newH: newH });
@@ -597,6 +604,104 @@
     ro.observe(popup);
     popup._jrAboveObserver = ro;
   };
+
+  /**
+   * An "above" popup that streams grew a whole line at once, moving everything in it up a line (the user's
+   * "一抖一抖"). While it streams, its shown height eases towards its content's height every frame (30 % of
+   * the gap) and its top moves with it, so the bottom and the arrow stay on the highlight; after it, auto again.
+   */
+  function growGently(popup) {
+    var shown = popup._jrBottomAnchor - (parseFloat(popup.style.top) || 0); // the height before this line
+    popup.classList.add("jr-popup--grow");
+    (function frame() {
+      if (!popup.isConnected || popup._jrResizing || popup._jrLockedDirection !== "above" || popup._jrBottomAnchor == null) return stopGrow(popup);
+      popup.style.height = "";
+      var target = popup.offsetHeight; // content height, within the popup's max-height
+      shown = Math.abs(target - shown) < 0.5 ? target : shown + (target - shown) * 0.3;
+      popup.style.height = shown + "px";
+      popup.style.top = (popup._jrBottomAnchor - shown) + "px";
+      popup.classList.toggle("jr-popup--grow-fill", shown < target); // the line still easing in isn't a scroll
+      if (shown === target && !popup.classList.contains("jr-popup--streaming")) return stopGrow(popup);
+      popup._jrGrowRaf = requestAnimationFrame(frame);
+    })();
+  }
+
+  function stopGrow(popup) {
+    cancelAnimationFrame(popup._jrGrowRaf);
+    popup._jrGrowRaf = 0;
+    popup.classList.remove("jr-popup--grow", "jr-popup--grow-fill");
+    popup.style.height = "";
+    if (popup.isConnected && popup._jrBottomAnchor != null && popup._jrLockedDirection === "above") {
+      popup.style.top = (popup._jrBottomAnchor - popup.offsetHeight) + "px";
+    }
+  }
+
+
+  /**
+   * While an answer streams, and once when it is done, its end stays in view: the answer area scrolls to its end —
+   * unless the user scrolled or clicked in it during this answer (their place is then theirs). Not while an
+   * "above" popup is still easing a line in (growGently): that overflow isn't a reason to scroll.
+   */
+  JR.followAnswer = function (resp) {
+    if (!resp._jrFollow) {
+      resp._jrFollow = true;
+      ["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (t) {
+        resp.addEventListener(t, function () { resp._jrUserScrolled = true; }, { passive: true });
+      });
+    }
+    var popup = resp.closest(".jr-popup");
+    if (resp._jrUserScrolled || (popup && popup.classList.contains("jr-popup--grow-fill"))) return;
+    if (resp.scrollHeight - resp.clientHeight - resp.scrollTop > 1) resp.scrollTo({ top: resp.scrollHeight, behavior: "smooth" });
+  };
+
+  /**
+   * A streaming answer types out one character after another (the user: like ChatGPT's code blocks), not in the
+   * chunks it arrives in. The text not typed yet is in the "jr-untyped" CSS highlight (transparent, styles.css);
+   * each frame types more — the more is waiting, the faster, so it never falls far behind. Called after every
+   * change to the answer (covers new text before it paints); keeps typing across the rebuild when the answer is
+   * done, and stops once everything is typed.
+   */
+  var untyped = null;
+  JR.typeAnswer = function (popup) {
+    if (!window.CSS || !CSS.highlights || !window.Highlight) return;
+    if (!untyped) { untyped = new Highlight(); CSS.highlights.set("jr-untyped", untyped); }
+    if (popup._jrTyped == null) {
+      popup._jrTyped = 0;
+      popup._jrUntyped = document.createRange();
+      (function frame() {
+        var left = coverUntyped(popup);
+        if (left === 0 && !popup.classList.contains("jr-popup--streaming")) return stopTyping(popup);
+        if (left < 0) return stopTyping(popup);
+        popup._jrTyped += Math.ceil(left / 12);
+        coverUntyped(popup);
+        requestAnimationFrame(frame);
+      })();
+    } else coverUntyped(popup);
+  };
+
+  /** Hide what isn't typed yet; returns how many characters that is (-1: the popup is gone). */
+  function coverUntyped(popup) {
+    var resp = popup.isConnected && popup.querySelector(".jr-popup-response");
+    untyped.delete(popup._jrUntyped);
+    if (!resp) return popup.isConnected ? 0 : -1;
+    var texts = [], w = document.createTreeWalker(resp, NodeFilter.SHOW_TEXT, { acceptNode: function (n) {
+      return n.parentElement.closest(".katex-mathml") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; // KaTeX's unseen copy
+    } });
+    while (w.nextNode()) texts.push(w.currentNode);
+    var n = popup._jrTyped, i = 0, total = 0;
+    texts.forEach(function (t) { total += t.length; });
+    while (i < texts.length && n >= texts[i].length) n -= texts[i++].length;
+    if (i === texts.length) return 0;
+    popup._jrUntyped.setStart(texts[i], n);
+    popup._jrUntyped.setEnd(resp, resp.childNodes.length);
+    untyped.add(popup._jrUntyped);
+    return total - popup._jrTyped;
+  }
+
+  function stopTyping(popup) {
+    if (popup._jrUntyped) untyped.delete(popup._jrUntyped);
+    popup._jrTyped = popup._jrUntyped = null;
+  }
 
   /** R21: styles.css keeps the popup's height limit above the quote + question + 3 answer lines. */
   JR.watchUpper = function (popup) {

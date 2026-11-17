@@ -223,6 +223,14 @@
       return sel ? activeRoot().querySelector(sel) : null;
     },
 
+    // Another ChatGPT document (the hidden render frame, R34): its thread scroller and a turn by key
+    frameScroller: function (doc) { return first("scrollContainer", doc); },
+    frameTurnCount: function (doc) { return all("turn", doc).length; },
+    frameTurn: function (doc, key) {
+      var sel = JR.site.turnSelector(key);
+      return sel ? doc.querySelector(sel) : null;
+    },
+
     // --- Roles & bodies ---
     /** Assistant message unit containing node, or null (user text, page chrome, popups). */
     assistantUnitOf: function (node) { return closest("assistantUnit", node); },
@@ -259,7 +267,9 @@
 
     /** Combined HTML of a turn's assistant answer(s). */
     assistantHTML: function (turn) {
-      return JR.site.assistantBodies(turn).map(function (b) { return b.innerHTML; }).join("");
+      // The markdown root itself, not just its children: ChatGPT's whole answer styling (sizes, spacing,
+      // tables, the streaming fade-in) is scoped under its class and data-markdown-* attributes (R36)
+      return JR.site.assistantBodies(turn).map(function (b) { return b.outerHTML; }).join("");
     },
 
     assistantText: function (turn) {

@@ -37,8 +37,8 @@
   }
 
   /**
-   * Rebuild ChatGPT code blocks inside a popup response div into clean,
-   * self-contained blocks with working Copy buttons.
+   * Popup's own code blocks (drawn by JR.renderMarkdown, the fallback) get working Copy buttons again;
+   * ChatGPT's code blocks are left as ChatGPT drew them.
    */
   function rebuildCodeBlocks(responseDiv) {
     // First, handle any previously-rebuilt .jr-code-block elements (from stored HTML).
@@ -56,136 +56,8 @@
       if (header) header.appendChild(btnsDiv);
     }
 
-    // Current ChatGPT code blocks (no <pre>; see JR.site.codeBlocks)
-    var blocks = JR.site.codeBlocks(responseDiv);
-    for (var cb = 0; cb < blocks.length; cb++) {
-      if (blocks[cb].block.closest(".jr-code-block")) continue;
-      buildCleanCodeBlock(blocks[cb].code, blocks[cb].code, blocks[cb].lang, blocks[cb].block, true);
-    }
-
-    // Older ChatGPT <pre> elements (not yet inside .jr-code-block)
-    var pres = responseDiv.querySelectorAll("pre");
-    for (var p = 0; p < pres.length; p++) {
-      if (pres[p].closest(".jr-code-block")) continue;
-
-      var pre = pres[p];
-      var wrapper = pre.closest(".contain-inline-size") || pre;
-      if (!responseDiv.contains(wrapper)) wrapper = pre;
-
-      // Detect language from wrapper text outside pre/code
-      var lang2 = "";
-      if (wrapper !== pre) {
-        var spans = wrapper.querySelectorAll("span");
-        for (var s = 0; s < spans.length; s++) {
-          if (spans[s].closest("pre") || spans[s].closest("code")) continue;
-          var t = (spans[s].textContent || "").trim();
-          if (t && t.length < 30 && t.indexOf("Copy") === -1 && t.indexOf("Run") === -1) {
-            lang2 = t;
-            break;
-          }
-        }
-      }
-
-      var codeEl = pre.querySelector("code");
-      buildCleanCodeBlock(codeEl, pre, lang2, wrapper);
-    }
-  }
-
-  // sourceIsClean: the code element holds only code (current ChatGPT DOM),
-  // so there is no toolbar text to strip.
-  function buildCleanCodeBlock(codeEl, pre, lang, replaceTarget, sourceIsClean) {
-    // Extract pure code text. ChatGPT embeds toolbar (language label, Copy/Run buttons)
-    // inside the <code> element's DOM tree. Strategy: get full textContent, then strip
-    // the known toolbar prefix pattern from the start.
-    var source = codeEl || pre;
-    var fullText = JR.site.codeText(source);
-
-    // Detect language from <code> class (ChatGPT sets "language-java", "language-python", etc.)
-    if (!lang && codeEl) {
-      var classLang = (codeEl.className || "").match(/language-(\w+)/);
-      if (classLang) {
-        // Capitalize first letter to match toolbar text: "java" → "Java"
-        lang = classLang[1].charAt(0).toUpperCase() + classLang[1].slice(1);
-      }
-    }
-
-    // Build list of toolbar labels to strip from the start of the text.
-    var toolbarLabels = ["Copy code", "Copied!", "Copy", "Run"];
-    if (lang) toolbarLabels.unshift(lang);
-
-    // If lang still not detected, try regex: capitalized word before "Copy"/"Run"
-    if (!lang) {
-      var langMatch = fullText.match(/^([A-Z][a-zA-Z+#.]*?)(?:Copy|Run|Copied)/);
-      if (langMatch) {
-        lang = langMatch[1];
-        toolbarLabels.unshift(lang);
-      }
-    }
-
-    // Last resort: if text starts with a capitalized word that isn't valid code,
-    // check against known language names
-    if (!lang) {
-      var knownLangs = ["Python", "Java", "JavaScript", "TypeScript", "Ruby", "Go",
-        "Rust", "PHP", "HTML", "CSS", "SQL", "Bash", "Shell", "Kotlin", "Swift",
-        "Scala", "Perl", "Lua", "Dart", "Matlab", "Haskell", "Elixir", "Clojure"];
-      for (var kl = 0; kl < knownLangs.length; kl++) {
-        if (fullText.indexOf(knownLangs[kl]) === 0) {
-          lang = knownLangs[kl];
-          toolbarLabels.unshift(lang);
-          break;
-        }
-      }
-    }
-
-    // Strip toolbar labels from the start, repeatedly (order varies)
-    var stripped = fullText;
-    var changed = true;
-    while (changed) {
-      changed = false;
-      stripped = stripped.replace(/^\s+/, "");
-      for (var tl = 0; tl < toolbarLabels.length; tl++) {
-        if (stripped.indexOf(toolbarLabels[tl]) === 0) {
-          stripped = stripped.substring(toolbarLabels[tl].length);
-          changed = true;
-        }
-      }
-    }
-    var codeText = sourceIsClean ? fullText.replace(/\n$/, "") : stripped.trim();
-    var codeClass = codeEl ? codeEl.className : "";
-
-    // Build clean block
-    var block = document.createElement("div");
-    block.className = "jr-code-block";
-
-    // Header: language label + buttons
-    var header = document.createElement("div");
-    header.className = "jr-code-header";
-
-    var langSpan = document.createElement("span");
-    langSpan.className = "jr-code-lang";
-    langSpan.textContent = lang || "";
-    header.appendChild(langSpan);
-
-    var btnsDiv = document.createElement("div");
-    btnsDiv.className = "jr-code-header-btns";
-    wireCopyButton(btnsDiv);
-
-    header.appendChild(btnsDiv);
-    block.appendChild(header);
-
-    // Code area
-    var newPre = document.createElement("pre");
-    var newCode = document.createElement("code");
-    if (codeClass) newCode.className = codeClass;
-    newCode.textContent = codeText;
-    newPre.appendChild(newCode);
-    block.appendChild(newPre);
-
-    // Replace the entire ChatGPT wrapper
-    if (replaceTarget && replaceTarget.parentElement) {
-      replaceTarget.parentElement.insertBefore(block, replaceTarget);
-      replaceTarget.remove();
-    }
+    // ChatGPT's own code blocks stay exactly as ChatGPT draws them (R34: the popup shows ChatGPT's
+    // formats as they stream); their Copy button is handled in wireResponseClicks.
   }
 
   /**
@@ -200,6 +72,17 @@
     if (responseDiv._jrClickWired) return;
     responseDiv._jrClickWired = true;
     responseDiv.addEventListener("click", function (e) {
+      // --- ChatGPT's code block, shown as ChatGPT drew it: its toolbar buttons have no handlers here ---
+      if (e.target.closest("button")) {
+        var cb = JR.site.codeBlocks(responseDiv).filter(function (b) { return b.block.contains(e.target); })[0];
+        if (cb) {
+          e.preventDefault();
+          e.stopPropagation();
+          navigator.clipboard.writeText(JR.site.codeText(cb.code));
+          return;
+        }
+      }
+
       // --- ChatGPT entity spans (sidebar links) ---
       // These are <span class="...entity-underline...cursor-pointer..."> with React handlers.
       // Proxy the click to the matching element in the original hidden turn.
@@ -813,9 +696,6 @@
           pendingEntry.items[0].attachments = res.sent.length;
           updateHighlightFields(sendItemId, { attachments: res.sent.length }, location.href);
         },
-        beforeSend: function (w) {
-          JR.prepareSend(w, wrappers.length > 0 ? wrappers[0] : null);
-        },
       });
     }
 
@@ -1211,9 +1091,6 @@
         entry._editFiles = res.sent;
         entry._editFailed = res.failed;
       },
-      beforeSend: function (w) {
-        JR.prepareSend(w, entry.spans.length > 0 ? entry.spans[0] : null);
-      },
     });
   }
 
@@ -1313,7 +1190,7 @@
         var ok = editChanged(readQuestion(questionText));
         sendBtn.disabled = !ok;
         editDropdown.classList.toggle("jr-disabled", !ok);
-        if (editing && document.activeElement !== questionText) questionText.focus(); // after an × click
+        if (editing && document.activeElement !== questionText) questionText.focus({ preventScroll: true }); // after an × click
       }
 
       // Track caret position on mousemove for click-to-edit placement
@@ -1339,7 +1216,7 @@
         originalText = readQuestion(questionText);
         questionDiv.classList.add("jr-popup-question--editing");
         questionText.contentEditable = "true";
-        questionText.focus();
+        questionText.focus({ preventScroll: true }); // focusing scrolled the chat to the question row: lost place (R36c)
         // Place caret at click position if available
         var sel = window.getSelection();
         if (clickEvent && lastCaretRange) {
@@ -1463,12 +1340,16 @@
         ? entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0]
         : null;
       appendResponseWithReply(popup, id, entry, contentContainer, activeItem ? activeItem.id : null);
+      // An answer Popup drew from Markdown gets ChatGPT's own drawing — only answers that are opened (review #2)
+      if (activeItem) JR.qa.upgrade(activeItem.turnKeys);
     } else if (JR.isPlaceholderHTML(entry.responseHTML)) {
       popup.appendChild(JR.createLoadingDiv());
       // Answer not in the DOM: read it from ChatGPT's conversation data; the
       // popup refreshes itself when it arrives (JR.onQAContentLoaded).
       var loadingItem = entry.items && entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0];
-      if (entry.responseHTML === "__LOADING__" && loadingItem) JR.qa.ensure(loadingItem.turnKeys);
+      if (entry.responseHTML === "__LOADING__" && loadingItem) {
+        JR.qa.ensure(loadingItem.turnKeys).then(function () { JR.qa.upgrade(loadingItem.turnKeys); });
+      }
     }
   }
 
@@ -1539,7 +1420,6 @@
             question: retryQuestion,
             preRegisteredHlId: hlId, preRegisteredItemId: retryItemId
           },
-          beforeSend: function (w) { JR.prepareSend(w, null); },
         });
         var qd = popup.querySelector(".jr-popup-question");
         if (filesGone && qd) JR.showAttachmentNote(qd, null, "Files gone after the reload: sent the text only");
@@ -1622,7 +1502,7 @@
         var replyPopup = st.activePopup;
         setTimeout(function () {
           var input = replyPopup.querySelector(".jr-popup-question-text[contenteditable]");
-          if (input) input.focus();
+          if (input) input.focus({ preventScroll: true });
         }, 50);
       }
     });
@@ -1838,11 +1718,14 @@
     // and the chat's scroll position across the rebuild (no jump on "done").
     var oldResp = popup.querySelector(".jr-popup-response");
     var respTop = oldResp ? oldResp.scrollTop : 0;
+    var follow = oldResp && oldResp._jrFollow && !oldResp._jrUserScrolled; // it streamed and the user let it follow
     var chat = JR.site.scrollContainer();
     var chatTop = chat ? chat.scrollTop : null;
     function keepPlace() {
+      if (popup._jrTyped != null) JR.typeAnswer(popup); // the rebuilt answer: what isn't typed yet stays hidden
       var resp = popup.querySelector(".jr-popup-response");
       if (resp) resp.scrollTop = respTop;
+      if (resp && follow) JR.followAnswer(resp); // on to the end of the finished answer (Reply)
       if (chat && chatTop !== null) chat.scrollTop = chatTop;
     }
 

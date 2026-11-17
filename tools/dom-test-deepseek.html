@@ -1,0 +1,122 @@
+<!doctype html>
+<!-- DeepSeek adapter + network parser, offline (Step 4b). Fixture DOM from the 2026-11-17 probe (docs/DEEPSEEK.md).
+     Run: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$(mktemp -d)" \
+          --allow-file-access-from-files --virtual-time-budget=5000 --dump-dom "file://$PWD/tools/dom-test-deepseek.html" | grep -E "PASS|FAIL|passed" -->
+<html><head><meta charset="utf-8"><title>…</title></head><body class="apple en_US light">
+<div class="ds-virtual-list" style="height:400px;overflow:auto">
+  <div class="ds-virtual-list-items" style="min-height:1200px">
+    <div class="ds-virtual-list-visible-items" style="position:relative">
+      <div class="_9663006" data-virtual-list-item-key="1"><div class="d29f3d7d ds-message"><div class="ds-collapsible-text"><div><span>用三句话介绍一下长城</span></div></div></div></div>
+      <div class="_4f9bf79" data-virtual-list-item-key="2"><div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content"><p class="ds-markdown-paragraph"><span>长城是中国古代规模宏大的军事防御工程。</span></p><div class="md-code-block"><pre>print("hi")
+x = 1</pre></div></div></div></div>
+      <div class="_9663006" data-virtual-list-item-key="4"><div class="d29f3d7d ds-message"><div class="ds-collapsible-text"><div><span>Regarding this part of your response: …</span></div></div></div></div>
+      <div class="_4f9bf79" data-virtual-list-item-key="5"><div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content"><p class="ds-markdown-paragraph"><span>Popup answer</span></p></div></div></div>
+      <div class="_9663006" data-virtual-list-item-key="-2"><div class="d29f3d7d ds-message"><div class="ds-collapsible-text"><div><span>just sent</span></div></div></div></div>
+      <div class="_4f9bf79" data-virtual-list-item-key="-3"><div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content"><p class="ds-markdown-paragraph"><span>streaming…</span></p></div></div></div>
+    </div>
+  </div>
+</div>
+<div class="_24fad49"><div><textarea name="search" placeholder="Message DeepSeek"></textarea></div><div role="button" class="ds-button ds-button--primary ds-button--circle">↑</div></div>
+<pre id="out"></pre>
+<script>window.JR = {};</script>
+<script src="../src/sites/deepseek.js"></script>
+<script src="../src/sites/deepseek-net.js"></script>
+<script>
+var out = [], failed = 0;
+function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
+var S = JR.sites.deepseek;
+function item(k) { return document.querySelector('[data-virtual-list-item-key="' + k + '"]'); }
+
+// --- Turns ---
+var keys = S.turns().map(function (t) { return t.getAttribute("data-virtual-list-item-key"); });
+check("turns are the answer items", keys.join() === "2,5,-3", keys.join());
+check("turnKey: a real id", S.turnKey(item(2)) === "2", S.turnKey(item(2)));
+check("turnKey: a temporary key before its real id is known is null", S.turnKey(item(-3)) === null, S.turnKey(item(-3)));
+check("turnOf: a node in the answer → the answer", S.turnOf(item(2).querySelector("span")) === item(2));
+check("turnOf: a node in the user item → its answer", S.turnOf(item(1).querySelector("span")) === item(2));
+check("userText: the question before the answer", S.userText(item(2)) === "用三句话介绍一下长城", JSON.stringify(S.userText(item(2))));
+check("assistantBodies: the answer's markdown root", S.assistantBodies(item(2)).length === 1 && S.assistantText(item(2)).indexOf("长城是") === 0);
+check("findTurnByKey", S.findTurnByKey("5") === item(5));
+
+// --- The reply's ready ids map the just-sent temporary keys (deepseek-net → jr-net turn) ---
+// `ready` can come before DeepSeek adds the answer item: then nothing is mapped (never the user item)…
+var tempAnswer = item(-3); tempAnswer.remove();
+document.dispatchEvent(new CustomEvent("jr-net", { detail: JSON.stringify({ kind: "turn", turnKey: "512", userKey: "511" }) }));
+check("ready before the answer item: the user item is not mapped", S.turnKey(item(-2)) === null && S.findTurnByKey("512") === null);
+// …and the mapping happens on the next jr-net event once the answer item is there
+item(-2).after(tempAnswer);
+document.dispatchEvent(new CustomEvent("jr-net", { detail: JSON.stringify({ kind: "text", text: "s" }) }));
+check("temporary answer key → real id after jr-net turn", S.turnKey(item(-3)) === "512", S.turnKey(item(-3)));
+check("findTurnByKey(real id) finds the temporary item", S.findTurnByKey("512") === item(-3));
+
+// --- Hiding: the selector hides the answer AND the user item before it, also under its temporary key ---
+var style = document.createElement("style");
+style.textContent = S.turnSelector("5") + ", " + S.turnSelector("512") + " { display: none !important; }";
+document.head.appendChild(style);
+function hidden(k) { return getComputedStyle(item(k)).display === "none"; }
+check("hide by key: answer item hidden", hidden(5));
+check("hide by key: its user item hidden too", hidden(4));
+check("hide by real id: the temporary answer and user items", hidden(-3) && hidden(-2), hidden(-3) + " " + hidden(-2));
+check("other items stay", !hidden(1) && !hidden(2));
+style.remove();
+
+// --- Composer ---
+var c = S.composer();
+check("composer: the textarea", c && c.tagName === "TEXTAREA");
+check("sendButton: found when idle", !!S.sendButton(c));
+var sb = document.querySelector(".ds-button--primary"); sb.classList.add("ds-button--disabled");
+check("sendButton: none while DeepSeek shows it disabled", S.sendButton(c) === null); sb.classList.remove("ds-button--disabled");
+var edit = document.createElement("textarea"); document.querySelector(".ds-virtual-list").prepend(edit);
+check("composer: DeepSeek's box, not an edit box earlier in the page", S.composer() === c); edit.remove();
+document.documentElement.setAttribute("data-jr-ds-generating", "");
+check("while generating: no send button, a stop button, isGenerating", !S.sendButton(c) && !!S.stopButton() && S.isGenerating());
+document.documentElement.removeAttribute("data-jr-ds-generating");
+check("popupHost: the full-height list", S.popupHost(item(2)).classList.contains("ds-virtual-list-items"));
+check("codeBlocks: .md-code-block > pre", S.codeBlocks(document).length === 1 && S.codeText(S.codeBlocks(document)[0].code).indexOf('print("hi")') === 0);
+check("conversationId", S.conversationId("/a/chat/s/fb177f05-850e-4834-8f98-f5639b25ee69") === "fb177f05-850e-4834-8f98-f5639b25ee69" && S.conversationId("/") === null);
+
+// --- DeepThink's reasoning is never part of the answer the popup shows ---
+var think = document.createElement("div"); think.className = "ds-think-content";
+think.innerHTML = '<div class="ds-markdown"><p>reasoning…</p></div>';
+var thinkItem = document.createElement("div"); thinkItem.setAttribute("data-virtual-list-item-key", "9");
+thinkItem.innerHTML = '<div class="ds-message"></div>'; thinkItem.firstChild.appendChild(think);
+document.querySelector(".ds-virtual-list-visible-items").appendChild(thinkItem);
+check("thinking only so far: no answer body (reasoning not shown)", S.assistantBodies(thinkItem).length === 0, S.assistantText(thinkItem));
+thinkItem.firstChild.insertAdjacentHTML("beforeend", '<div class="ds-markdown ds-assistant-message-main-content"><p>answer</p></div>');
+check("thinking + answer: only the answer", S.assistantText(thinkItem) === "answer", S.assistantText(thinkItem));
+thinkItem.remove();
+
+// --- After a reload: history Markdown → DeepSeek's answer classes ---
+check("answerMarkdown: content", S.answerMarkdown({ content: "**a**" }) === "**a**");
+check("answerMarkdown: fragments without a RESPONSE fall back to content", S.answerMarkdown({ content: "c", fragments: [{ type: "THINK", content: "hm" }] }) === "c");
+check("answerMarkdown: RESPONSE fragments only", S.answerMarkdown({ fragments: [{ type: "THINK", content: "hm" }, { type: "SEARCH", content: "r" }, { type: "RESPONSE", content: "ok" }] }) === "ok");
+JR.renderMarkdown = function (md) { return "<h3>T</h3><p>" + md + "</p><hr>"; }; // stub: the real one is qa-content.js
+var ra = document.createElement("div"); ra.innerHTML = S.renderAnswer("x");
+check("renderAnswer: DeepSeek's root and paragraph classes", !!ra.querySelector(".ds-markdown.ds-assistant-message-main-content > p.ds-markdown-paragraph") && !!ra.querySelector("h3") && !!ra.querySelector("hr"), ra.innerHTML);
+
+// --- Network parser ---
+var N = window.JRDeepSeekNet;
+function feed(lines) { var a = new N.Answer(); lines.forEach(function (l) { a.patch(l); }); return a; }
+var a1 = feed([{ request_message_id: 511, response_message_id: 512 }, { p: "response/content", o: "APPEND", v: "Hel" }, { v: "lo" }]);
+check("net: ready ids", a1.ids && a1.ids.request === "511" && a1.ids.response === "512");
+check("net: path patches + bare continuation", a1.text() === "Hello", a1.text());
+var a2 = feed([{ p: "response/thinking_content", o: "APPEND", v: "think…" }, { v: "more" }, { p: "response/content", o: "APPEND", v: "Answer" }]);
+check("net: DeepThink reasoning is not the answer", a2.text() === "Answer", a2.text());
+var a3 = feed([{ p: "response/fragments", o: "APPEND", v: [{ type: "THINK", content: "hm" }] }, { p: "response/fragments/-1/content", o: "APPEND", v: "…" },
+  { p: "response/fragments", o: "APPEND", v: [{ type: "RESPONSE", content: "A" }] }, { p: "response/fragments/-1/content", o: "APPEND", v: "B" }, { v: "C" }]);
+check("net: fragments, thinking skipped", a3.text() === "ABC", a3.text());
+check("net: Popup questions only", N.isPopupQuestion("Regarding this part of your response: \"x\"\n\nq\n\n(For this response only: …)") && !N.isPopupQuestion("hello"));
+var a4 = feed([{ p: "response/content", o: "APPEND", v: "Ok" }, { p: "response", o: "BATCH", v: [{ p: "accumulated_token_usage", v: 12 }, { p: "quasi_status", v: "FINISHED" }] }]);
+check("net: BATCH children don't reach the answer", a4.text() === "Ok", a4.text());
+var a5 = feed([{ p: "response/fragments", o: "APPEND", v: [{ type: "SEARCH", content: "results…" }, { type: "RESPONSE", content: "Answer" }] }]);
+check("net: search fragments are not the answer", a5.text() === "Answer", a5.text());
+var events = [];
+document.addEventListener("jr-net", function (e) { events.push(JSON.parse(e.detail)); });
+var sse = new N.SSE(true), body = "event: ready\ndata: {\"request_message_id\":7,\"response_message_id\":8}\n\ndata: {\"p\":\"response/content\",\"o\":\"APPEND\",\"v\":\"Hi\"}\n";
+sse.feed(body.slice(0, 40)); sse.feed(body);
+check("net: SSE emits turn then text", events.length === 2 && events[0].kind === "turn" && events[0].turnKey === "8" && events[0].userKey === "7" && events[1].text === "Hi", JSON.stringify(events));
+
+out.push(failed ? failed + " FAILED" : "all passed");
+document.getElementById("out").textContent = out.join("\n");
+document.title = failed ? "FAIL" : "PASS";
+</script></body></html>
