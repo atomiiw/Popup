@@ -14,7 +14,7 @@
   function frame() {
     var sc = q(SC), conv = q(CONV);
     if (!sc || !conv) return { err: "no scroller" };
-    var list = conv.querySelector(":scope > .relative.shrink-0") || conv.children[2];
+    var list = conv.querySelector(":scope > .relative.shrink-0, :scope > .contents > .relative.shrink-0") || conv.children[2]; // .contents wrapper since 2026-11-17
     var inner = list && list.firstElementChild;
     var scTop = sc.getBoundingClientRect().top;
     var pass = sc.querySelector("[data-thread-reading-passage]");

@@ -1,7 +1,5 @@
 // early-hide.js — Runs at document_start to hide Popup Q&A turns before they paint.
-// Reads this conversation's stored turn keys and injects display:none rules.
-// Must stay in sync with JR.site.turnSelector() (site-adapter.js) and the
-// storage key format in storage.js.
+// Reads this conversation's stored turn keys and injects the site's hide rules (site-hosts.js).
 (function () {
   "use strict";
 
@@ -45,9 +43,9 @@
     window.addEventListener(type, function (e) { if (window.JR && window.JR.popupDrag) window.JR.popupDrag(e); }, true);
   });
 
-  var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(location.pathname);
-  if (!m) return;
-  var key = "popup:conv:" + m[1];
+  var conv = JR_HOST.convId(location.pathname);
+  if (!conv) return;
+  var key = JR_HOST.convKey(location.href);
 
   chrome.storage.local.get(key, function (result) {
     var doc = result[key];
@@ -58,16 +56,10 @@
     });
     if (keys.length === 0) return;
 
-    var rules = [];
-    keys.forEach(function (k) {
-      var legacy = /^legacy-(\d+)$/.exec(k);
-      if (legacy) { rules.push('[data-testid="conversation-turn-' + legacy[1] + '"]'); return; }
-      var key = String(k).replace(/["\\]/g, "");
-      rules.push('[data-turn-key="' + key + '"]'); // the turn only, never its slot (see qa-content.js)
-    });
+    var rules = keys.map(JR_HOST.hide); // the turn only, never its slot (see qa-content.js)
     var style = document.createElement("style");
     style.id = "jr-early-hide";
-    style.textContent = rules.join(",\n") + " { display: none !important; }";
+    style.textContent = rules.join(",\n") + " { " + JR_HOST.decl + " }";
     (document.head || document.documentElement).appendChild(style);
   });
 })();

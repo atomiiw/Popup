@@ -7,7 +7,7 @@
 //
 // Schema v2 — one storage key per conversation, so a save only touches that
 // conversation's small record instead of rewriting every highlight ever made:
-//   "popup:conv:<conversationId>" → {
+//   "popup:conv:<conversationId>" (DeepSeek / claude.ai: "popup:deepseek:conv:…" / "popup:claude:conv:…") → {
 //     v: 2,
 //     items: [{ id, quoteId, text, nth, parentId, parentItemId, sourceTurnKey,
 //               turnKeys: [..], status: "done"|"pending"|"timeout", active,
@@ -24,7 +24,6 @@
 const LEGACY_KEY = "jumpreturn_highlights";
 const LEGACY_DELETED_KEY = "jumpreturn_deleted_turns";
 const LEGACY_BACKUP_KEY = "jumpreturn_highlights_v1_backup";
-const CONV_PREFIX = "popup:conv:";
 const META_KEY = "popup:meta";
 
 /**
@@ -38,10 +37,9 @@ function isContextValid() {
   }
 }
 
-/** Storage key for the conversation a URL belongs to. */
+/** Storage key for the conversation a URL belongs to (per site: src/site-hosts.js). */
 function convKeyForUrl(url) {
-  var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.href);
-  return CONV_PREFIX + (m ? m[1] : "url:" + (url || location.href).split("#")[0]);
+  return JR_HOST.convKey(url);
 }
 
 // --- Serialized read-modify-write ---------------------------------------------
@@ -258,10 +256,10 @@ async function getHighlightsByUrl(url) {
 }
 
 /** Active children of a parent highlight (optionally only those made in one parent version). */
-async function getChildHighlights(parentQuoteId, parentItemId) {
+async function getChildHighlights(parentQuoteId, parentItemId) { // every version (records), grouped by the caller
   var items = await getHighlightsByUrl();
   return items.filter(function (h) {
-    if (h.parentId !== parentQuoteId || !h.active) return false;
+    if (h.parentId !== parentQuoteId) return false;
     if (parentItemId && h.parentItemId !== parentItemId) return false;
     return true;
   });

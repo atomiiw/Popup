@@ -225,7 +225,8 @@
   });
 
   // Click on active source highlight → select text for copy;
-  // click on completed highlight → open popup
+  // click on completed highlight → open popup.
+  // Capture phase: DeepSeek stops clicks on its messages before they reach the document (live, dev.33).
   document.addEventListener("click", function (e) {
     if (st.confirmingDelete) return;
     if (st.activePopup) {
@@ -250,7 +251,7 @@
       JR.removeAllPopups();
     }
     JR.createPopup({ completedId: hlId });
-  });
+  }, true);
 
   // --- Underline on highlights (hover + active) ---
 
@@ -453,7 +454,10 @@
   function onNavigate() {
     var currentUrl = location.href;
     if (currentUrl === st.lastKnownUrl) return;
+    var sameChat = currentUrl.split("#")[0] === String(st.lastKnownUrl).split("#")[0];
     st.lastKnownUrl = currentUrl;
+    // Only the #hash changed (Settings on ChatGPT / claude.ai is an overlay with its own hash): same chat, keep everything
+    if (sameChat) return;
 
     JR.removeAllPopups();
     JR.unfreezeChat();
@@ -490,6 +494,7 @@
     if (location.href !== st.lastKnownUrl) {
       onNavigate();
     }
+    if (JR.site.tidy) JR.site.tidy(); // site extras that list Popup questions (DeepSeek's outline)
   }, 500);
 
   // Time the per-mount work that runs while the user scrolls (JR.diagnose perf).

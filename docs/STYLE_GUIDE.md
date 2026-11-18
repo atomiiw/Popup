@@ -179,7 +179,7 @@ Send arrow, version arrows, confirm icons, nav arrows all share:
 
 ## Accessibility
 - All icon-only buttons have `aria-label` attributes
-- `focus-visible` outline: `2px solid var(--jr-action)`, `offset: 2px` on all interactive elements
+- `focus-visible`: a soft glow `box-shadow: 0 0 0 3px var(--jr-focus-ring)`, `border-radius: 6px`, no outline, on all interactive elements (user, 2026-11-18: the 2px solid box looked ugly)
 - `--jr-text-muted` (#6b7280) passes WCAG AA on white (4.63:1)
 - White on brand blue passes WCAG AA (6.69:1); dark text `#111821` on ice blue `#a9bfd8` passes AA in dark mode
 - `@media (prefers-reduced-motion: reduce)` kills all animations/transitions

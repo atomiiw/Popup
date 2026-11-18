@@ -19,12 +19,39 @@ x = 1</pre></div></div></div></div>
 <div class="_24fad49"><div><textarea name="search" placeholder="Message DeepSeek"></textarea></div><div role="button" class="ds-button ds-button--primary ds-button--circle">↑</div></div>
 <pre id="out"></pre>
 <script>window.JR = {};</script>
+<script src="../src/site-hosts.js"></script>
 <script src="../src/sites/deepseek.js"></script>
 <script src="../src/sites/deepseek-net.js"></script>
 <script>
 var out = [], failed = 0;
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
 var S = JR.sites.deepseek;
+check("Step 4a: early-hide selector (site-hosts.js) = turnSelector", JR_HOST.all.deepseek.hide("512") === S.turnSelector("512"), JR_HOST.all.deepseek.hide("512"));
+check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.filePreviewUrl("/file?file_id=1&state=x") === "https://files.deepseeksvc.com/api/file?file_id=1&state=x&ty=p", S.filePreviewUrl("/file?file_id=1&state=x"));
+(function () { // 2026-11-18 (user: option A): DeepSeek's question outline shows a Popup question as "↳ question"; the user's own stay
+  var box = document.createElement("div");
+  box.innerHTML = '<div class="ds-virtual-list"><div class="ds-virtual-list-visible-items">' +
+    '<div><div>用一个公式解释光合作用</div></div><div><div>Regarding this part of your response:\n"t s"\n\nwhy so?\n\n(For this response only: x)</div></div></div></div>';
+  document.body.appendChild(box);
+  var isPopup = JR.isPopupMessage, parse = JR.parsePopupMessage; // qa-content.js is not loaded here
+  JR.isPopupMessage = isPopup || function (m) { return /^Regarding (this part|your entire)/.test(m); };
+  JR.parsePopupMessage = parse || function (m) { return { question: m.split("\n\n")[1] }; };
+  S.tidy();
+  JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
+  var rows = box.querySelectorAll(".ds-virtual-list-visible-items > div");
+  check("outline: the user's own question untouched", !rows[0].classList.contains("jr-outline-popup"), rows[0].className);
+  check("outline: Popup's question shown as ↳ question", rows[1].classList.contains("jr-outline-popup") && rows[1].firstElementChild.getAttribute("data-jr-q") === "\u21b3 why so?", rows[1].firstElementChild.getAttribute("data-jr-q"));
+  box.remove();
+})();
+(function () { // 2026-11-18: the question item is hidden even when its answer item is not mounted (end of DeepSeek's window)
+  var box = document.createElement("div");
+  box.innerHTML = '<div data-virtual-list-item-key="510">a</div><div data-virtual-list-item-key="511">q</div>';
+  document.body.appendChild(box);
+  var hid = Array.prototype.map.call(box.querySelectorAll(JR_HOST.all.deepseek.hide("512")), function (e) { return e.getAttribute("data-virtual-list-item-key"); }).join();
+  check("hide: the question (511) without its mounted answer, not the item before it", hid === "511", hid);
+  check("hide: no id rule for a temporary key", JR_HOST.all.deepseek.hide("-3").indexOf('"-4"') === -1, JR_HOST.all.deepseek.hide("-3"));
+  box.remove();
+})();
 function item(k) { return document.querySelector('[data-virtual-list-item-key="' + k + '"]'); }
 
 // --- Turns ---
@@ -51,9 +78,9 @@ check("findTurnByKey(real id) finds the temporary item", S.findTurnByKey("512") 
 
 // --- Hiding: the selector hides the answer AND the user item before it, also under its temporary key ---
 var style = document.createElement("style");
-style.textContent = S.turnSelector("5") + ", " + S.turnSelector("512") + " { display: none !important; }";
+style.textContent = S.turnSelector("5") + ", " + S.turnSelector("512") + " { " + S.hideDeclaration + " }";
 document.head.appendChild(style);
-function hidden(k) { return getComputedStyle(item(k)).display === "none"; }
+function hidden(k) { var c = getComputedStyle(item(k)); return c.display === "none" || (c.height === "0px" && c.visibility === "hidden"); }
 check("hide by key: answer item hidden", hidden(5));
 check("hide by key: its user item hidden too", hidden(4));
 check("hide by real id: the temporary answer and user items", hidden(-3) && hidden(-2), hidden(-3) + " " + hidden(-2));
@@ -106,6 +133,17 @@ var a3 = feed([{ p: "response/fragments", o: "APPEND", v: [{ type: "THINK", cont
   { p: "response/fragments", o: "APPEND", v: [{ type: "RESPONSE", content: "A" }] }, { p: "response/fragments/-1/content", o: "APPEND", v: "B" }, { v: "C" }]);
 check("net: fragments, thinking skipped", a3.text() === "ABC", a3.text());
 check("net: Popup questions only", N.isPopupQuestion("Regarding this part of your response: \"x\"\n\nq\n\n(For this response only: …)") && !N.isPopupQuestion("hello"));
+// Search (live 2026-11-18 raw stream): the SEARCH fragment's status line comes as a path-less batch after its own path;
+// sources are [citation:N] in the answer → a link "N" to result N
+var a6 = feed([
+  { v: { response: { message_id: 56, fragments: [] } } },
+  { p: "response/fragments", o: "APPEND", v: [{ id: 2, type: "SEARCH", content: "" }] },
+  { p: "response/fragments/-1", o: "BATCH", v: [{ p: "queries", v: [] }, { p: "results", v: [{ url: "https://e.x/1", cite_index: 1 }] }] },
+  { v: [{ p: "status", v: "FINISHED" }, { p: "content", v: "Found 11 web pages" }] },
+  { p: "response", o: "BATCH", v: [{ p: "fragments", v: [{ id: 3, type: "RESPONSE", content: "" }] }] },
+  { p: "response/fragments/-1/content", o: "APPEND", v: "News" }, { v: "[citation:1]" }, { v: "[citation:9]" }, { v: "." }]);
+check("net search: the status line is not the answer; sources become links", a6.text() === "News[1](https://e.x/1).", a6.text());
+check("history search: [citation:N] → link N", S.answerMarkdown({ fragments: [{ type: "SEARCH", results: [{ url: "https://e.x/1", cite_index: 1 }] }, { type: "RESPONSE", content: "A[citation:1]." }] }) === "A[1](https://e.x/1).", S.answerMarkdown({ fragments: [{ type: "SEARCH", results: [{ url: "https://e.x/1", cite_index: 1 }] }, { type: "RESPONSE", content: "A[citation:1]." }] }));
 var a4 = feed([{ p: "response/content", o: "APPEND", v: "Ok" }, { p: "response", o: "BATCH", v: [{ p: "accumulated_token_usage", v: 12 }, { p: "quasi_status", v: "FINISHED" }] }]);
 check("net: BATCH children don't reach the answer", a4.text() === "Ok", a4.text());
 var a5 = feed([{ p: "response/fragments", o: "APPEND", v: [{ type: "SEARCH", content: "results…" }, { type: "RESPONSE", content: "Answer" }] }]);
@@ -116,7 +154,39 @@ var sse = new N.SSE(true), body = "event: ready\ndata: {\"request_message_id\":7
 sse.feed(body.slice(0, 40)); sse.feed(body);
 check("net: SSE emits turn then text", events.length === 2 && events[0].kind === "turn" && events[0].turnKey === "8" && events[0].userKey === "7" && events[1].text === "Hi", JSON.stringify(events));
 
+// Freeze (dev.32): new items under temporary keys are hidden from their first frame; older temporary items stay
+(function () {
+  var box = document.createElement("div");
+  box.innerHTML = '<div data-virtual-list-item-key="-3">mine</div>';
+  document.body.appendChild(box);
+  var sel = S.freezeSelector();
+  box.insertAdjacentHTML("beforeend", '<div data-virtual-list-item-key="-7">popup q</div><div data-virtual-list-item-key="30">real</div>');
+  var m = function (k) { return box.querySelector('[data-virtual-list-item-key="' + k + '"]').matches(sel); };
+  check("freezeSelector: a new temporary item is hidden, an older one and real ids are not", m("-7") && !m("-3") && !m("30"), sel);
+  box.remove();
+})();
+// 2026-11-18: DeepSeek's list, read while DeepSeek measures it, is 60 px taller per hidden item it will meet from its
+// first drawn item (ids count up; hidden ids from #jr-hide-turns), or enough to reach html[data-jr-ds-need]
+var roDone = Promise.resolve().then(function () {
+  var hideRules = document.createElement("style"); hideRules.id = "jr-hide-turns";
+  hideRules.textContent = S.turnSelector("3") + ", " + S.turnSelector("5") + " { height: 0 }"; // hides 2, 3, 4, 5
+  document.head.appendChild(hideRules);
+  var list = document.createElement("div"); list.className = "ds-virtual-list ds-virtual-list--printable"; list.style.height = "100px";
+  list.innerHTML = '<div class="ds-virtual-list-visible-items"><div data-virtual-list-item-key="1">a</div></div>';
+  document.body.appendChild(list);
+  var measuring = window.JRDeepSeekNet.measuring;
+  var a = measuring([list], function () { return list.offsetHeight; });
+  S.keepMounted("50");
+  var b = measuring([list], function () { return list.offsetHeight; });
+  S.keepMounted(null);
+  check("list window: offsetHeight while measuring = real + 60 × hidden items ahead (2–5)", a === 100 + 240, a);
+  check("list window: with a hidden answer to reach (id 50) it reaches that far", b === 100 + 60 * 51, b);
+  check("list window: any other read is the real height", list.offsetHeight === 100, list.offsetHeight);
+  list.remove(); hideRules.remove();
+});
+roDone.then(function () {
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";
+});
 </script></body></html>

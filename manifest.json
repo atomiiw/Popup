@@ -2,22 +2,27 @@
   "manifest_version": 3,
   "name": "Popup - Ask inline follow-ups in ChatGPT",
   "version": "1.2.12",
-  "version_name": "1.2.13-dev.27",
+  "version_name": "1.2.13-dev.88",
   "description": "Ask ChatGPT where questions come up. Highlight. Ask. Keep reading. Stay in your flow.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://chat.deepseek.com/*",
+    "https://claude.ai/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*"
       ],
       "js": [
+        "src/site-hosts.js",
         "src/early-hide.js"
       ],
       "run_at": "document_start"
@@ -36,15 +41,66 @@
     },
     {
       "matches": [
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "src/scroll-guard.js",
+        "src/sites/deepseek-net.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/scroll-guard.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*"
       ],
       "js": [
         "storage.js",
-        "src/jr-namespace.js",
+        "src/jr-namespace.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "src/sites/deepseek.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/sites/claude.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": [
         "src/site-adapter.js",
         "src/qa-content.js",
-        "src/chatgpt-render.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",
         "src/highlight.js",
@@ -62,7 +118,20 @@
     {
       "matches": [
         "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/site-render.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*"
       ],
       "js": [
         "src/console-bridge.js"

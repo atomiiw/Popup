@@ -62,17 +62,19 @@
    */
   function cardsFor(composer, files, before) {
     var old = new Set(before || []);
+    // a button's label names its file ("Remove <name>"); DeepSeek's have none, its site layer gives one
+    function label(b) { return (JR.site.buttonLabel ? JR.site.buttonLabel(b) : b.getAttribute("aria-label")) || ""; }
     var buttons = JR.site.composerButtons(composer).filter(function (b) { return !old.has(b); }), taken = {}, out = new Map();
     files.forEach(function (f) {
       var re = nameMatcher(f.name), name = null;
       buttons.forEach(function (b) {
-        var m = re.exec(b.getAttribute("aria-label"));
+        var m = re.exec(label(b));
         if (m && !name && !taken[m[1]]) name = m[1];
       });
       if (!name) return;
       taken[name] = true;
-      var remove = buttons.filter(function (b) { return b.getAttribute("aria-label").indexOf(name) !== -1; })
-        .sort(function (a, b) { return b.getAttribute("aria-label").length - a.getAttribute("aria-label").length; })[0];
+      var remove = buttons.filter(function (b) { return label(b).indexOf(name) !== -1; })
+        .sort(function (a, b) { return label(b).length - label(a).length; })[0];
       out.set(f, { name: name, remove: remove });
     });
     return out;
@@ -89,9 +91,12 @@
 
   /** Show ChatGPT's composer again after Popup handed it files. */
   function endAttaching() {
-    var box = JR.site.composerBox(JR.site.composer());
+    var box = attachBox(JR.site.composer());
     if (box) box.removeAttribute("data-jr-attaching");
   }
+  // What hides while Popup hands the site files: the composer box, or the card around it that also holds the
+  // file cards (DeepSeek, claude.ai)
+  function attachBox(composer) { return (JR.site.attachBox || JR.site.composerBox)(composer); }
 
   /** Remove text (and Popup's attachment cards) from ChatGPT's composer (used when ChatGPT refused our send). */
   function clearComposer(composer, files) {
@@ -184,13 +189,22 @@
       if (keys.length) JR.hideTurnKeys(keys);
     });
     mo.observe(root, { childList: true, subtree: true });
-    _freeze = { mo: mo, keys: [] };
+    // A site whose new items have no key yet (DeepSeek) hides them by a selector until the send ends
+    var sel = JR.site.freezeSelector && JR.site.freezeSelector(), style = null;
+    if (sel) {
+      style = document.createElement("style");
+      style.id = "jr-freeze";
+      style.textContent = sel + " { " + JR.site.hideDeclaration + " }";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    _freeze = { mo: mo, keys: [], style: style };
   };
 
   /** Stop freezing. Returns the keys the freeze hid (the caller unhides them if the send is abandoned). */
   JR.unfreezeChat = function () {
     if (!_freeze) return [];
     _freeze.mo.disconnect();
+    if (_freeze.style) _freeze.style.remove();
     var keys = _freeze.keys;
     _freeze = null;
     return keys;
@@ -354,16 +368,21 @@
     // Freeze here, when the message is really sent (not when it was queued).
     JR.freezeChat();
     w.turnsBefore = JR.snapshotTurns();
+    w.unlockScroll = holdView();
+    JR.setTailHidden(true);
+  };
+
+  /** Keep what the user is looking at in place until the returned function is called. */
+  function holdView() {
     var scroller = JR.site.scrollContainer();
     var unlock = scroller ? JR.lockScroll(scroller, JR.viewAnchor()) : null;
-    // Page-world guard (scroll-guard.js): ChatGPT's own scroll-to-new-turn is ignored while set.
+    // Page-world guard (scroll-guard.js): the site's own scroll-to-new-turn is ignored while set.
     document.documentElement.setAttribute("data-jr-scroll-lock", String(Date.now()));
-    JR.setTailHidden(true);
-    w.unlockScroll = function () {
+    return function () {
       document.documentElement.removeAttribute("data-jr-scroll-lock");
       if (unlock) unlock();
     };
-  };
+  }
 
   // --- Message queue ---
   // When ChatGPT is generating, new popup sends are queued and dispatched
@@ -385,10 +404,10 @@
   JR.attachToComposer = function (files, done) {
     var composer = JR.site.composer();
     if (!composer) {
-      done({ sent: [], failed: files.map(function (f) { return { file: f, reason: "ChatGPT's input box was not found" }; }) });
+      done({ sent: [], failed: files.map(function (f) { return { file: f, reason: JR.site.label + "'s input box was not found" }; }) });
       return;
     }
-    var box = JR.site.composerBox(composer);
+    var box = attachBox(composer);
     if (box) box.setAttribute("data-jr-attaching", "");
     // ChatGPT keeps only the last of several same-named files in one paste (T8: two
     // clipboard.png became one): hand it copies with distinct names, report the originals.
@@ -425,7 +444,7 @@
       done({
         sent: sentCopies.map(function (f) { return original.get(f); }),
         failed: failedCopies.map(function (f) {
-          return { file: original.get(f), reason: !ready && carded.length ? "upload timed out" : "ChatGPT did not accept it" };
+          return { file: original.get(f), reason: !ready && carded.length ? "upload timed out" : JR.site.label + " did not accept it" };
         }),
       });
     })();
@@ -445,7 +464,11 @@
     if (opts.files && opts.files.length && !opts.attached) {
       st.attaching = true;
       var startUrl = location.href;
+      // ChatGPT scrolls to the bottom when its box gets files (live: 208 px for ~2 s): hold the view from here on;
+      // prepareSend takes over right after (same task)
+      var release = holdView();
       JR.attachToComposer(opts.files, function (res) {
+        release();
         st.attaching = false;
         if (location.href !== startUrl) { // the user opened another chat meanwhile: never send there
           removeComposerAttachments(JR.site.composer(), res.sent);
@@ -602,6 +625,7 @@
     // data-markdown-* attributes (spacing, sizes, tables, the per-word fade-in while streaming) — copying
     // only the children lost all of it (R36b/h)
     syncChildren(bodies, responseDiv);
+    if (JR.site.markCopy) Array.prototype.forEach.call(responseDiv.children, JR.site.markCopy);
     return true;
   }
 
@@ -713,11 +737,11 @@
   var failureText = JR.sendFailureText = function () {
     var r = st.lastSendReport;
     if (!r || r.ok) return "Couldn’t get a response";
-    if (r.stage === "composer") return "Popup couldn’t find ChatGPT’s input box — nothing was sent";
-    if (r.stage === "insert") return "Popup couldn’t type into ChatGPT’s input box — nothing was sent";
+    if (r.stage === "composer") return "Popup couldn’t find " + JR.site.label + "’s input box — nothing was sent";
+    if (r.stage === "insert") return "Popup couldn’t type into " + JR.site.label + "’s input box — nothing was sent";
     if (r.stage === "submit") return "Popup couldn’t press Send — nothing was sent";
     if (r.stage === "offline") return "You’re offline — nothing was sent";
-    if (r.stage === "turn-not-found") return "ChatGPT answered, but Popup couldn’t find the answer on the page";
+    if (r.stage === "turn-not-found") return JR.site.label + " answered, but Popup couldn’t find the answer on the page";
     return "Couldn’t get a response";
   };
 
@@ -775,6 +799,7 @@
         if (d.turnKey && qaKeys.indexOf(d.turnKey) === -1) {
           qaKeys.push(d.turnKey); // responseKey stays unset until the turn mounts, so the DOM stream observer attaches then
           st.watchingTurnKey = d.turnKey;
+          if (JR.site.keepMounted) JR.site.keepMounted(d.turnKey); // DeepSeek: draw it (unseen) to mirror its own rendering
           JR.hideTurnKeys([d.turnKey]);
           addDeletedTurns(convUrl, [d.turnKey]);
           if (!editOpts && preRegisteredItemId) updateHighlightFields(preRegisteredItemId, { turnKeys: qaKeys.slice() }, convUrl);
@@ -810,7 +835,7 @@
         JR.repositionPopup();
       }
       var tmp = document.createElement("div");
-      tmp.innerHTML = JR.renderMarkdown(net.text);
+      tmp.innerHTML = JR.renderAnswerText(net.text);
       syncChildren(Array.prototype.slice.call(tmp.childNodes), responseDiv);
       targetPopup.classList.add("jr-popup--streaming");
       if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
@@ -880,6 +905,7 @@
       document.removeEventListener("jr-net", onNet);
       st.responseWatchActive = false;
       st.watchingTurnKey = null;
+      if (JR.site.keepMounted) JR.site.keepMounted(null);
       var frozen = JR.unfreezeChat();
       // Turns the freeze hid that turned out not to be ours: show them again.
       var notOurs = frozen.filter(function (k) { return qaKeys.indexOf(k) === -1; });
@@ -943,7 +969,7 @@
       // ChatGPT's "couldn't load", or a chart/map it draws only on screen (a copy would be blank): the network text
       // is drawn instead — drop the mirror so renderNetText and captureResponse use it (review #1)
       if (JR.site.renderFailed(turn) || (JR.site.hasUndrawnWidget(turn) && net.text.trim())) { mirrorDiv = null; return; }
-      // ChatGPT mounts an empty answer placeholder first: keep "Waiting for response…" until text arrives.
+      // ChatGPT mounts an empty answer placeholder first: keep "Loading…" until text arrives.
       if (!JR.site.assistantText(turn).trim()) return;
       var targetPopup = getStreamTarget();
       if (!targetPopup) return;
@@ -1062,7 +1088,7 @@
       } else if (mirrorDiv && mirrorDiv.textContent.trim()) {
         responseHTML = mirrorDiv.innerHTML; // the hidden turn is gone: what the popup mirrored is ChatGPT's rendering (R36f)
       } else if (net.text.trim()) {
-        responseHTML = JR.renderMarkdown(net.text); // turn not in the DOM, or ChatGPT failed to render it
+        responseHTML = JR.renderAnswerText(net.text); // turn not in the DOM, or ChatGPT failed to render it
         var drawnByPopup = true;
       } else if (turn) {
         // Empty answer (user stopped, error): save as __TIMEOUT__

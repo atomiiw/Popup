@@ -7,7 +7,7 @@
   if (window.__jrRecInstalled) return "already";
   window.__jrRecInstalled = true;
   window.__jrRec = [];
-  var SC = "[data-app-action-timeline-scroll]";
+  var SC = /deepseek/.test(location.hostname) ? ".ds-virtual-list" : /claude\.ai/.test(location.hostname) ? "[data-autoscroll-container]" : "[data-app-action-timeline-scroll]";
   var cur = null;
   function r(el) { if (!el || !el.isConnected) return null; var b = el.getBoundingClientRect(); return Math.round(b.top); }
   function desc(el) { if (!el) return null; return el.tagName + (el.className && typeof el.className === "string" ? "." + el.className.split(" ").slice(0, 2).join(".") : "") + (el.getAttribute && el.getAttribute("aria-label") ? "[" + el.getAttribute("aria-label") + "]" : ""); }
@@ -21,7 +21,7 @@
                   : document.querySelector(".jr-source-highlight");
     return { t: Math.round(performance.now() - cur.t0), tag: tag, st: sc ? Math.round(sc.scrollTop) : null, sh: sc ? sc.scrollHeight : null,
       pop: r(pop), popTopCss: pop ? pop.style.top : null, popIn: pop ? pop.isConnected : false, popH: pop ? pop.offsetHeight : null,
-      hl: r(hl), turns: document.querySelectorAll("[data-turn-key]").length, lock: document.documentElement.getAttribute("data-jr-scroll-lock") !== null, focus: desc(document.activeElement) };
+      hl: r(hl), turns: document.querySelectorAll("[data-turn-key], [data-virtual-list-item-key]").length, lock: document.documentElement.getAttribute("data-jr-scroll-lock") !== null, focus: desc(document.activeElement) };
   }
   function start(how) {
     if (cur && performance.now() - cur.t0 < 12000) return;

@@ -21,11 +21,13 @@
 <div id="dock"><div><div contenteditable="true" role="textbox" data-cds="Editor" data-testid="chat-input" class="tiptap ProseMirror"><p>draft</p></div></div><button type="button" disabled data-testid="chat-input-send" aria-label="Send message">↑</button></div>
 <pre id="out"></pre>
 <script>window.JR = {};</script>
+<script src="../src/site-hosts.js"></script>
 <script src="../src/sites/claude.js"></script>
 <script>
 var out = [], failed = 0, pending = [];
 function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
 var S = JR.sites.claude, K1 = "01a1d45d-47f9-7000-8000-000000000001", K2 = "01a1d45d-47f9-7000-8000-000000000002";
+check("Step 4a: early-hide selector (site-hosts.js) = turnSelector", JR_HOST.all.claude.hide(K1) === S.turnSelector(K1), JR_HOST.all.claude.hide(K1));
 function row(i) { return document.querySelector('[data-index="' + i + '"]'); }
 
 // --- Turns ---
@@ -78,6 +80,30 @@ pending.push(new Promise(function (done) {
 }));
 
 Promise.all(pending).then(function () {
+  (function () { // live 2026-11-17: claude.ai draws a message's paragraphs as <p>s; the parts must come back apart
+    var row = document.createElement("div"); row.setAttribute("data-testid", "transcript-row");
+    row.innerHTML = '<div data-cds="UserMessage" data-turn-key="pk"><p>Regarding this part of your response:<br>"a b."</p><p>Specifically: "a"</p><p>Q?</p><p>(For this response only: x)</p></div>';
+    var ans = document.createElement("div"); ans.setAttribute("data-testid", "transcript-row");
+    ans.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="pk-hub-reply"><div data-cds="Prose">A</div></div>';
+    document.body.appendChild(row); document.body.appendChild(ans);
+    var t = S.userText(ans);
+    check("userText: paragraphs come back separated by a blank line", /"a b\."\n\nSpecifically: "a"\n\nQ\?\n\n\(For/.test(t), JSON.stringify(t));
+    row.remove(); ans.remove();
+  })();
+  (function () { // live 2026-11-18: a sent file's tile is inside the user message with its name as text
+    var row = document.createElement("div"); row.setAttribute("data-testid", "transcript-row");
+    row.innerHTML = '<div data-cds="UserMessage" data-turn-key="fk"><div data-cds="MessageAttachmentsImage" data-testid="file-thumbnail"><span>1794982711152_image.png</span><img src="data:,"></div><p>Q?</p></div>';
+    var ans = document.createElement("div"); ans.setAttribute("data-testid", "transcript-row");
+    ans.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="fk-hub-reply"><div data-cds="Prose">A</div></div>';
+    document.body.appendChild(row); document.body.appendChild(ans);
+    check("userText: a sent file's tile is not part of the question", S.userText(ans) === "Q?", JSON.stringify(S.userText(ans)));
+    var at = S.sentAttachments("fk");
+    var plain = document.createElement("pre"); plain.innerHTML = '<code><span style="color: rgb(20, 24, 31)">def f():</span></code>';
+    var col = document.createElement("pre"); col.innerHTML = '<code><span style="color: rgb(129, 0, 194)">def</span><span style="color: rgb(0, 81, 194)"> f</span></code>';
+    check("codeColoured: one plain colour is not coloured, two token colours are", !S.codeColoured(plain) && S.codeColoured(col), S.codeColoured(plain) + " " + S.codeColoured(col));
+    check("sentAttachments: the file's name (no timestamp) and image address", at.length === 1 && at[0].name === "image.png" && at[0].url === "data:,", JSON.stringify(at));
+    row.remove(); ans.remove();
+  })();
   out.push(failed ? failed + " FAILED" : "all passed");
   document.getElementById("out").textContent = out.join("\n");
   document.title = failed ? "FAIL" : "PASS";

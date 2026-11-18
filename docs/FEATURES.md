@@ -58,7 +58,7 @@
 - Dropdown appears below the send arrow, themed via CSS variables for light/dark mode
 
 ### Response Capture & Hide Q&A (Step 3 — ChatGPT only)
-- After sending a follow-up question, the popup transitions to a loading state ("Waiting for response…")
+- After sending a follow-up question, the popup transitions to a loading state ("Loading…")
 - The extension polls for new conversation turns appearing in the DOM
 - When the injected question turn appears, it is hidden from the main chat (`jr-hidden` class)
 - When the AI response turn finishes streaming, it is also hidden from the main chat
@@ -153,7 +153,7 @@
 - Links use the accent color with underline; images are constrained to `max-width: 100%`
 
 ### Streaming Response in Popup (Step 6)
-- While the AI is generating a response, the popup streams partial content in real time instead of showing a static "Waiting for response…" message
+- While the AI is generating a response, the popup streams partial content in real time instead of showing a static "Loading…" message
 - The response turn is hidden from the main chat immediately when detected; a `MutationObserver` on the response turn fires on every DOM change — the same events that drive ChatGPT's own rendering — so the popup updates at exactly the same speed
 - Updates are coalesced via `requestAnimationFrame` (one sync per frame) and use `cloneNode` + `replaceChildren` instead of `innerHTML` to avoid flicker
 - The response area auto-scrolls to the bottom during streaming so users can follow along as new content appears

@@ -210,6 +210,11 @@
       return m ? "legacy-" + m[1] : null;
     },
 
+    name: "chatgpt",
+    label: "ChatGPT", // in Popup's own messages
+    hideDeclaration: JR_HOST.all.chatgpt.decl, // not display:none (R36a): src/site-hosts.js
+    chatUrl: function (conv) { return "/c/" + conv; },
+
     /** CSS selector matching the turn with this key (for hide rules). */
     turnSelector: function (key) {
       if (!key) return null;
@@ -375,7 +380,14 @@
       var conv = el && el.closest(C.conversation.join(", "));
       if (conv) {
         for (var c = conv.firstElementChild; c; c = c.nextElementSibling) {
-          if (c.contains(el)) { used.popupHost = "conversation child"; return c; }
+          if (!c.contains(el)) continue;
+          // A display:contents wrapper has no box to position in (ChatGPT, 2026-11-17): use its child
+          while (getComputedStyle(c).display === "contents") {
+            for (var k = c.firstElementChild; k && !k.contains(el); k = k.nextElementSibling);
+            if (!k || k === el) break;
+            c = k;
+          }
+          used.popupHost = "conversation child"; return c;
         }
       }
       var scroller = JR.site.scrollContainer();
@@ -559,6 +571,7 @@
     var inConversation = !!JR.site.conversationId();
 
     var report = {
+      site: JR.site.name,
       version: (function () {
         try { var m = chrome.runtime.getManifest(); return m.version_name || m.version; }
         catch (e) { return "stale (extension was updated; reload the page)"; }
@@ -574,7 +587,7 @@
         composer: { n: composer ? 1 : 0, via: composer ? used.composer : null },
         sendButton: { n: send ? 1 : 0, via: send ? used.sendButton : null, note: send ? null : "only present while the composer has text" },
         stopButton: { n: JR.site.stopButton() ? 1 : 0, via: used.stopButton || null },
-        scrollContainer: { n: visibleScroller() ? 1 : 0, via: visibleScroller() ? used.scrollContainer : null, inDom: all("scrollContainer").length },
+        scrollContainer: { n: JR.site.scrollContainer() ? 1 : 0, via: JR.site.scrollContainer() ? used.scrollContainer || JR.site.name : null, inDom: all("scrollContainer").length },
       },
       generating: JR.site.isGenerating(),
       // ChatGPT's own "This response couldn't load" — not a Popup fault, but its content can't be used.
@@ -627,7 +640,7 @@
     el.setAttribute("data-ok", report.ok ? "true" : "false");
     // Storage footprint (V2.1): this conversation's record and the whole store.
     try {
-      var convKey = "popup:conv:" + (report.conversationId || "");
+      var convKey = JR_HOST.convKey(location.href);
       chrome.storage.local.getBytesInUse(null, function (total) {
         chrome.storage.local.getBytesInUse(convKey, function (conv) {
           report.storageBytes = { conversation: conv, total: total };
@@ -635,5 +648,11 @@
         });
       });
     } catch (e) { /* extension context invalidated */ }
+  }
+
+  // Step 4: on DeepSeek / claude.ai their own site layer (src/sites/*.js, loaded before this file) takes over
+  if (JR_HOST.name !== "chatgpt" && JR.sites && JR.sites[JR_HOST.name]) {
+    JR.site = JR.sites[JR_HOST.name];
+    JR.SEL.turn = JR.site.turnSelectorAll;
   }
 })();

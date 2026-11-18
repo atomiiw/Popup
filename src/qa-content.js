@@ -87,7 +87,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // Hiding: one <style> with a display:none rule per hidden turn key.
+  // Hiding: one <style> with a rule per hidden turn key (JR.site.hideDeclaration).
   // CSS applies to a turn the instant React (re)mounts it, so virtualized
   // turns never flash and no observer has to re-add classes.
   // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@
       hideStyle.id = "jr-hide-turns";
       (document.head || document.documentElement).appendChild(hideStyle);
     }
-    hideStyle.textContent = rules.length ? rules.join(",\n") + " { display: none !important; }" : "";
+    hideStyle.textContent = rules.length ? rules.join(",\n") + " { " + JR.site.hideDeclaration + " }" : "";
   }
 
   JR.hideTurnKeys = function (keys) {
@@ -158,6 +158,8 @@
   function harvest(turn) {
     // ChatGPT's own render failure text is not the answer — never cache it.
     if (JR.site.renderFailed(turn)) return null;
+    // claude.ai: a hidden row's code is never coloured (off screen) — take the answer from the render frame instead
+    if (JR.site.harvestable && !JR.site.harvestable(turn)) return null;
     var userMsg = JR.site.userText(turn);
     var parsed = JR.parsePopupMessage(userMsg);
     var html = JR.site.assistantHTML(turn);
@@ -181,11 +183,22 @@
     cacheSize: function () { return cache.size; },
     clear: function () { cache.clear(); },
 
+    /** The question an item asked, as read back — also while its answer is held for the site's drawing. */
+    question: function (turnKeys) {
+      for (var i = 0; i < (turnKeys || []).length; i++) {
+        var c = cache.get(turnKeys[i]);
+        if (c && c.question != null) return c.question;
+      }
+      var g = JR.qa.get(turnKeys);
+      return g ? g.question : null;
+    },
+
     /** Content for a Q&A item (by its turn keys), or null if not available right now. */
     get: function (turnKeys) {
       for (var i = 0; i < (turnKeys || []).length; i++) {
         var k = turnKeys[i];
         var c = cache.get(k);
+        if (c && c.held) return null; // shown only once the site's own drawing is in, or after 5 s (JR.qa.upgrade)
         if (c && c.responseHTML) return c;
         var turn = JR.site.findTurnByKey(k);
         if (turn) {
@@ -227,7 +240,7 @@
 
   function fetchConversation() {
     var id = JR.site.conversationId();
-    if (!id) return Promise.resolve(null);
+    if (!id || JR.site.name !== "chatgpt") return Promise.resolve(null); // ChatGPT's REST API only
     if (convFetch && convFetch.id === id) return convFetch.promise;
     JR.qa.apiStatus = "loading";
     var promise = apiGet("/backend-api/conversation/" + id)
@@ -274,6 +287,8 @@
    * data: user message metadata.attachments (verified T7). Empty if unknown.
    */
   JR.qa.attachmentsOf = function (turnKey) {
+    if (JR.site.sentAttachments) return Promise.resolve(JR.site.sentAttachments(turnKey)); // read from the page
+    if (JR.site.name === "deepseek") return dsAttachments(turnKey);
     return fetchConversation().then(function (conv) {
       var node = conv && conv.mapping[turnKey];
       var list = node && node.message && node.message.metadata && node.message.metadata.attachments;
@@ -287,6 +302,7 @@
    */
   var fileUrls = new Map();
   JR.qa.fileUrl = function (fileId) {
+    if (JR.site.name !== "chatgpt") return Promise.resolve(null);
     if (!fileUrls.has(fileId)) fileUrls.set(fileId, apiGet("/backend-api/files/download/" + encodeURIComponent(fileId))
       .then(function (r) { JR.qa.fileUrlStatus = "HTTP " + r.status; return r.ok ? r.json() : null; })
       .then(function (j) { return (j && j.download_url) || null; })
@@ -302,44 +318,115 @@
   JR.qa.ensure = function (turnKeys) {
     var want = (turnKeys || []).filter(function (k) { return k && !cache.has(k); });
     if (!want.length) return Promise.resolve([]);
-    return fetchConversation().then(function (conv) {
-      if (!conv) return [];
-      var filled = [];
-      want.forEach(function (k) {
-        var node = conv.mapping[k];
-        if (!node || !node.message) return;
-        var parsed = JR.parsePopupMessage(textOf(node.message));
-        var answer = answerFor(conv.mapping, k);
-        if (!answer) return;
-        cache.set(k, {
-          question: parsed ? parsed.question : null,
-          text: parsed ? parsed.text : null,
-          sentence: parsed ? parsed.sentence : null,
-          responseHTML: JR.renderMarkdown(answer),
-          drawnByPopup: true, // JR.qa.upgrade replaces it with ChatGPT's own drawing when it's opened
-          isPopup: !!parsed,
-        });
-        filled.push(k);
-      });
+    // claude.ai: no data to read (its timeline is binary, off limits) — JR.qa.upgrade draws it via the frame when opened
+    var read = JR.site.name === "deepseek" ? readDeepSeek(want) : JR.site.name === "chatgpt" ? readChatGPT(want) : Promise.resolve([]);
+    return read.then(function (filled) {
       if (filled.length && JR.onQAContentLoaded) JR.onQAContentLoaded(filled);
       return filled;
     });
   };
 
+  function putParsed(k, questionText, html, drawnByPopup) {
+    var parsed = JR.parsePopupMessage(questionText || "");
+    cache.set(k, {
+      question: parsed ? parsed.question : null,
+      text: parsed ? parsed.text : null,
+      sentence: parsed ? parsed.sentence : null,
+      responseHTML: html,
+      drawnByPopup: drawnByPopup, // true: JR.qa.upgrade replaces it with the site's own drawing when it's opened
+      held: drawnByPopup && !!JR.siteRender, // the popup waits for that drawing (loading) instead of changing later
+      isPopup: !!parsed,
+    });
+  }
+
+  function readChatGPT(want) {
+    return fetchConversation().then(function (conv) {
+      if (!conv) return [];
+      return want.filter(function (k) {
+        var node = conv.mapping[k];
+        var answer = node && node.message && answerFor(conv.mapping, k);
+        if (answer) putParsed(k, textOf(node.message), JR.renderMarkdown(answer), true);
+        return !!answer;
+      });
+    });
+  }
+
+  // DeepSeek (docs/DEEPSEEK.md §6–7): the key is the answer's message id, its question is the parent message.
+  // This drawing (in DeepSeek's classes) is held until DeepSeek's own is copied from its list (JR.siteRender there).
+  var dsHistory = null; // { id, promise } once per conversation per page session; nothing stored
+  function dsText(m) {
+    if (typeof m.content === "string" && m.content) return m.content;
+    return (m.fragments || []).map(function (f) { return typeof f.content === "string" ? f.content : ""; }).join("");
+  }
+  function dsMessages() {
+    var conv = JR.site.conversationId();
+    if (!conv) return Promise.resolve(null);
+    if (!dsHistory || dsHistory.id !== conv) {
+      var h = dsHistory = { id: conv, promise: JR.site.fetchHistory(conv) };
+      h.promise.then(function (msgs) { if (!msgs && dsHistory === h) dsHistory = null; }); // retry later
+    }
+    return dsHistory.promise;
+  }
+  /** Files the question of answer k carried (its FILE fragment): { id, name, mime, url } — after a reload. */
+  function dsAttachments(k) {
+    return dsMessages().then(function (msgs) {
+      var a = (msgs || []).filter(function (m) { return String(m.message_id) === String(k); })[0];
+      var q = a && (msgs || []).filter(function (m) { return m.message_id === a.parent_id; })[0];
+      var files = [];
+      ((q && q.fragments) || []).forEach(function (f) { if (f.type === "FILE") files = files.concat(f.files || []); });
+      return files.map(function (f) {
+        return { id: f.id, name: f.file_name || "file", mime: f.is_image ? "image/" : "", url: f.is_image ? JR.site.filePreviewUrl(f.signed_path) : null };
+      });
+    });
+  }
+  function readDeepSeek(want) {
+    return dsMessages().then(function (msgs) {
+      if (!msgs) return [];
+      var byId = {};
+      msgs.forEach(function (m) { byId[String(m.message_id)] = m; });
+      return want.filter(function (k) {
+        var a = byId[String(k)], md = a && JR.site.answerMarkdown(a);
+        if (md) putParsed(k, byId[String(a.parent_id)] ? dsText(byId[String(a.parent_id)]) : "", JR.site.renderAnswer(md), true); // upgraded to DeepSeek's own drawing when opened (sites/deepseek.js siteRender)
+        return !!md;
+      });
+    });
+  }
+
+  /** Markdown from the network stream, drawn in the site's own answer classes where it has them (DeepSeek). */
+  JR.renderAnswerText = function (md) {
+    return JR.site.renderAnswer ? JR.site.renderAnswer(md) : JR.renderMarkdown(md);
+  };
+
   /**
-   * Answers Popup drew from Markdown get ChatGPT's own rendering (chatgpt-render.js), in memory only;
+   * Answers Popup drew from Markdown get the site's own rendering (site-render.js), in memory only;
    * open popups showing them are refreshed (JR.onQAUpgraded). Once per turn per page.
    */
   var upgraded = new Set();
   JR.qa.upgrade = function (turnKeys) {
     (turnKeys || []).forEach(function (k) {
       var c0 = cache.get(k);
-      if (!k || upgraded.has(k) || !JR.chatgptRender || !c0 || !c0.drawnByPopup) return;
+      var fromFrameOnly = !c0 && JR.site.name === "claude"; // nothing read before: the frame gives question and answer
+      if (!k || upgraded.has(k) || !JR.siteRender || !(fromFrameOnly || (c0 && c0.drawnByPopup))) return;
       upgraded.add(k);
-      JR.chatgptRender(k).then(function (html) {
-        if (!html) { upgraded.delete(k); return; }
+      // A held answer shows when the site's drawing arrives, or Popup's own after 5 s — then it never changes
+      var settled = false;
+      function release() { settled = true; var c = cache.get(k); if (c) c.held = false; if (JR.onQAContentLoaded) JR.onQAContentLoaded([k]); }
+      var timer = c0 && c0.held ? setTimeout(release, 5000) : 0;
+      JR.siteRender(k).then(function (r) {
+        if (timer) {
+          if (settled) return;
+          clearTimeout(timer);
+          if (r) { var ch = cache.get(k); ch.responseHTML = r.html; ch.drawnByPopup = false; }
+          return release();
+        }
+        if (!r) { upgraded.delete(k); return; }
+        if (fromFrameOnly) {
+          putParsed(k, r.question, r.html, false);
+          if (JR.onQAContentLoaded) JR.onQAContentLoaded([k]);
+          return;
+        }
         var c = cache.get(k) || {};
-        c.responseHTML = html;
+        c.responseHTML = r.html;
         c.drawnByPopup = false;
         cache.set(k, c);
         if (JR.onQAUpgraded) JR.onQAUpgraded([k]);

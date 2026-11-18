@@ -1,11 +1,12 @@
 // load-smoke.js — run every content script in manifest order inside JavaScriptCore
 // against a stub browser, to catch load-time exceptions (e.g. using JR.perf
 // before it is defined). Not a functional test.
-// Usage: osascript -l JavaScript tools/load-smoke.js /path/to/Popup
+// Usage: osascript -l JavaScript tools/load-smoke.js /path/to/Popup [host]   (host: chatgpt.com (default), chat.deepseek.com, claude.ai)
 ObjC.import('Foundation');
 function read(p) { return $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null).js; }
 function run(argv) {
-  var root = argv[0];
+  var root = argv[0], host = argv[1] || 'chatgpt.com';
+  var path = { 'chatgpt.com': '/c/', 'chat.deepseek.com': '/a/chat/s/', 'claude.ai': '/chat/' }[host] + '00000000-0000-0000-0000-000000000000';
   var manifest = JSON.parse(read(root + '/manifest.json'));
   // Universal stub: callable, any property is another stub, usable as a value.
   function stub() {
@@ -28,7 +29,7 @@ function run(argv) {
     return p;
   }
   var g = {
-    document: stub(), location: { href: 'https://chatgpt.com/c/00000000-0000-0000-0000-000000000000', pathname: '/c/00000000-0000-0000-0000-000000000000', hash: '' },
+    document: stub(), location: { href: 'https://' + host + path, pathname: path, hostname: host, hash: '' },
     chrome: { runtime: { id: 'x', getManifest: function () { return manifest; } },
               storage: { local: { get: function () { return Promise.resolve({}); }, set: function () { return Promise.resolve(); }, remove: function () { return Promise.resolve(); }, getBytesInUse: function () {} },
                          onChanged: { addListener: function () {} } } },
@@ -44,7 +45,9 @@ function run(argv) {
     Element: function () {}, InputEvent: function () {}, KeyboardEvent: function () {}, Event: function () {},
     crypto: { randomUUID: function () { return 'id'; } }, console: { log: function () {}, warn: function () {}, error: function () {} },
   };
-  g.window = g; g.Element.prototype = {}; g.addEventListener = function () {}; g.removeEventListener = function () {};
+  g.window = g; g.Element.prototype = {};
+  g.XMLHttpRequest = function () {}; g.XMLHttpRequest.prototype = { open: function () {}, send: function () {}, addEventListener: function () {} };
+  g.fetch = function () { return Promise.resolve(stub()); }; g.addEventListener = function () {}; g.removeEventListener = function () {};
   var out = [];
   var names = Object.keys(g);
   // Scripts of one content_scripts entry share one global scope (as in Chrome),
@@ -59,10 +62,11 @@ function run(argv) {
   names.forEach(function (n) { if (n !== 'window') G[n] = g[n]; });
   G.window = G; // in a page, window is the global object
   manifest.content_scripts.forEach(function (cs) {
+    if (!cs.matches.some(function (m) { return m.indexOf('//' + host + '/') !== -1; })) return; // this site's scripts only
     (cs.js || []).forEach(function (file) {
       try { (0, eval)(read(root + '/' + file)); out.push('ok   ' + file); }
       catch (e) { out.push('FAIL ' + file + ' :: ' + e); }
     });
   });
-  return out.join('\n');
+  return host + '\n' + out.join('\n');
 }

@@ -665,7 +665,7 @@
         responseHTML: "__PENDING__",
         question: question,
         url: location.href,
-        site: "chatgpt",
+        site: JR.site.name,
         parentId: parentId || null,
         parentItemId: sendParentItemId,
         sourceTurnKey: sourceTurnKey,
@@ -918,14 +918,20 @@
 
       // Replace response and loading — each version has its own state
       var oldResp = popup.querySelector(".jr-popup-response");
+      var oldH = oldResp ? oldResp.offsetHeight : 0;
       if (oldResp) oldResp.remove();
       var oldLoading = popup.querySelector(".jr-popup-loading");
       if (oldLoading) oldLoading.remove();
 
       if (v.responseHTML && !JR.isPlaceholderHTML(v.responseHTML)) {
         appendResponseWithReply(popup, hlId, entry, entry.contentContainer, v.id);
+        JR.qa.upgrade(v.turnKeys);
       } else {
-        popup.appendChild(JR.createLoadingDiv());
+        // Waiting for that version's answer (after a reload): keep the answer's height, the popup doesn't jump
+        var wait = popup.appendChild(JR.createLoadingDiv());
+        if (oldH) wait.style.setProperty("--jr-hold-h", oldH + "px");
+        // After a reload an older version's answer is read (or held for the site's drawing) only when shown, as on open
+        if (v.responseHTML === "__LOADING__") JR.qa.ensure(v.turnKeys).then(function () { JR.qa.upgrade(v.turnKeys); });
       }
 
       updateNav();
@@ -971,11 +977,11 @@
         items: chEntry.items, activeItemIndex: chEntry.activeItemIndex,
       }, contentContainer);
     });
-    // Also check storage for children not yet in memory
-    getChildHighlights(parentQuoteId, activeParentItemId).then(function (children) {
-      for (var ci = 0; ci < children.length; ci++) {
-        var child = withContent(children[ci]);
-        var childKey = child.quoteId || child.id;
+    // Also check storage for children not yet in memory (after a reload): all versions, so edits keep their arrows
+    getChildHighlights(parentQuoteId, activeParentItemId).then(function (records) {
+      var map = JR.groupByQuote(records);
+      Object.keys(map).forEach(function (childKey) {
+        var child = map[childKey];
         if (child.wholeResponse) {
           // Reply-to-all: add to memory without text-matching, opened via reply button
           if (!st.completedHighlights.has(childKey)) {
@@ -990,16 +996,16 @@
               contentContainer: contentContainer,
               parentId: child.parentId || null,
               parentItemId: child.parentItemId || null,
-              items: [{ id: child.id, question: child.question || null, responseHTML: child.responseHTML, turnKeys: child.turnKeys || [], attachments: child.attachments || 0 }],
-              activeItemIndex: 0,
+              items: child.items,
+              activeItemIndex: child.activeItemIndex,
               wholeResponse: true,
             });
           }
-          continue;
+          return;
         }
-        if (responseDiv.querySelector('[data-jr-highlight-id="' + childKey + '"]')) continue;
+        if (responseDiv.querySelector('[data-jr-highlight-id="' + childKey + '"]')) return;
         JR.restoreHighlightInElement(responseDiv, child, contentContainer);
-      }
+      });
     });
   }
 
@@ -1026,13 +1032,6 @@
    */
   function readQuestion(el) {
     return (el.innerText || "").replace(/\r/g, "").replace(/[ \t\u00a0]+\n/g, "\n").replace(/\n{2,}/g, "\n").trim();
-  }
-
-  /** A stored record with its question/answer read back from ChatGPT (JR.qa), when available. */
-  function withContent(rec) {
-    var out = Object.assign({}, rec);
-    JR.fillFromQA(out);
-    return out;
   }
 
   var SEND_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z"/></svg>';

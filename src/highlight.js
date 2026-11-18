@@ -548,7 +548,7 @@
   }
 
   /** Group stored version records by quoteId. */
-  function groupByQuote(records) {
+  var groupByQuote = JR.groupByQuote = function (records) {
     var map = {};
     records.forEach(function (r) {
       var q = map[r.quoteId];
@@ -571,7 +571,7 @@
       syncActive(q);
     });
     return map;
-  }
+  };
 
   /** Assistant markdown roots to search for a highlight's text. */
   function rootsFor(q) {
@@ -705,6 +705,10 @@
     var gen = ++restoreGen;
     var url = location.href;
     pendingL1 = [];
+    // Our own unwrap (navigation) is not the page removing spans: count rewraps per restore (claude.ai: each
+    // Settings open/close changes the hash; after 3 the chat's highlights stopped coming back)
+    noMatch = new WeakMap();
+    wrappedIn = new WeakMap();
     st.restoreReady = false; // qa-content's self-heal waits for this (it needs the stored items)
     if (!JR.site.isChatPage()) { JR.watchTurnMounts(); return; } // R8: off outside chats (stops the observer)
 
@@ -741,7 +745,10 @@
       if (r.responseHTML === "__LOADING__") loadingKeys = loadingKeys.concat(r.turnKeys);
     });
     var missing = loadingKeys.filter(function (k) { return !JR.qa.get([k]); });
-    if (missing.length) JR.qa.ensure(missing);
+    if (missing.length) {
+      JR.qa.ensure(missing);
+      if (JR.siteRenderPrewarm && JR.site.name === "chatgpt") JR.siteRenderPrewarm(); // opening one then takes ~1 s, not 5–15
+    }
     if (!unlinked) return;
     JR.qa.popupTurnsFromApi().then(function (turns) {
       if (gen !== restoreGen) return;

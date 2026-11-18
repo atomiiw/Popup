@@ -6,10 +6,10 @@
 (function () {
   if (window.__jrScOn) return "already";
   window.__jrScOn = true;
-  var SC = "[data-app-action-timeline-scroll]", L = window.__jrSc = { ev: [] }, t0 = 0, on = false;
+  var SC = /claude\.ai/.test(location.hostname) ? "[data-autoscroll-container]" : /deepseek/.test(location.hostname) ? ".ds-virtual-list" : "[data-app-action-timeline-scroll]", L = window.__jrSc = { ev: [] }, t0 = 0, on = false;
   function now() { return Math.round(performance.now() - t0); }
   function stack() { return String(new Error().stack).split("\n").slice(3, 6).map(function (s) { return s.trim().replace(/https:\/\/[^ )]+\//g, "").slice(0, 60); }).join(" < "); }
-  function log(o) { if (on && L.ev.length < 400) { o.t = now(); o.lock = document.documentElement.hasAttribute("data-jr-scroll-lock"); L.ev.push(o); } }
+  function log(o) { if (on && L.ev.length < 1500) { o.t = now(); o.lock = document.documentElement.hasAttribute("data-jr-scroll-lock"); L.ev.push(o); } }
   var P = Element.prototype;
   ["scrollTo", "scroll", "scrollBy"].forEach(function (n) {
     var orig = P[n];
@@ -20,7 +20,7 @@
   var d = Object.getOwnPropertyDescriptor(P, "scrollTop");
   Object.defineProperty(P, "scrollTop", { configurable: true, get: d.get, set: function (v) { if (this.matches && this.matches(SC)) log({ call: "scrollTop=", arg: Math.round(v), st: d.get.call(this), by: stack() }); return d.set.call(this, v); } });
   document.addEventListener("scroll", function (e) { if (e.target.matches && e.target.matches(SC)) log({ ev: "scroll", st: Math.round(e.target.scrollTop) }); }, true);
-  window.__jrScStart = function () { t0 = performance.now(); L.ev = []; on = true; setTimeout(function () { on = false; }, 3000); };
-  document.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey && e.target.closest && e.target.closest(".jr-popup")) window.__jrScStart(); }, true);
+  window.__jrScStart = function (ms) { t0 = performance.now(); L.ev = []; on = true; setTimeout(function () { on = false; }, ms || 3000); };
+  document.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey && e.target.closest && e.target.closest(".jr-popup")) window.__jrScStart(window.__jrScMs); }, true);
   return "scroll-call log on";
 })();

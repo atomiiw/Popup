@@ -70,16 +70,21 @@
     if (!area) {
       area = document.createElement("div");
       area.className = "jr-popup-ask";
-      // The send menu is position: fixed (the area clips): put it under its send button when hovered
+      // The send menu is position: fixed (the area clips): put it under its send button when hovered.
+      // Fixed is relative to the nearest contain/transform ancestor, not always the viewport (claude.ai: contain: layout),
+      // so a 0×0 fixed probe at 0,0 gives that origin.
+      var probe = document.createElement("div");
+      probe.className = "jr-fixed-probe";
       area.addEventListener("mouseover", function (e) {
         var wrap = e.target.closest && e.target.closest(".jr-edit-send-wrapper");
         var menu = wrap && wrap.querySelector(".jr-send-mode-dropdown");
         if (!menu) return;
-        var r = wrap.getBoundingClientRect();
-        menu.style.left = (r.left + r.width / 2) + "px";
-        menu.style.top = (r.bottom + 4) + "px";
+        var r = wrap.getBoundingClientRect(), o = probe.getBoundingClientRect();
+        menu.style.left = (r.left + r.width / 2 - o.left) + "px";
+        menu.style.top = (r.bottom + 4 - o.top) + "px";
       });
       upper.appendChild(area);
+      upper.appendChild(probe); // outside the area: its :first-child rules stay as they are
     }
     return area;
   };
@@ -87,7 +92,7 @@
   JR.createLoadingDiv = function () {
     var div = document.createElement("div");
     div.className = "jr-popup-loading";
-    div.textContent = "Waiting for response\u2026";
+    div.textContent = "Loading\u2026"; // (user, 2026-11-18: not "Waiting for response…")
     return div;
   };
 
@@ -445,24 +450,20 @@
   };
 
   /**
-   * Which side of the highlight a popup of height popupH opens on. A side is usable
-   * when scrolling the chat can show the whole popup there. Both usable → the side
-   * with more room on screen now; one → that one; neither (a very short chat) →
-   * below, where the popup makes the page longer and can be scrolled to.
-   * scrollBelow: how far the chat can still scroll down (measure it before the popup
-   * is added, which can make the page longer); default: now.
+   * Which side of the highlight a popup of height popupH opens on: the side with more room on
+   * screen now (user, 2026-11-18: "decide by the current highlight location" — near the end of a
+   * chat a high highlight used to open upward, cut off at the top). Below can always be scrolled
+   * to (the popup makes the page longer); above only if the chat can scroll up far enough —
+   * else below.
    */
-  JR.bestDirection = function (highlightRect, popupH, gap, scrollBelow) {
+  JR.bestDirection = function (highlightRect, popupH, gap) {
     if (!highlightRect) return "below";
     var band = JR.site.visibleBand();
     var sc = JR.site.scrollContainer();
     var spaceAbove = highlightRect.top - band.top - gap;
     var spaceBelow = band.bottom - highlightRect.bottom - gap;
-    if (scrollBelow == null) scrollBelow = sc ? sc.scrollHeight - sc.clientHeight - sc.scrollTop : 0;
     var fitsAbove = spaceAbove + (sc ? sc.scrollTop : 0) >= popupH;
-    var fitsBelow = spaceBelow + scrollBelow >= popupH;
-    if (fitsAbove && fitsBelow) return spaceBelow >= spaceAbove ? "below" : "above";
-    return fitsAbove ? "above" : "below";
+    return spaceBelow >= spaceAbove || !fitsAbove ? "below" : "above";
   };
 
   /**
@@ -501,6 +502,17 @@
         if (rects[j].left < left) left = rects[j].left;
         if (rects[j].bottom > bottom) bottom = rects[j].bottom;
         if (rects[j].right > right) right = rects[j].right;
+      }
+    }
+    // Sideways: the line holding most of the highlight (user, 2026-11-17: a one-character sliver next to the
+    // popup must not pull the popup and arrow to it); up/down stays on the adjacent line (never covers the highlight)
+    var widths = {};
+    rects.forEach(function (r) { var k = Math.round(r.top); widths[k] = (widths[k] || 0) + r.width; });
+    var longTop = Number(Object.keys(widths).sort(function (a, b) { return widths[b] - widths[a]; })[0]);
+    if (Math.abs(longTop - refTop) > 4) {
+      left = Infinity; right = -Infinity;
+      for (var n = 0; n < rects.length; n++) {
+        if (Math.abs(rects[n].top - longTop) <= 4) { left = Math.min(left, rects[n].left); right = Math.max(right, rects[n].right); }
       }
     }
     return { top: top, left: left, bottom: bottom, right: right, width: right - left, height: bottom - top };
@@ -556,14 +568,12 @@
     }
     contentContainer.style.zIndex = "0";
     var gap = 8;
-    var sc = JR.site.scrollContainer();
-    var scrollBelow = sc ? sc.scrollHeight - sc.clientHeight - sc.scrollTop : 0; // before the popup can lengthen the page
 
     contentContainer.appendChild(popup);
     JR.watchUpper(popup); // before measuring: on a tiny window the height limit depends on it
     popup._jrLockedDirection = forceDirection === "above" || forceDirection === "below"
       ? forceDirection
-      : JR.bestDirection(rect, Math.max(popup.offsetHeight, answerH(popup)), gap, scrollBelow);
+      : JR.bestDirection(rect, Math.max(popup.offsetHeight, answerH(popup)), gap);
     placeAt(popup, rect, spans, containerRect);
     JR.posLog("position", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, cTop: containerRect.top, popupH: popup.offsetHeight });
   };
@@ -1017,8 +1027,7 @@
     // conversation data), then position inside the turn.
     var order = JR.qa.turnOrderCache;
     if (!order && JR.qa.apiStatus !== "loading") JR.qa.turnOrder().then(function () { JR.updateNavWidget(); });
-    var turnIdx = {};
-    (order || []).forEach(function (k, i) { turnIdx[k] = i; });
+    var pos = turnPosition(order);
 
     var items = [];
     var seen = {};
@@ -1035,7 +1044,8 @@
     });
 
     function rank(it) {
-      if (it.turn && turnIdx[it.turn] != null) return turnIdx[it.turn];
+      var at = it.turn ? pos(it.turn) : -1;
+      if (at >= 0) return at;
       return it.span ? (order ? order.length : 0) : Infinity; // not in the loaded order: a turn added this session (after all others)
     }
     items.sort(function (a, b) {
@@ -1051,6 +1061,11 @@
     return items.map(function (item) { return item.id; });
   };
 
+  /** A turn's place in the conversation: its index in the loaded order (ChatGPT), or the site's own (DeepSeek ids). */
+  function turnPosition(order) {
+    return JR.site.turnPosition || function (k) { return order ? order.indexOf(k) : -1; };
+  }
+
   /**
    * Scroll the thread until ChatGPT mounts the turn with this key, then call
    * done(true) (done(false) after ~4 s). Direction comes from the turn order:
@@ -1059,15 +1074,16 @@
   JR.scrollToTurnKey = function (key, done) {
     var scroller = JR.site.scrollContainer();
     var order = JR.qa.turnOrderCache || [];
-    var target = order.indexOf(key);
+    var pos = turnPosition(order);
+    var target = pos(key);
     if (!scroller || target < 0) { done(false); return; }
-    // First jump to the estimated position, then step a screen at a time.
-    scroller.scrollTop = scroller.scrollHeight * (target / Math.max(order.length, 1)) - scroller.clientHeight / 2;
+    // First jump to the estimated position (when the whole order is known), then step a screen at a time.
+    if (order.length) scroller.scrollTop = scroller.scrollHeight * (target / order.length) - scroller.clientHeight / 2;
     var tries = 0;
     (function step() {
       if (JR.site.findTurnByKey(key)) { done(true); return; }
       if (++tries > 40) { done(false); return; }
-      var mounted = JR.site.turns().map(function (t) { return order.indexOf(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
+      var mounted = JR.site.turns().map(function (t) { return pos(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
       var dir = mounted.length && Math.min.apply(null, mounted) > target ? -1 : 1;
       scroller.scrollTop += dir * scroller.clientHeight * 0.8;
       setTimeout(step, 100);
@@ -1097,7 +1113,7 @@
 
   function buildNavWidget() {
     var widget = document.createElement("div");
-    widget.className = "jr-nav-widget";
+    widget.className = "jr-nav-widget jr-nav-widget--" + JR.site.name;
 
     var upBtn = document.createElement("button");
     upBtn.type = "button";
@@ -1306,6 +1322,103 @@
   };
 
   /**
+   * Open the popup a sent Popup message belongs to (DeepSeek's question outline lists them) — that very question:
+   * from its highlight in the chat down through nested popups / Reply, each on the version that leads there, the
+   * last on the version that asked it. Found in the stored items by highlighted text, then by the question.
+   * Progress in html[data-jr-outline] (for tests).
+   */
+  JR.openPopupForMessage = function (msg) {
+    var p = JR.parsePopupMessage(msg);
+    function trace(t) { document.documentElement.setAttribute("data-jr-outline", t); }
+    if (!p) return trace("not a popup message");
+    trace("looking");
+    getHighlightsByUrl().then(function (records) {
+      var chain = JR.chainForMessage(records, p);
+      if (!chain) return trace("no stored item for it");
+      openChain(chain, trace);
+    });
+  };
+
+  /** The stored items (versions) to open, from the chat's highlight down to the one that asked p; null if none. */
+  JR.chainForMessage = function (records, p) {
+    function norm(t) { return String(t || "").replace(/\s+/g, " ").trim(); }
+    // a Reply's message carries no quote (its record's text is the answer's start): any Reply, told apart by question
+    var same = records.filter(function (r) { return p.text == null ? r.wholeResponse : norm(r.text) === norm(p.text); });
+    var asked = same.filter(function (r) { var q = JR.qa.question(r.turnKeys || []); return q != null && norm(q) === norm(p.question); });
+    var quotes = new Set(same.map(function (r) { return r.quoteId; }));
+    var hit = asked[0] || (quotes.size === 1 ? same.filter(function (r) { return r.active; })[0] || same[0] : null);
+    if (!hit) return null;
+    var byId = {};
+    records.forEach(function (r) { byId[r.id] = r; });
+    var chain = [hit];
+    while (chain[0].parentId) {
+      var up = byId[chain[0].parentItemId] || records.filter(function (r) { return r.quoteId === chain[0].parentId && r.active; })[0];
+      if (!up) break;
+      chain.unshift(up);
+    }
+    return chain;
+  };
+
+  /** Make rec's version the one its popup shows (as the ‹ › arrows do). True if it changed. */
+  function showVersion(rec) {
+    var e = st.completedHighlights.get(rec.quoteId);
+    var i = e && e.items ? e.items.map(function (it) { return it.id; }).indexOf(rec.id) : -1;
+    if (i < 0 || e.activeItemIndex === i) return false;
+    e.activeItemIndex = i;
+    e.question = e.items[i].question;
+    e.responseHTML = e.items[i].responseHTML;
+    setActiveItem(rec.quoteId, rec.id);
+    return true;
+  }
+
+  function openChain(chain, trace) {
+    var k = 0, waited = 0;
+    function wait(what, again) {
+      if ((waited += 100) > 6000) return trace("stuck: " + what);
+      setTimeout(again, 100);
+    }
+    showVersion(chain[0]);
+    JR.scrollToAndOpenPopup(chain[0].quoteId);
+    (function level() {
+      var rec = chain[k];
+      if (!st.activePopup || st.activeHighlightId !== rec.quoteId) return wait("level " + (k + 1) + " popup", level);
+      if (showVersion(rec)) JR.rebuildPopupAfterEdit(st.activePopup, rec.quoteId); // was not in memory before it opened
+      if (++k >= chain.length) { JR.revealPopup(st.activePopup); return trace("opened " + chain.length + " level(s)"); }
+      var child = chain[k];
+      waited = 0;
+      (function openChild() {
+        var target = st.activePopup && (child.wholeResponse ? st.activePopup.querySelector(".jr-reply-whole-btn")
+          : st.activePopup.querySelector('[data-jr-highlight-id="' + child.quoteId + '"]'));
+        if (!target || !st.completedHighlights.has(child.quoteId)) return wait("level " + (k + 1) + " highlight", openChild);
+        showVersion(child);
+        waited = 0;
+        target.click(); // as the user would: Reply, or the highlight inside the popup
+        level();
+      })();
+    })();
+  }
+
+  /**
+   * After a jump the user asked for (outline, ^ v): scroll so the popup is fully in view, also while it grows for
+   * the next 2 s (its answer arriving). Opening a popup by clicking its highlight never scrolls (R18).
+   */
+  JR.revealPopup = function (popup) {
+    var sc = JR.site.scrollContainer();
+    if (!sc || !popup) return;
+    function fit() {
+      if (!popup.isConnected) return;
+      var band = JR.site.visibleBand(), r = popup.getBoundingClientRect(), margin = 12;
+      var d = r.top < band.top + margin ? r.top - band.top - margin
+        : r.bottom > band.bottom - margin ? Math.min(r.bottom - band.bottom + margin, r.top - band.top - margin) : 0;
+      if (Math.abs(d) > 1) sc.scrollTop += d;
+    }
+    fit();
+    var ro = new ResizeObserver(fit);
+    ro.observe(popup);
+    setTimeout(function () { ro.disconnect(); }, 2000);
+  };
+
+  /**
    * Convenience: close all popups, scroll to a highlight, and open its popup.
    */
   JR.scrollToAndOpenPopup = function (hlId) {
@@ -1315,6 +1428,7 @@
     if (connected) {
       entry.spans[0].scrollIntoView({ block: "center" });
       JR.createPopup({ completedId: hlId });
+      JR.revealPopup(st.activePopup);
       return;
     }
     // Highlight's turn isn't in the DOM (virtualized): scroll until ChatGPT
@@ -1329,6 +1443,7 @@
         if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
           e.spans[0].scrollIntoView({ block: "center" });
           JR.createPopup({ completedId: hlId });
+          JR.revealPopup(st.activePopup);
           JR.updateNavWidget();
           return;
         }

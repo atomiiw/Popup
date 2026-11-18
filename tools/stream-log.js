@@ -1,0 +1,7 @@
+// stream-log.js — B10 of docs/REGRESSION.md (testing only, read-only; tools/chrome_js.py --url <conv> @tools/stream-log.js).
+// Every frame while a popup streams: "ms:popupTextLength/siteAnswerTextLength". Equal pairs = Popup mirrors the site at
+// the site's own pace (no extra batching). Read: python3 tools/chrome_js.py --url <conv> "window.__sl.ev.join(\" \")"
+// per frame while a popup streams: popup text length vs the site's hidden answer (newest Popup Q&A) text length
+(function(){var L=window.__sl={t0:0,ev:[]};var on=false,last="";
+function src(){var host=location.hostname;var el;if(/deepseek/.test(host)){var its=document.querySelectorAll(".ds-virtual-list--printable [data-virtual-list-item-key]");el=its[its.length-1];el=el&&el.querySelector(".ds-markdown")}else if(/claude/.test(host)){var a=document.querySelectorAll("[data-cds=AssistantMessage] [data-cds=Prose]");el=a[a.length-1]}else{var t=document.querySelectorAll("[data-turn-key] [data-markdown-text-style=assistant-message]");el=t[t.length-1]}return el?el.textContent.length:-1}
+(function f(){var p=document.querySelector(".jr-popup--streaming");if(p&&!on){on=true;L.t0=performance.now()}if(on){var pr=document.querySelectorAll(".jr-popup .jr-popup-response");var pl=pr.length?pr[pr.length-1].textContent.length:-1;var k=pl+"/"+src();if(k!==last){L.ev.push(Math.round(performance.now()-L.t0)+":"+k);last=k}if(!p&&L.ev.length&&performance.now()-L.t0>3000){on=false;L.done=true}}if(!L.done)requestAnimationFrame(f)})();return "stream log on"})()

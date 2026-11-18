@@ -46,6 +46,14 @@
   }
   function scroller() { return first(C.scroller); }
   function root() { return scroller() || document; }
+  /** Coloured = tokens in at least two colours (uncoloured code can carry one plain inline colour). */
+  function codeColoured(pre) {
+    var seen = {};
+    Array.prototype.slice.call(pre.querySelectorAll('[style*="color"]'), 0, 60).forEach(function (s) { seen[s.style.color] = 1; });
+    return Object.keys(seen).length >= 2;
+  }
+  function theme() { return document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light"; }
+  function cardsRoot(composer) { var b = S.composerBox(composer); return b && b.parentElement; } // also holds the file tiles
   function q(k) { return String(k).replace(/["\\]/g, ""); }
   function isAnswerRow(row) { return !!(row && row.querySelector(C.answer)); }
   function answerRowOf(r, key) {
@@ -61,8 +69,11 @@
         else if (c.nodeType === 1) {
           if (c.tagName === "BR") { out += "\n"; continue; }
           if (c.tagName === "BUTTON" || c.tagName === "svg") continue;
+          // a sent file's tile carries its name as text ("1794982711152_image.png"): not part of the question
+          if (c.matches('[data-cds^="MessageAttachments"], [data-testid=file-thumbnail]')) continue;
           walk(c);
-          if (/^(P|DIV|LI)$/.test(c.tagName) && out && out[out.length - 1] !== "\n") out += "\n";
+          if (c.tagName === "P") out += "\n\n"; // claude.ai draws each paragraph of a message as its own <p>: a blank line (Popup's message parts)
+          else if (/^(DIV|LI)$/.test(c.tagName) && out && out[out.length - 1] !== "\n") out += "\n";
         }
       }
     })(el);
@@ -72,9 +83,10 @@
   JR.sites = JR.sites || {};
   var S = JR.sites.claude = {
     name: "claude",
+    label: "Claude",
 
     /** CSS that hides a Q&A's rows (see the header: never display:none here). */
-    hideDeclaration: "height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important",
+    hideDeclaration: JR_HOST.all.claude.decl,
 
     // --- Turns (= assistant rows) ---
     turns: function () { return Array.prototype.slice.call(root().querySelectorAll(C.row)).filter(isAnswerRow); },
@@ -116,13 +128,35 @@
     },
     hasUndrawnWidget: function () { return false; },
     renderFailed: function () { return false; },
-    assistantHTML: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.innerHTML; }).join(""); },
+    // the body itself, not its children: the site styles answers under its class (as ChatGPT, R36f)
+    assistantHTML: function (turn) {
+      return S.assistantBodies(turn).map(function (b) { return b.outerHTML.replace(/^<(\w+)/, '<$1 data-jr-theme="' + theme() + '"'); }).join("");
+    },
+    /** A mounted answer is worth copying only once its code is coloured (claude.ai colours code on screen only:
+     *  a hidden row never is; site-render.js draws it where it is). */
+    harvestable: function (turn) {
+      return Array.prototype.every.call(turn.querySelectorAll(C.answerBody + " pre"), codeColoured);
+    },
+    codeColoured: codeColoured,
+    /** Mark a copy with the theme it was drawn in: claude.ai colours code tokens with inline styles of that theme
+     *  (styles.css turns a copy's code around when the theme changes afterwards). */
+    markCopy: function (el) { if (el.getAttribute("data-jr-theme") !== theme()) el.setAttribute("data-jr-theme", theme()); },
     assistantText: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.textContent || ""; }).join("\n"); },
     /** The question: the human row right before the answer row (null if the window unmounted it). */
     userText: function (turn) {
       var row = turn && turn.previousElementSibling;
       var u = row && row.matches && row.matches(C.row) ? row.querySelector(C.user) : null;
       return u ? textWithBreaks(u) : null;
+    },
+
+    /** Files a sent question carried, from its (hidden) row while mounted: { name, mime, url } (after a reload). */
+    sentAttachments: function (key) {
+      var u = key && document.querySelector(C.user + "[" + KEY + '="' + q(key) + '"]');
+      if (!u) return [];
+      return Array.prototype.map.call(u.querySelectorAll('[data-cds^="MessageAttachments"][data-testid=file-thumbnail]'), function (t) {
+        var img = t.querySelector("img"), name = (t.textContent || "").trim().replace(/^\d{10,}_/, "") || "file";
+        return { id: null, name: name, mime: img ? "image/" : "", url: img ? img.src : null };
+      });
     },
 
     // --- Composer (tiptap ProseMirror, like ChatGPT's) ---
@@ -146,13 +180,23 @@
     isGenerating: function () {
       return !!(document.querySelector(C.answer + '[data-is-streaming="true"]') || S.stopButton());
     },
-    // Attachments: claude.ai's file chips not probed yet (docs/CLAUDEAI.md browser request C6)
+    // Attachments (C6, live 2026-11-18): file tiles `[data-cds-attachment]` sit one level above the box with the send
+    // button; each has `button[data-cds-attachment-remove]` labelled "Remove <name>", a pasted image's name prefixed
+    // with a timestamp ("1794982515243_image.png")
+    attachBox: function (composer) { return cardsRoot(composer); },
     composerButtons: function (composer) {
-      var box = S.composerBox(composer);
-      return box ? Array.prototype.slice.call(box.querySelectorAll("button[aria-label]")) : [];
+      var r = cardsRoot(composer);
+      return r ? Array.prototype.slice.call(r.querySelectorAll("button[aria-label]")) : [];
     },
-    composerHasAttachments: function () { return false; },
-    attachmentsUploading: function () { return false; },
+    buttonLabel: function (b) { return (b.getAttribute("aria-label") || "").replace(/^(Remove )\d{10,}_/, "$1"); },
+    composerHasAttachments: function (composer) {
+      var r = cardsRoot(composer);
+      return !!(r && r.querySelector("[data-cds-attachment]"));
+    },
+    attachmentsUploading: function (composer) {
+      var r = cardsRoot(composer);
+      return !!(r && r.querySelector("[data-cds-attachment] [role=progressbar], [data-cds-attachment][aria-busy=true], [data-cds-attachment] [aria-busy=true]"));
+    },
 
     // --- Layout ---
     scrollContainer: function () { return scroller() || document.scrollingElement; },

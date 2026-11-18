@@ -39,6 +39,7 @@
     return null;
   }
   function root() { return scroller() || document; }
+  function cardsRoot(composer) { var b = S.composerBox(composer); return b && b.parentElement; } // the input card
   function isAnswer(item) {
     return !!(item && item.querySelector(C.answerBody + ", " + C.answerBodyFallback));
   }
@@ -101,6 +102,9 @@
   JR.sites = JR.sites || {};
   var S = JR.sites.deepseek = {
     name: "deepseek",
+    label: "DeepSeek",
+    hideDeclaration: JR_HOST.all.deepseek.decl,
+    chatUrl: function (conv) { return "/a/chat/s/" + conv; },
 
     // --- Turns (= answer items) ---
     turns: function () { return Array.prototype.slice.call(root().querySelectorAll(C.item)).filter(isAnswer); },
@@ -120,11 +124,20 @@
       if (Number(k) >= 0) return k;
       return realOf[k] || null;
     },
+    /** While Popup sends: CSS matching every item that arrives under a temporary (negative) key — the question item
+     *  mounts before its answer and before the reply names their ids, so key-based hiding can't catch it yet.
+     *  shortcut: an older temporary item (the user's own send this session) that mounts during a Popup send hides
+     *  until the send ends; key the exception list on the snapshot if that ever shows. */
+    freezeSelector: function () {
+      var known = Array.prototype.slice.call(root().querySelectorAll(C.item)).map(function (i) { return i.getAttribute(KEY); })
+        .filter(function (k) { return Number(k) < 0; });
+      return C.item + "[" + KEY + '^="-"]' + known.map(function (k) { return ":not(" + itemSel(k) + ")"; }).join("");
+    },
     /** CSS for the answer item with this key and the user item before it (also under its temporary key). */
     turnSelector: function (key) {
       if (!key) return null;
       var keys = [String(key)].concat(tempsOf[key] || []);
-      return keys.map(function (k) { return itemSel(k) + ", " + C.item + ":has(+ " + itemSel(k) + ")"; }).join(", ");
+      return keys.map(JR_HOST.all.deepseek.hide).join(", ");
     },
     findTurnByKey: function (key) {
       if (!key) return null;
@@ -156,7 +169,8 @@
     },
     hasUndrawnWidget: function () { return false; },
     renderFailed: function () { return false; },
-    assistantHTML: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.innerHTML; }).join(""); },
+    // the body itself, not its children: the site styles answers under its class (as ChatGPT, R36f)
+    assistantHTML: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.outerHTML; }).join(""); },
     assistantText: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.textContent || ""; }).join("\n"); },
     /** The question: text of the user item right before the answer (it is mounted with it). */
     userText: function (turn) {
@@ -200,13 +214,29 @@
       return !!(b && node && b.contains(node));
     },
     isGenerating: function () { return document.documentElement.hasAttribute("data-jr-ds-generating"); },
-    // Attachments: DeepSeek's file cards not probed yet (docs/DEEPSEEK.md browser request B5)
+    // Attachments (B5, live 2026-11-18): file cards `.ds-animated-size-item` sit in the input card above the box with
+    // the send button; no file name text — the image's alt is the file's name; `.ds-icon` in the card removes it;
+    // while uploading a `.ds-loading` ring shows (its overlay goes to opacity 0 when done)
+    /** The cards' remove icons (chat.js matches them to files by buttonLabel). */
+    attachBox: function (composer) { return cardsRoot(composer); },
     composerButtons: function (composer) {
-      var box = S.composerBox(composer);
-      return box ? Array.prototype.slice.call(box.querySelectorAll("[aria-label]")) : [];
+      var r = cardsRoot(composer);
+      return r ? Array.prototype.slice.call(r.querySelectorAll(".ds-animated-size-item .ds-icon")) : [];
     },
-    composerHasAttachments: function () { return false; },
-    attachmentsUploading: function () { return false; },
+    buttonLabel: function (b) {
+      var card = b.closest(".ds-animated-size-item"), img = card && card.querySelector("img[alt]");
+      return "Remove " + (img ? img.getAttribute("alt") : card ? card.textContent : "").trim();
+    },
+    composerHasAttachments: function (composer) {
+      var r = cardsRoot(composer);
+      return !!(r && r.querySelector(".ds-animated-size-item"));
+    },
+    attachmentsUploading: function (composer) {
+      var r = cardsRoot(composer);
+      return !!r && Array.prototype.some.call(r.querySelectorAll(".ds-animated-size-item .ds-loading"), function (l) {
+        return l.checkVisibility({ opacityProperty: true });
+      });
+    },
 
     // --- Layout ---
     scrollContainer: function () { return scroller() || document.scrollingElement; },
@@ -265,7 +295,11 @@
       if (!msg) return "";
       var fromFragments = Array.isArray(msg.fragments) ? msg.fragments.filter(function (f) { return !f.type || /^response$/i.test(f.type); })
         .map(function (f) { return typeof f.content === "string" ? f.content : ""; }).join("") : "";
-      return fromFragments || (typeof msg.content === "string" ? msg.content : "");
+      var md = fromFragments || (typeof msg.content === "string" ? msg.content : "");
+      // search sources: [citation:N] → a link "N" to the SEARCH fragment's result N (as deepseek-net.js does live)
+      var url = {};
+      (msg.fragments || []).forEach(function (f) { (f.results || []).forEach(function (r) { if (r && r.cite_index != null && r.url) url[r.cite_index] = r.url; }); });
+      return md.replace(/\[citation:(\d+)\]/g, function (m, n) { return url[n] ? "[" + n + "](" + url[n] + ")" : ""; });
     },
     /** This conversation's messages, as the page loads them (same origin, the page's own login). Null on failure. */
     fetchHistory: function (conv) {
@@ -277,10 +311,19 @@
         .then(function (j) { var d = j && j.data && j.data.biz_data; return d && Array.isArray(d.chat_messages) ? d.chat_messages : null; })
         .catch(function () { return null; });
     },
+    /** An image preview's address from a history file's signed_path (DeepSeek's own builder, main.js 2026-11-18:
+     *  https://<files host>/api<signed_path>&ty=p). shortcut: the default files host; DeepSeek can configure another
+     *  (getFilesBaseDomain) — read it from the page if previews break. */
+    filePreviewUrl: function (signedPath) {
+      if (!signedPath) return null;
+      var u = /^https?:\/\//.test(signedPath) ? signedPath : "https://files.deepseeksvc.com/api" + signedPath;
+      return u + (u.indexOf("?") === -1 ? "?" : "&") + "ty=p";
+    },
     /** Markdown → HTML in DeepSeek's answer classes (JR.renderMarkdown draws, this re-dresses it). */
     renderAnswer: function (md) {
       var box = document.createElement("div");
       box.innerHTML = JR.renderMarkdown(md || "");
+      Array.prototype.forEach.call(box.querySelectorAll("a"), function (a) { if (/^\d+$/.test(a.textContent)) a.classList.add("jr-cite"); }); // a source number
       Object.keys(DS_CLASS).forEach(function (tag) {
         Array.prototype.forEach.call(box.getElementsByTagName(tag), function (el) { el.classList.add(DS_CLASS[tag]); });
       });
@@ -289,5 +332,123 @@
 
     /** For JR.SEL.turn (closest/matches on any node). */
     turnSelectorAll: C.item,
+    /** A turn's place in the conversation: DeepSeek's message ids count up in conversation order. */
+    turnPosition: function (key) { return /^\d+$/.test(key) ? Number(key) : -1; },
+
+    /** Keep this hidden answer drawn in DeepSeek's list (0 px, unseen) so Popup can copy DeepSeek's own rendering
+     *  (it can't be framed); null lets go. deepseek-net.js widens the list's window to reach it. */
+    keepMounted: function (key) {
+      if (key) document.documentElement.setAttribute("data-jr-ds-need", String(key));
+      else document.documentElement.removeAttribute("data-jr-ds-need");
+    },
+
+    /** Called every 500 ms (content.js): DeepSeek's question outline at the right edge lists every user message.
+     *  Popup's are shown there as their question only ("↳ question", user, 2026-11-18: not hidden — the outline places
+     *  rows by index, hiding left gaps); a click opens that popup. Entries have build-hashed classes: found by text. */
+    tidy: function () {
+      Array.prototype.forEach.call(document.querySelectorAll(C.scroller + " .ds-virtual-list-visible-items"), function (box) {
+        if (box.querySelector(C.item)) return; // the conversation itself (markOutline checks again: a new chat's list starts empty)
+        if (!outlineSeen.has(box)) {
+          outlineSeen.add(box);
+          new MutationObserver(function () { markOutline(box); }).observe(box, { childList: true, subtree: true, characterData: true });
+        }
+        markOutline(box);
+      });
+    },
   };
+  /**
+   * DeepSeek's own rendering of a hidden answer (math, code blocks), as site-render.js gives ChatGPT's: DeepSeek can't
+   * be framed, but the answer is in its list — have it drawn (0 px, unseen; keepMounted), copy it once its drawing holds
+   * still, let go. Null after ~5 s (an answer above the list's first drawn item can't be reached).
+   */
+  JR.siteRender = function (key) {
+    S.keepMounted(key);
+    var last = -1, n = 0;
+    return new Promise(function (resolve) {
+      (function poll() {
+        // the whole drawing holds still (DeepSeek colours code a moment after the text is in), not only the text
+        var turn = S.findTurnByKey(key), len = turn && S.assistantText(turn).trim() ? S.assistantHTML(turn).length : -1;
+        if (turn && len > 0 && len === last) {
+          var r = { html: S.assistantHTML(turn), question: S.userText(turn) };
+          S.keepMounted(null);
+          return resolve(r);
+        }
+        last = len;
+        if (++n > 25) { S.keepMounted(null); return resolve(null); }
+        setTimeout(poll, 200);
+      })();
+    });
+  };
+
+  var outlineSeen = new WeakSet();
+  // This conversation's stored items, to tell a deleted popup (its messages stay at DeepSeek) from a kept one;
+  // read again when storage changes (markOutline runs every 500 ms, so a late read corrects itself)
+  var outlineRecords = null, recordsUrl = null;
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function () { outlineRecords = null; });
+  }
+  function records() {
+    if (recordsUrl !== location.pathname) { outlineRecords = null; recordsUrl = location.pathname; }
+    if (outlineRecords === null && typeof getHighlightsByUrl === "function") {
+      outlineRecords = false; // loading
+      getHighlightsByUrl().then(function (r) { outlineRecords = r; }, function () { outlineRecords = null; });
+    }
+    return outlineRecords || null;
+  }
+  var found = new WeakMap(); // records → Set of messages that have a stored item (a kept popup; computed once)
+  /** Deleted in Popup: no stored item for it — only once the questions of the stored items it could be are read
+   *  back (before that a Reply can't be told apart: not "deleted" yet). */
+  function deleted(recs, msg, p) {
+    if (!recs || !JR.chainForMessage) return false;
+    var set = found.get(recs);
+    if (!set) found.set(recs, set = new Set());
+    if (set.has(msg)) return false;
+    if (JR.chainForMessage(recs, p)) { set.add(msg); return false; }
+    var norm = function (t) { return String(t || "").replace(/\s+/g, " ").trim(); };
+    return recs.filter(function (r) { return p.text == null ? r.wholeResponse : norm(r.text) === norm(p.text); })
+      .every(function (r) { return JR.qa.question(r.turnKeys || []) != null; }); // every one it could be is known and isn't it
+  }
+  function markOutline(box) {
+    if (box.querySelector(C.item)) return;
+    var recs = records();
+    Array.prototype.forEach.call(box.children, function (row) {
+      var text = row.firstElementChild || row, msg = text.textContent || "";
+      var p = JR.isPopupMessage(msg) ? JR.parsePopupMessage(msg) : null;
+      var gone = !!p && deleted(recs, msg, p);
+      var label = !p ? null : gone ? "\u21b3 deleted" : p.question ? "\u21b3 " + p.question.replace(/\s+/g, " ").trim() : null;
+      if (row.classList.contains("jr-outline-popup") !== !!label) row.classList.toggle("jr-outline-popup", !!label);
+      if (row.classList.contains("jr-outline-gone") !== gone) row.classList.toggle("jr-outline-gone", gone);
+      if (label && text.getAttribute("data-jr-q") !== label) text.setAttribute("data-jr-q", label);
+    });
+  }
+  // Hovering an outline entry shows DeepSeek's tooltip with the entry's full text: for a popup question, the question
+  // only. Checked every frame while hovering (rAF runs before the frame is painted: the full text is never seen).
+  var tipUntil = 0, tipRow = null;
+  document.addEventListener("mouseover", function (e) {
+    var row = e.target.closest && e.target.closest(".jr-outline-popup");
+    if (!row) return;
+    tipRow = row;
+    var running = Date.now() < tipUntil;
+    tipUntil = Date.now() + 3000;
+    if (running) return;
+    (function fix() {
+      Array.prototype.forEach.call(document.querySelectorAll(".ds-tooltip"), function (tip) {
+        var p = JR.isPopupMessage(tip.textContent || "") ? JR.parsePopupMessage(tip.textContent) : null;
+        if (!p || !p.question) return;
+        var shown = tipRow && tipRow.classList.contains("jr-outline-gone") ? "deleted" : p.question; // as its row says
+        var w = document.createTreeWalker(tip, NodeFilter.SHOW_TEXT), n, first = true;
+        while ((n = w.nextNode())) { n.nodeValue = first ? shown : ""; first = false; } // DeepSeek's own text nodes
+      });
+      if (Date.now() < tipUntil) requestAnimationFrame(fix);
+    })();
+  }, true);
+  // A click on a popup question in the outline opens its popup (DeepSeek would scroll to the hidden message)
+  document.addEventListener("click", function (e) {
+    var row = e.target.closest && e.target.closest(".jr-outline-popup");
+    if (!row || !JR.openPopupForMessage) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!row.classList.contains("jr-outline-gone")) JR.openPopupForMessage((row.firstElementChild || row).textContent || "");
+  }, true);
+
 })();

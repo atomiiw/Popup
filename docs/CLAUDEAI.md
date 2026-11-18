@@ -91,7 +91,7 @@ Structure follows docs/DEEPSEEK.md.
 - No REST/JSON read of answers needed: the render frame gives claude.ai's own rendering. (If ever needed, REST
   `chat_conversations/<id>/chat_messages` may be JSON — not probed; binary StreamTimeline is off limits.)
 
-## 8. Shared-file edits beyond DeepSeek's list (apply in Step 4a, after R36)
+## 8. Shared-file edits beyond DeepSeek's list — **applied 1.2.13-dev.32** (docs/DEEPSEEK.md "Wiring")
 1. `manifest.json`: host `https://claude.ai/*`; load `src/sites/claude.js` before `site-adapter.js`; `chatgpt-render.js`
    also on claude.ai (rename to a neutral name, e.g. `site-render.js`); `net-tap.js` stays ChatGPT-only (no claude-net).
 2. `site-adapter.js`: pick `JR.sites.claude` on `claude.ai`.

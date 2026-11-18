@@ -28,7 +28,9 @@
 
 html.dark,
 html[class*="dark"],
-html[data-theme="dark"] {
+html[data-theme="dark"],
+html[data-mode="dark"], /* claude.ai */
+body.dark /* DeepSeek */ {
   --jr-bg: #1a1c22;
   --jr-border: #2e3038;
   --jr-text: #e4e4e7;
@@ -101,8 +103,9 @@ html[data-theme="dark"] {
 .jr-send-mode-item:focus-visible,
 .jr-highlight-trigger-btn:focus-visible,
 .jr-reply-whole-btn:focus-visible {
-  outline: 2px solid var(--jr-action);
-  outline-offset: 2px;
+  outline: none; /* a soft glow, not a hard box (user, 2026-11-18: "丑框") */
+  box-shadow: 0 0 0 3px var(--jr-focus-ring);
+  border-radius: 6px;
 }
 
 /* ==========================================================================
@@ -174,6 +177,8 @@ html[data-theme="dark"] {
 
 html.dark .jr-popup--chained,
 html[class*="dark"] .jr-popup--chained,
+html[data-mode="dark"] .jr-popup--chained,
+body.dark .jr-popup--chained,
 html[data-theme="dark"] .jr-popup--chained {
   box-shadow: 0 0 0 1px var(--jr-border), 0 2px 8px rgba(0, 0, 0, 0.55), 0 0.5px 3px rgba(0, 0, 0, 0.35);
 }
@@ -392,6 +397,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
    ========================================================================== */
 
 .jr-popup-loading {
+  box-sizing: border-box; /* as under ChatGPT's reset, on every site (--jr-hold-h is the whole height) */
   padding: 14px;
   border-top: 1px solid var(--jr-border);
   border-radius: 0 0 calc(var(--jr-radius) - 1px) calc(var(--jr-radius) - 1px);
@@ -401,7 +407,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   justify-content: center;
   font-size: 14px;
   color: var(--jr-text-muted);
-  min-height: 48px;
+  min-height: max(48px, var(--jr-hold-h, 0px)); /* --jr-hold-h: a version switch keeps the answer's height (popup.js) */
   flex-shrink: 0;
 }
 
@@ -594,6 +600,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 }
 
 .jr-edit-send-wrapper:hover .jr-send-mode-dropdown:not(.jr-disabled) { display: flex; }
+.jr-fixed-probe { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
 
 .jr-send-mode-item {
   padding: 5px 14px;
@@ -645,6 +652,7 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: none;
+  container-type: inline-size; /* ChatGPT sizes tables with 100cqw: against the 1172px thread a table got 202px of side padding in a popup */
   font-size: 16px;
   line-height: 1.6;
   overflow-wrap: break-word;
@@ -748,20 +756,23 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response li { margin-bottom: 0.25em; }
 .jr-popup-response li:last-child { margin-bottom: 0; }
 
-.jr-popup-response table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 13px; }
-.jr-popup-response th, .jr-popup-response td { border: 1px solid var(--jr-border); padding: 6px 10px; text-align: left; }
+/* Tables Popup draws itself (.jr-table-wrap, Popup's Markdown renderer). The sites' own tables (ChatGPT's, claude.ai's,
+   DeepSeek's — also DeepSeek's history redrawn in its classes, .ds-markdown) keep the site's look (user, 2026-11-18:
+   Popup's grid on DeepSeek's table looked ugly) */
+.jr-popup-response .jr-table-wrap:not(.ds-markdown *) table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.jr-popup-response .jr-table-wrap:not(.ds-markdown *) :is(th, td) { border: 1px solid var(--jr-border); padding: 6px 10px; text-align: left; }
+.jr-popup-response .jr-table-wrap:not(.ds-markdown *) th { background: var(--jr-highlight-bg); font-weight: 600; }
 /* A wide table in a narrow popup scrolls sideways instead of squeezing its columns
    (ChatGPT's page CSS lays tables out fixed, which ignores cell widths: T16) */
-.jr-popup-response .jr-table-wrap { overflow-x: auto; margin: 1em 0; }
+.jr-popup-response .jr-table-wrap { overflow-x: auto; margin: 1em 0; scrollbar-width: thin; }
 .jr-popup-response .jr-table-wrap table { margin: 0; table-layout: auto !important; }
-.jr-popup-response .jr-table-wrap th, .jr-popup-response .jr-table-wrap td { min-width: 5em !important; }
+.jr-popup-response .jr-table-wrap:not(.ds-markdown *) :is(th, td) { min-width: 5em !important; }
 /* A checkbox, drawn even though ChatGPT's page CSS resets every input to 0 × 0 (T16) */
 .jr-popup-response li:has(> .jr-task) { list-style: none; margin-left: -1.2em; }
 .jr-popup-response input.jr-task {
   appearance: auto !important; width: 13px !important; height: 13px !important; border: revert !important;
   flex: none; margin: 0 4px 0 0; vertical-align: -2px; accent-color: var(--jr-action);
 }
-.jr-popup-response th { background: var(--jr-highlight-bg); font-weight: 600; }
 
 .jr-popup-response a { color: var(--jr-link); text-decoration: underline; cursor: pointer; pointer-events: auto; }
 .jr-popup-response img { max-width: 100%; height: auto; }
@@ -961,6 +972,8 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 
 html.dark .jr-popup-confirm-icon-btn--danger:hover,
 html[class*="dark"] .jr-popup-confirm-icon-btn--danger:hover,
+html[data-mode="dark"] .jr-popup-confirm-icon-btn--danger:hover,
+body.dark .jr-popup-confirm-icon-btn--danger:hover,
 html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f87171; }
 
 /* ==========================================================================
@@ -1096,7 +1109,33 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
    turn is a Popup Q&A (html.jr-tail-hidden, set by qa-content.js / chat.js).
    DOM: [data-thread-find-target=conversation] > div.relative (turn list) + div.shrink-0 (spacer). */
 html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(.relative)[style*="height"] {
-  display: none !important;
+  height: 0 !important; /* not display:none: that also drops the list's 6px flex gap and the page moved 6px at max scroll (R36a, E-send-3) */
+}
+/* DeepSeek: its question outline (right edge) lists Popup questions too: shown as their question only, indented
+   ("↳ …", sites/deepseek.js tidy). DeepSeek's own text stays in the row (it owns that node), hidden under ours. */
+.jr-outline-popup > :first-child { visibility: hidden; position: relative; }
+.jr-outline-popup > :first-child::after {
+  content: attr(data-jr-q); visibility: visible; position: absolute; inset: 0; padding-left: 0.6em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: inherit;
+}
+.jr-outline-gone > :first-child::after { opacity: 0.45; font-style: italic; } /* deleted in Popup: no question, no click */
+.jr-outline-gone { cursor: default; }
+/* ...and when it opens (fixed, z-index 5, 240 px wide) it must cover Popup's highlight arrows, not the reverse;
+   closed it is 34 px at the edge, clear of them */
+.jr-nav-widget.jr-nav-widget--deepseek { z-index: 4; }
+/* claude.ai colours code tokens with inline styles of the theme they were drawn in: a copy made in the other theme
+   gets its code turned around (lightness inverted, hues kept) — user's dark-mode run, 2026-11-18 */
+html[data-mode="dark"] .jr-popup-response [data-jr-theme="light"] pre code,
+html[data-mode="light"] .jr-popup-response [data-jr-theme="dark"] pre code { filter: invert(1) hue-rotate(180deg); }
+/* DeepSeek search sources in a popup drawn from its stream / history: a small round number, like DeepSeek's own */
+.jr-popup-response a.jr-cite {
+  display: inline-block; min-width: 1.4em; margin: 0 0.15em; padding: 0 0.35em; border-radius: 999px;
+  font-size: 0.72em; line-height: 1.6; text-align: center; vertical-align: 0.12em; text-decoration: none;
+  color: inherit; background: color-mix(in srgb, currentColor 10%, transparent);
+}
+/* claude.ai: the same reserved space is div[data-testid=chat-extra-space] with an inline min-height */
+html.jr-tail-hidden [data-testid="chat-extra-space"] {
+  min-height: 0 !important;
 }
 
 
@@ -1211,16 +1250,25 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
   width: auto !important; max-width: 100% !important; min-width: 0 !important;
 }
 .jr-popup-response [data-d-table-viewport] { overflow-x: auto !important; }
+/* DeepSeek widens its table area into the page gutters (negative margins from the window width): in a popup
+   it stays inside the answer and scrolls sideways (live, dev.34: margin-left -669px, 3 of 5 columns cut off) */
+.jr-popup-response .ds-scroll-area { margin-inline: 0 !important; padding-inline: 0 !important; width: auto !important; max-width: 100% !important; scrollbar-width: thin !important; }
+/* DeepSeek draws its scroll bars with script (gutters sized on its page): in a popup they're a dead copy — a fixed grey
+   band (user: "丑"). The browser's thin bar instead. */
+.jr-popup-response .ds-scroll-area__gutters { display: none !important; }
 
 /* R34: hidden same-origin frame where ChatGPT draws a Popup answer (chatgpt-render.js). Off screen but
    laid out (display:none would not render), at about a popup's width so ChatGPT sizes tables/code for it. */
 .jr-render-frame {
+  /* Inside the viewport (unseen: transparent, behind the page, not clickable): claude.ai colours code only when it is
+     on screen (IntersectionObserver), and off screen at -20000px a copied answer kept black-and-white code */
   position: fixed;
-  left: -20000px;
+  left: 0;
   top: 0;
   width: 420px;
   height: 900px;
   border: 0;
   opacity: 0;
   pointer-events: none;
+  z-index: -1;
 }

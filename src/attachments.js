@@ -99,7 +99,7 @@
     if (questionDiv) JR.layerNotes(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
     if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
     var note = questionDiv && JR.showAttachmentNote(questionDiv, null,
-      "Send or remove your files in ChatGPT\u2019s box first");
+      "Send or remove your files in " + JR.site.label + "\u2019s box first");
     if (note) note.classList.add("jr-attach-note--blocked");
     return true;
   };
@@ -112,6 +112,7 @@
 
   /** A read-only item for an attachment known only from ChatGPT's data ({ id, name, mime }). */
   JR.attachmentItemFromMeta = function (a) {
+    if (a.url) return JR.attachmentItem({ name: a.name, type: a.mime }, null, a.url); // the site's own address (claude.ai)
     if (!/^image\//.test(a.mime) || !JR.qa || !JR.qa.fileUrl) return JR.attachmentItem({ name: a.name, type: a.mime }, null);
     var item = document.createElement("span"); // a placeholder until the address arrives
     item.className = "jr-attach-item";

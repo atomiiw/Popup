@@ -12,6 +12,7 @@
 <div id="math"><p>You do not use <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>Z</mi><mn>0</mn><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">Z_0=50</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">Z0=50</span></span> here. It is far away.</p></div>
 <pre id="out"></pre>
 <script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
+<script src="../src/site-hosts.js"></script>
 <script src="../src/jr-namespace.js"></script>
 <script src="../src/site-adapter.js"></script>
 <script src="../src/dom-helpers.js"></script>
@@ -21,7 +22,7 @@
 <script src="../src/popup-helpers.js"></script>
 <script src="../src/attachments.js"></script>
 <script src="../src/qa-content.js"></script>
-<script src="../src/chatgpt-render.js"></script>
+<script src="../src/site-render.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
 <script>
@@ -438,6 +439,7 @@ JR.qa = {
     { id: "file-2", name: "shot.png", mime: "image/png" }, { id: "file-3", name: "gone.png", mime: "image/png" }]); },
   fileUrl: function (id) { return Promise.resolve(id === "file-2" ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" : null); },
   forgetFileUrl: function () {},
+  upgrade: function () {},
 };
 JR.showSentAttachments(sq, { turnKeys: ["turn-1"], attachments: 3 });
 check("Step 2c: switching version replaces the strip", sq.parentNode.querySelectorAll(".jr-popup-attach").length === 1);
@@ -760,9 +762,11 @@ var W3 = window.innerHeight, C3 = 3000;
 // both sides reachable by scrolling → the side with more room on screen
 check("R18: both sides reachable, highlight high on screen → below", dir3(C3, 1500, 1500 - 0.2 * W3) === "below", dir3(C3, 1500, 1500 - 0.2 * W3));
 check("R18: both sides reachable, highlight low on screen → above", dir3(C3, 1500, 1500 - 0.8 * W3) === "above", dir3(C3, 1500, 1500 - 0.8 * W3));
-// only one side reachable → that side, even if the screen has more room on the other
-check("R18: scrolled to the end, only above reachable → above", dir3(C3, C3 - 0.55 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.55 * W3, C3 - W3));
-check("R18: start of the chat, only below reachable → below", dir3(C3, 0.55 * W3, 0) === "below", dir3(C3, 0.55 * W3, 0));
+// end of the chat: the room on screen decides (user, 2026-11-18) — below makes the page longer
+check("R18: scrolled to the end, highlight high on screen → below", dir3(C3, C3 - 0.75 * W3, C3 - W3) === "below", dir3(C3, C3 - 0.75 * W3, C3 - W3));
+check("R18: scrolled to the end, highlight low on screen → above", dir3(C3, C3 - 0.2 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.2 * W3, C3 - W3));
+// above only when the chat can scroll up far enough to show it
+check("R18: start of the chat, above not reachable → below", dir3(C3, 0.55 * W3, 0) === "below", dir3(C3, 0.55 * W3, 0));
 // neither side reachable (very short chat) → below: the popup makes the page longer
 check("R18: short chat, neither side reachable → below", dir3(W3 + 50, 50 + 0.5 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.5 * W3, 50));
 
@@ -794,10 +798,11 @@ document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r16
 document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 7 }));
 check("R26: a slip on a short popup's edge saves no height", !p16s.style.getPropertyValue("--jr-popup-h") && JR.state.customPopupHeightL1 === saved16s, p16s.style.getPropertyValue("--jr-popup-h") + " / " + JR.state.customPopupHeightL1);
 p16s.remove(); JR.state.customPopupHeightL1 = saved16s;
-// A popup with a short answer still picks its side for 70vh (an edit may bring a long answer; the side never flips)
+// A popup with a short answer still picks its side for 70vh (an edit may bring a long answer; the side never flips):
+// top of the chat, more room above on screen but not 70vh → below
 var p16d = popup3("short");
-JR.positionPopup(p16d, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
-check("R26: a short-answer popup at the end of the chat opens above (side chosen for 70vh)", p16d._jrLockedDirection === "above", p16d._jrLockedDirection);
+JR.positionPopup(p16d, place3(C3, 0.6 * W3, 0), host3, null, []);
+check("R26: a short-answer popup picks its side for 70vh (above can't hold it → below)", p16d._jrLockedDirection === "below", p16d._jrLockedDirection);
 p16d.remove();
 
 // R19/R20: drag the far edge (height, 40-70vh, only the answer area changes) or a far corner (both)
@@ -912,17 +917,17 @@ p8.querySelector(".jr-popup-response").remove();
 host3.appendChild(p8);
 var up8 = p8.querySelector(".jr-popup-upper");
 check("R16: writing a question, the popup is only as tall as its content", Math.abs(p8.offsetHeight - up8.offsetHeight) <= 2, p8.offsetHeight + " vs " + up8.offsetHeight);
-var load8 = document.createElement("div"); load8.className = "jr-popup-loading"; load8.textContent = "Waiting for response…";
+var load8 = document.createElement("div"); load8.className = "jr-popup-loading"; load8.textContent = "Loading…";
 p8.appendChild(load8);
 check("R16: waiting for the answer, the popup is still compact", Math.abs(p8.offsetHeight - up8.offsetHeight - load8.offsetHeight) <= 2 && p8.offsetHeight < H70, p8.offsetHeight);
 p8.innerHTML = '<div class="jr-popup-delete-confirm"><span class="jr-popup-confirm-text">Delete this highlight?</span></div>';
 var conf8 = p8.querySelector(".jr-popup-delete-confirm");
 check("R16: the delete confirmation is compact", Math.abs(conf8.offsetHeight - p8.offsetHeight) <= 2 && p8.offsetHeight < 100, conf8.offsetHeight + " vs " + p8.offsetHeight);
 p8.remove();
-// A compact popup opens on the side its 70vh answer will fit (end of the chat → above)
+// A compact popup opens on the side its 70vh answer will fit (top of the chat: above can't → below)
 var p8d = popup3("x"); p8d.querySelector(".jr-popup-response").remove();
-JR.positionPopup(p8d, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
-check("R18: a compact popup chooses its side for the answer's height", p8d._jrLockedDirection === "above", p8d._jrLockedDirection);
+JR.positionPopup(p8d, place3(C3, 0.6 * W3, 0), host3, null, []);
+check("R18: a compact popup chooses its side for the answer's height", p8d._jrLockedDirection === "below", p8d._jrLockedDirection);
 p8d.remove();
 
 // R23: after ChatGPT re-lays the chat (window resize), every open popup, parents first, goes back to its own highlight
@@ -1022,6 +1027,15 @@ for (var k25 = 0; k25 < 8; k25++) {
   JR.reapplyHighlights(); while (idle25.length) runIdle25(50, false);
 }
 check("Lag: a highlight its block keeps removing is not wrapped again and again", wraps25 <= 4, wraps25);
+// claude.ai Settings (hash changes): each navigation unwraps Popup's own spans and restores — that must not count as the
+// page removing them (after 3 Settings trips the chat's highlights stopped coming back)
+var ready25 = JR.state.restoreReady, chat25 = JR.site.isChatPage, watch25 = JR.watchTurnMounts;
+JR.site.isChatPage = function () { return false; }; JR.watchTurnMounts = function () {}; // only the reset at its start (no storage, R24's observer stays)
+JR.restoreHighlights();
+JR.site.isChatPage = chat25; JR.watchTurnMounts = watch25; JR.state.restoreReady = ready25;
+JR.state.completedHighlights.get("hl-252").spans.forEach(function (sp) { if (sp.isConnected) sp.replaceWith(sp.textContent); });
+JR.reapplyHighlights(); while (idle25.length) runIdle25(50, false);
+check("claude.ai Settings: after a restore the highlight is wrapped again", spans25(2), spans25(2));
 // A highlight known not to be in this answer, first in line, does not stall a busy page's slices
 ["0", "1", "2"].forEach(function (i) { JR.state.completedHighlights.delete("hl-25" + i); });
 JR.state.completedHighlights.set("hl-25m", { quoteId: "hl-25m", text: "not in this answer", nth: 0, sourceTurnKey: "turn-25", spans: [document.createElement("span")], items: [] });
@@ -1267,15 +1281,65 @@ asyncChecks.push(new Promise(function (done) {
 // review #2: only answers Popup drew from Markdown get ChatGPT's drawing, once — never ChatGPT's own mirror
 // (after 100 ms: an earlier test stubs JR.qa for 50 ms)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var realRender = JR.chatgptRender, calls = [];
-  JR.chatgptRender = function (k) { calls.push(k); return Promise.resolve(null); };
+  var realRender = JR.siteRender, calls = [];
+  JR.siteRender = function (k) { calls.push(k); return Promise.resolve(null); };
   JR.qa.put("rv2-mirror", { responseHTML: "<div data-markdown-text-style='assistant-message'>a</div>", drawnByPopup: false });
   JR.qa.put("rv2-md", { responseHTML: "<p>a</p>", drawnByPopup: true });
   JR.qa.upgrade(["rv2-mirror"]); JR.qa.upgrade(["rv2-md"]);
   check("review #2: ChatGPT's own drawing is not re-rendered; Popup's is", calls.join() === "rv2-md", calls.join());
-  JR.chatgptRender = realRender;
+  JR.siteRender = realRender;
   done();
 }, 100); }));
+
+// 2026-11-17 (claude.ai CL-reload): after a reload a Reply / nested question comes from storage; all its versions must come back
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = window.getChildHighlights;
+  window.getChildHighlights = function () { return Promise.resolve([
+    { id: "rv-a", quoteId: "rv-q", parentId: "rv-hl", parentItemId: "rv-1", wholeResponse: true, active: false, turnKeys: [] },
+    { id: "rv-b", quoteId: "rv-q", parentId: "rv-hl", parentItemId: "rv-1", wholeResponse: true, active: true, turnKeys: [] }]); };
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("rv-hl", { question: "q", responseHTML: "<p>a</p>", spans: [], items: [{ id: "rv-1", question: "q", responseHTML: "<p>a</p>", turnKeys: [] }], activeItemIndex: 0 });
+  try { JR.rebuildPopupAfterEdit(p, "rv-hl"); } catch (e) { out.push("NOTE rv rebuild threw: " + e.message); }
+  setTimeout(function () {
+    var c = JR.state.completedHighlights.get("rv-q");
+    check("reload: a Reply keeps all its versions", c && c.items.length === 2 && c.activeItemIndex === 1, c && c.items.length + " items, active " + c.activeItemIndex);
+    window.getChildHighlights = real; p.remove(); JR.state.completedHighlights.delete("rv-q"); JR.state.completedHighlights.delete("rv-hl");
+    done();
+  }, 50);
+}, 150); }));
+
+// 2026-11-18 (DeepSeek outline): a sent message → the items to open, chat highlight first, each on the version leading on
+(function () {
+  var realQuestion = JR.qa.question;
+  var asked = { k1: "Q1", k2: "Q1 again", k3: "R", k4: "N" };
+  JR.qa.question = function (keys) { return asked[keys[0]] || null; };
+  var recs = [
+    { id: "a1", quoteId: "A", text: "light", turnKeys: ["k1"], active: false },
+    { id: "a2", quoteId: "A", text: "light", turnKeys: ["k2"], active: true },
+    { id: "b1", quoteId: "B", parentId: "A", parentItemId: "a1", wholeResponse: true, text: "whole", turnKeys: ["k3"], active: true },
+    { id: "c1", quoteId: "C", parentId: "B", parentItemId: "b1", text: "inner", turnKeys: ["k4"], active: true },
+  ];
+  var ids = function (c) { return c ? c.map(function (r) { return r.id; }).join(">") : "null"; };
+  check("outline chain: an older version of a level-1 question", ids(JR.chainForMessage(recs, { text: "light", question: "Q1" })) === "a1", ids(JR.chainForMessage(recs, { text: "light", question: "Q1" })));
+  check("outline chain: nested under a Reply under version 1", ids(JR.chainForMessage(recs, { text: "inner", question: "N" })) === "a1>b1>c1", ids(JR.chainForMessage(recs, { text: "inner", question: "N" })));
+  check("outline chain: unknown message", JR.chainForMessage(recs, { text: "zzz", question: "?" }) === null, "found");
+  check("outline chain: a Reply (its message has no quote) found by its question", ids(JR.chainForMessage(recs, { text: null, question: "R", wholeResponse: true })) === "a1>b1", ids(JR.chainForMessage(recs, { text: null, question: "R", wholeResponse: true })));
+  JR.qa.question = realQuestion;
+})();
+
+// R36a / 2026-11-17: ChatGPT wraps the turn list in a display:contents div; popups must go in the list (a box), not the wrapper
+(function () {
+  var conv = document.createElement("div"); conv.setAttribute("data-thread-find-target", "conversation");
+  conv.innerHTML = '<div>header</div><div style="display:contents"><div class="relative" style="position:relative"><div><div data-turn-key="host-t1">x</div></div></div></div>';
+  document.body.appendChild(conv);
+  var host = JR.site.popupHost(conv.querySelector("[data-turn-key]"));
+  check("Step 4a: early-hide selector (site-hosts.js) = turnSelector", JR_HOST.all.chatgpt.hide("k-1") === JR.site.turnSelector("k-1") && JR_HOST.all.chatgpt.hide("legacy-3") === JR.site.turnSelector("legacy-3"), JR_HOST.all.chatgpt.hide("k-1"));
+  check("Step 4a: storage keys per site", JR_HOST.convKey("https://chatgpt.com/c/00000000-0000-0000-0000-000000000001") === "popup:conv:00000000-0000-0000-0000-000000000001", JR_HOST.convKey("https://chatgpt.com/c/00000000-0000-0000-0000-000000000001"));
+  check("R36a: popupHost skips a display:contents wrapper", host === conv.querySelector(".relative"), host && host.outerHTML.slice(0, 60));
+  conv.remove();
+})();
 
 Promise.all(asyncChecks).then(function () {
   fakeForm.remove();
