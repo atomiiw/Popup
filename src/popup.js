@@ -1376,8 +1376,17 @@
     // shows here; Popup's own layer is put back after each patch. Again when this popup is active again (removePopup).
     if (activeItem && activeItem.turnKeys && activeItem.turnKeys.length && JR.siteAnswer) {
       responseDiv._jrSiteFollow = function () {
-        JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function () {
+        JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function (el, turn) {
           if (responseDiv._jrWait) { responseDiv._jrWait.remove(); responseDiv._jrWait = null; responseDiv.classList.remove("jr-popup-response--waiting"); }
+          // its question isn't stored and the site's data didn't give it (Claude Code has none to read): from the
+          // original's question row (live 2026-11-19: a Claude Code answer from the frame had no question line)
+          var parsed = activeItem.question == null && turn && JR.parsePopupMessage(JR.site.userText(turn) || "");
+          if (parsed) {
+            activeItem.turnKeys.forEach(function (k) { // (onto what is read back already: its answer's text, for ordering)
+              JR.qa.put(k, Object.assign({}, JR.qa.get([k]) || {}, { question: parsed.question, text: parsed.text, sentence: parsed.sentence, isPopup: true }));
+            });
+            if (JR.onQAContentLoaded) setTimeout(function () { JR.onQAContentLoaded(activeItem.turnKeys); }, 0); // (its question row shows; the answer area stays)
+          }
           processResponseLinks(responseDiv);
           processResponseImages(responseDiv);
           restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);

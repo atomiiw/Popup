@@ -1569,6 +1569,30 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   check("Esc with a popup up is Popup's only (the site never sees it); without one, the site's", withPopup === "0,1" && site === 1 && mine === 1, withPopup + " then " + [site, mine].join());
 })();
 
+// live 2026-11-19 (Claude Code, an answer from the frame): its question isn't stored and no site data gave it — read
+// from the original's question row, the popup shows its question line
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var msg = JR.buildMessage({ question: "一句话解释", text: "you", sentence: null, mode: "concise" });
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "qq-1"); t.hidden = true;
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>ANSWER</p></div></div>';
+  document.body.appendChild(t);
+  var realUser = JR.site.userText; JR.site.userText = function (turn) { return turn === t ? msg : realUser(turn); };
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  var it = { id: "qq-i", question: null, status: "done", turnKeys: ["qq-1"] };
+  JR.state.completedHighlights.set("qq-hl", { question: null, text: "you", spans: [], items: [it], activeItemIndex: 0 });
+  JR.state.activePopup = p; JR.state.activeHighlightId = "qq-hl";
+  JR.rebuildPopupAfterEdit(p, "qq-hl");
+  setTimeout(function () {
+    var q = p.querySelector(".jr-popup-question-text");
+    check("question not stored: read from the original's question row, its line shows", it.question === "一句话解释" && q && q.textContent === "一句话解释" && /ANSWER/.test(p.textContent), [it.question, q && q.textContent].join(" | "));
+    JR.site.userText = realUser; JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("qq-hl");
+    JR.state.activePopup = null; JR.state.activeHighlightId = null;
+    done();
+  }, 50);
+}, 24850); })); // (its own time: one popup is live at a time)
+
 // candidate 1: a finished popup whose original is on the page shows its copy at once — no "Loading…" in between
 (function () {
   var t = document.createElement("div"); t.setAttribute("data-turn-key", "now-1"); t.hidden = true;
