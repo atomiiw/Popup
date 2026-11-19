@@ -13,6 +13,7 @@
 <pre id="out"></pre>
 <script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
 <script src="../src/site-hosts.js"></script>
+<script src="../src/escape-guard.js"></script>
 <script src="../src/jr-namespace.js"></script>
 <script src="../src/site-adapter.js"></script>
 <script src="../src/dom-helpers.js"></script>
@@ -1534,6 +1535,40 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 100);
 }, 24750); })); // (its own time: one popup is live at a time)
 
+// live 2026-11-19 (Claude Code, dev.1): an item saved as failed whose answer is in the chat after all shows that answer
+(function () {
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "fl-1"); t.hidden = true;
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>LATE ANSWER</p></div></div>';
+  document.body.appendChild(t);
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  var it = { id: "fl-i", question: "Q", status: "failed", turnKeys: ["fl-1"] };
+  JR.state.completedHighlights.set("fl-hl", { question: "Q", spans: [], items: [it], activeItemIndex: 0 });
+  JR.rebuildPopupAfterEdit(p, "fl-hl");
+  var r = p.querySelector(".jr-popup-response");
+  check("failed, but its answer is in the chat: shown as done", it.status === "done" && r && /LATE ANSWER/.test(r.textContent) && !p.querySelector(".jr-retry-btn"), it.status + " " + p.innerHTML.slice(0, 120));
+  JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("fl-hl");
+})();
+
+// live 2026-11-19 (Claude Code: Esc Esc = Rewind): an Esc while Popup has something up is Popup's only — the site's own
+// listener (registered after escape-guard.js, as a page's are) never sees it; with nothing of Popup's up, the site gets it
+(function () {
+  var site = 0, mine = 0, aside = Array.prototype.map.call(document.querySelectorAll(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn"), function (el) { // (other tests' leftovers)
+    var mark = document.createComment(""); el.replaceWith(mark); return [el, mark];
+  });
+  var onSite = function (e) { if (e.key === "Escape") site++; }, onMine = function () { mine++; };
+  window.addEventListener("keydown", onSite, true); document.addEventListener("jr-escape", onMine);
+  var p = document.createElement("div"); p.className = "jr-popup"; document.body.appendChild(p);
+  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  var withPopup = [site, mine].join();
+  p.remove();
+  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  window.removeEventListener("keydown", onSite, true); document.removeEventListener("jr-escape", onMine);
+  aside.forEach(function (x) { x[1].replaceWith(x[0]); });
+  check("Esc with a popup up is Popup's only (the site never sees it); without one, the site's", withPopup === "0,1" && site === 1 && mine === 1, withPopup + " then " + [site, mine].join());
+})();
+
 // candidate 1: a finished popup whose original is on the page shows its copy at once — no "Loading…" in between
 (function () {
   var t = document.createElement("div"); t.setAttribute("data-turn-key", "now-1"); t.hidden = true;
@@ -1709,11 +1744,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
         var back = document.activeElement === input;
         JR.siteOriginalFocus(100); f.contentWindow.focus(); fi.focus(); // a forwarded click
         var during = document.activeElement === f;
-        var esc = 0, onEsc = function (e) { if (e.key === "Escape") esc++; };
-        document.addEventListener("keydown", onEsc);
+        var esc = 0, onEsc = function (e) { if (e.key === "Escape" || e.type === "jr-escape") esc++; }; // (Popup's: escape-guard.js)
+        document.addEventListener("keydown", onEsc); document.addEventListener("jr-escape", onEsc);
         fi.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); // Esc right after a Copy
         var keyBack = document.activeElement === input && esc === 1;
-        document.removeEventListener("keydown", onEsc);
+        document.removeEventListener("keydown", onEsc); document.removeEventListener("jr-escape", onEsc);
         setTimeout(function () {
           check("render frame: never keeps the keyboard (it goes back), only for a forwarded click's moment; a key then is the page's",
             back && during && keyBack && document.activeElement === input, JSON.stringify([back, during, keyBack, esc, document.activeElement && document.activeElement.tagName]));

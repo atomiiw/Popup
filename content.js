@@ -215,13 +215,11 @@
     JR.removeAllPopups();
   });
 
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      if (triggerBtn) { removeTriggerBtn(); return; }
-      if (!st.activePopup) { JR.removeAllPopups(); return; }
-      if (st.confirmingDelete) return;
-      JR.removePopup();
-    }
+  document.addEventListener("jr-escape", function () { // (Esc, kept from the site: early-hide.js)
+    if (triggerBtn) { removeTriggerBtn(); return; }
+    if (!st.activePopup) { JR.removeAllPopups(); return; }
+    if (st.confirmingDelete) return;
+    JR.removePopup();
   });
 
   // Click on active source highlight → select text for copy;

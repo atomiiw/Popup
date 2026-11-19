@@ -335,13 +335,14 @@
     function close() {
       overlay.remove();
       document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("jr-escape", onKey, true);
       document.removeEventListener("mousedown", onBlock, true);
     }
 
     function onKey(e) {
       e.stopPropagation();
       e.stopImmediatePropagation();
-      if (e.key === "Escape") { e.preventDefault(); close(); }
+      if (e.type === "jr-escape") { close(); return; } // (Esc, kept from the site: early-hide.js)
       if (e.key === "ArrowLeft" && currentIdx > 0) { currentIdx--; update(); }
       if (e.key === "ArrowRight" && currentIdx < srcs.length - 1) { currentIdx++; update(); }
     }
@@ -352,6 +353,7 @@
     }
 
     document.addEventListener("keydown", onKey, true);
+    document.addEventListener("jr-escape", onKey, true);
     document.addEventListener("mousedown", onBlock, true);
     overlay.addEventListener("click", function (e) {
       e.stopPropagation();
@@ -1016,6 +1018,12 @@
         item.status = "failed";
         updateHighlightFields(item.id, { status: "failed" });
       }
+      // failed, but its answer is in the chat after all (it came after Popup gave up — live 2026-11-19, a Claude Code
+      // answer with a tool step): it is done
+      if (item.status === "failed" && (item.turnKeys || []).some(function (k) { var t = JR.site.findTurnByKey(k); return t && JR.site.assistantText(t).trim(); })) {
+        item.status = "done";
+        updateHighlightFields(item.id, { status: "done" });
+      }
       // No Q&A known for it (none in the chat links to it): nothing can ever load it — "failed" with Retry, not
       // "Loading…" for good (live 2026-11-18, an old item). In memory only: if its Q&A turns up, adoption links it.
       // (not while the conversation data is still read: adoption may link it in a moment — review: a Retry then sent it twice)
@@ -1209,11 +1217,10 @@
             }
           }
         }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          exitEditMode();
-        }
+      });
+      questionText.addEventListener("jr-escape", function (e) { // Esc cancels the edit (kept from the site: early-hide.js)
+        e.stopPropagation();
+        exitEditMode();
       });
 
       sendBtn.addEventListener("click", function (e) {
@@ -1471,6 +1478,9 @@
   JR.openLightbox = openLightbox; // attachment thumbnails open in the same lightbox (attachments.js)
 
   JR.createPopup = function (opts) {
+    // claude.ai pinned to its bottom follows any growth there: a popup reaching below the chat's end scrolled the chat
+    // with it (live 2026-11-19, Claude Code: 116 px when a child opened, back on Esc) — let go of the pin first
+    if (JR.site.unpin) JR.site.unpin();
     var completedId = opts.completedId || null;
     var parentId = opts.parentId || null;
     var range = opts.range || null;

@@ -379,6 +379,9 @@
     // Page-world guard (scroll-guard.js): the site's own scroll-to-new-turn is ignored while set.
     document.documentElement.setAttribute("data-jr-scroll-lock", String(Date.now()));
     return function () {
+      // claude.ai keeps following its newest message after a send (pinned to the bottom): let go first, or its next
+      // change scrolls the reader there once the guard is off (live 2026-11-19, Claude Code: to the end of the chat)
+      if (JR.site.unpin) JR.site.unpin();
       document.documentElement.removeAttribute("data-jr-scroll-lock");
       if (unlock) unlock();
     };
