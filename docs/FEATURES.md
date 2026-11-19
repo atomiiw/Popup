@@ -2,6 +2,13 @@
 
 ## Current
 
+### 1.2.13 — DeepSeek and claude.ai, the site's own drawing, flipping, resizing
+- Works on ChatGPT, DeepSeek and claude.ai (one site layer each: `src/site-adapter.js`, `src/sites/deepseek.js`, `src/sites/claude.js`)
+- A popup's answer is always the site's own drawing (GLOSSARY.md: the site answer): the active popup's answer area is a copy that follows its original — the hidden turn on the page while it streams and right after, else the same turn in a hidden frame of the chat (ChatGPT, claude.ai) or the item DeepSeek's list keeps drawn — patched node by node, so new formats, blocks and buttons the site adds show without Popup knowing them (`src/site-answer.js`). "Loading…" until the original is found, never Popup's own drawing (Popup's Markdown renderer is gone). Nothing is stored.
+- Every control the site draws in an answer (code-block Copy, Run, wrap, Download, citations, anything it adds later) works in a popup: the click goes to the same element in the original, and what the site changes there comes back through the copy
+- Resize: both edges change the height (40–70 % of the window) — dragged outward taller, inward shorter — and the highlight never moves (the popup grows on its far side); every corner but the trash button's changes width and height
+- ∧ ∨ flip through every popup in its place on the page, nested ones and Replies right after their parent; each jump brings the highlight to the bottom fifth of the chat and opens the popup above it, at any level; with no popup open, the next one from where you are
+
 ### Attachments in popups (1.2.11)
 - Paste any file into a popup question (also an image copied from a web page), or drop it anywhere on the popup (ChatGPT never gets a file dropped on a popup); it shows in its own layer between the quote and the question as 45 px squares (images as thumbnails, other files as an icon with the name shortened in the middle, extension kept)
 - Sending hands the files to ChatGPT's own composer (synthetic paste), waits for the uploads, then sends the hidden Popup question with them; files ChatGPT refuses are listed in a one-line grey note (this session only) and the rest is sent
@@ -10,16 +17,16 @@
 
 ### ChatGPT's rich answer formats (1.2.10–1.2.11)
 - Highlights work on step cards, CodeMirror code blocks (whole touched lines, monospace quote), SVG charts (axis labels; quote "Chart: <title>"), tables, maps (marker text skipped); highlighted text is always white (light) / dark (dark mode)
-- Popup answers show ChatGPT's rich formats: fresh answers are a copy of ChatGPT's own rendering; after a reload Popup draws them itself — cards and grids, title rows, badges, icons as symbols, code blocks with Copy, line/bar charts from the answer's data (other chart kinds as a table), maps as a place list with map links, checklists, links; source markers and image placeholders are hidden; answers with a chart or map are always drawn by Popup (ChatGPT's copy would be blank)
+- Popup answers show ChatGPT's rich formats: fresh answers are a copy of ChatGPT's own rendering; after a reload ChatGPT draws them again in a hidden frame (1.2.13: never Popup's own drawing)
 - Popups can be dragged from 280 to 720 px wide: wide tables scroll sideways, card grids drop columns when narrow
-- Known limits: formulas after a reload show as TeX; Mermaid diagrams show as code
+- Known limits: Mermaid diagrams show as code
 
 ### Highlight-to-Popup (Step 1 — ChatGPT only)
 - Select any text inside a ChatGPT AI response to open a floating popup
-- Popup displays the highlighted text in a blockquote and provides an inline contenteditable input for follow-up questions with a send arrow (hover to pick Brief/Elaborate)
-- Popup positions itself centered below the selection; flips above if it would overflow the viewport; clamps horizontally to stay on screen
+- Popup displays the highlighted text in a blockquote and provides an inline contenteditable input for follow-up questions with a send arrow (hover to pick Detailed/Concise)
+- Popup opens on the side of the selection with more room on screen (below when above can't hold it), centred on the highlight's longest line; clamps horizontally to stay on screen
 - Dismisses on click outside, Escape key, or SPA navigation (route change)
-- Send arrow with hover dropdown (Brief/Elaborate) submits the follow-up question through ChatGPT's real chat input
+- Send arrow with hover dropdown (Detailed/Concise) submits the follow-up question through ChatGPT's real chat input
 - Dark mode support — automatically matches ChatGPT's theme
 
 ### Sentence Context Extraction (Step 1b)
@@ -51,10 +58,10 @@
 - Graceful error handling: logs to console if chat input or send button is not found
 
 ### Response Length Toggle (Step 2b)
-- Both the initial question input and the edit question send use a hover dropdown with **Brief** and **Elaborate** options
+- Both the initial question input and the edit question send use a hover dropdown with **Detailed** and **Concise** options
 - Hovering the send arrow reveals the dropdown below; the user must pick a mode to send
-- **Brief** mode appends a one-time instruction to keep it to 2-3 sentences, explicitly scoped to this single response only
-- **Elaborate** mode appends an instruction to respond at natural length, ignoring any prior brevity requests
+- **Concise** mode appends a one-time instruction to keep it to 2-3 sentences, explicitly scoped to this single response only
+- **Detailed** mode appends an instruction to respond at natural length, ignoring any prior brevity requests
 - Dropdown appears below the send arrow, themed via CSS variables for light/dark mode
 
 ### Response Capture & Hide Q&A (Step 3 — ChatGPT only)
@@ -62,7 +69,7 @@
 - The extension polls for new conversation turns appearing in the DOM
 - When the injected question turn appears, it is hidden from the main chat (`jr-hidden` class)
 - When the AI response turn finishes streaming, it is also hidden from the main chat
-- The AI response content (rendered markdown) is extracted and displayed inside the popup in a scrollable area (max 300px)
+- The AI response content (rendered markdown) is extracted and displayed inside the popup in a scrollable area (the popup is up to 70 % of the window tall)
 - The highlight and its Q&A turn numbers are saved to `chrome.storage.local`
 - If the user dismisses the popup during loading (click outside or Escape), the response watch detaches: the source highlight becomes immediately clickable (`jr-source-highlight-done`), hidden turns remain hidden, and polling continues in the background
 - Clicking a detached highlight during generation opens a popup showing "Generating..." — when the response finishes, the popup updates in-place with the actual response
@@ -128,10 +135,10 @@
 - Infinite chaining depth: a chained popup's response can itself be highlighted to create deeper follow-ups
 - When a parent popup is reopened, chained highlights are restored via the same `findTextRange()` + `highlightRange()` text-matching used for page-reload restore — no baked spans in `responseHTML`
 - Parent-child relationships are stored via `parentId` in both the in-memory Map and `chrome.storage.local`
-- Response mode toggle (Regular/Brief) works in chained popups identically to regular popups
+- Response mode toggle (Detailed/Concise) works in chained popups identically to regular popups
 
 ### Resizable Popup (Step 5a)
-- Drag the left or right edge of any popup to resize its width
+- Drag the left or right edge of any popup to resize its width (height and corners: see 1.2.13 above)
 - A `col-resize` cursor appears when hovering within 6px of the popup's left or right edge
 - On mousedown at the edge, mousemove tracks in real time to adjust the popup width
 - Minimum width: 280px; maximum width: viewport width minus 32px padding
@@ -140,17 +147,8 @@
 - Works for regular popups, completed popups, and chained popups
 - All positioning logic (initial placement, reposition, window resize) uses the popup's actual `offsetWidth` instead of a hardcoded 360px
 
-### Response Markdown Formatting (Step 5b)
-- The AI response inside `.jr-popup-response` faithfully reproduces ChatGPT's rendered markdown formatting
-- Paragraphs (`<p>`) have proper bottom margins with spacing between sections
-- Headings (`<h1>`–`<h6>`) have top/bottom margins, bold weight, and tighter line height
-- Horizontal rules (`<hr>`) render as visible 1px separator lines using `--jr-border`
-- Code blocks (`<pre>`) have a background tint, border, rounded corners, padding, and horizontal scroll
-- Inline code (`<code>`) has a subtle background tint, rounded corners, and padding; nested inside `<pre>` it inherits the block's styles
-- Blockquotes have a left border, background tint, and muted text color — matching the popup's context blockquote style
-- Lists (`<ul>`, `<ol>`) have proper margins, padding, and explicit `list-style-type` to override host site resets
-- Tables have collapsed borders, themed header backgrounds, and consistent cell padding
-- Links use the accent color with underline; images are constrained to `max-width: 100%`
+### Response Markdown Formatting (Step 5b — replaced in 1.2.13)
+- Popup no longer styles the answer's elements: the answer is the site's own drawing, styled by the site's CSS (see 1.2.13)
 
 ### Streaming Response in Popup (Step 6)
 - While the AI is generating a response, the popup streams partial content in real time instead of showing a static "Loading…" message
@@ -179,7 +177,7 @@
 ### Edit Question & Response Versions (Step 5e)
 - Clicking the question text of a completed popup enters edit mode: it becomes editable in place with a subtle underline
 - A send arrow appears during edit mode, greyed out until the text actually changes from the original
-- Hovering the send arrow reveals a Brief/Elaborate dropdown (same as initial question); Escape (or closing the popup) cancels edit mode — losing focus (clicking elsewhere, switching desktops) keeps the typed text
+- Hovering the send arrow reveals a Detailed/Concise dropdown (same as initial question); Escape (or closing the popup) cancels edit mode — losing focus (clicking elsewhere, switching desktops) keeps the typed text
 - On send: the new question is injected into the chat thread, the response is replaced with loading/streaming for the new response
 - Both old and new responses are kept as **versions** — a version nav bar (`◀ 1 / 2 ▶`) appears when multiple versions exist
 - Clicking version nav arrows switches the displayed question text and response HTML
@@ -205,9 +203,9 @@
 ### Highlight Navigation Arrows (Step 7d)
 - A floating vertical widget appears on the right side of the viewport (middle of the right-side white gap) when there is 1+ level-1 highlight
 - Contains up/down arrow buttons and a position indicator (e.g. "2 / 5")
-- Only navigates level-1 (outer-layer) highlights in document order — chained/nested highlights are ignored
+- Navigates every popup in its place on the page — nested popups and Replies right after their parent (1.2.13)
 - Clicking an arrow scrolls the chat to the target highlight and opens its popup
-- When no highlight is focused, the indicator shows just the total count; clicking an arrow starts navigation from the first or last highlight
+- When no highlight is focused, the indicator shows just the total count; clicking an arrow goes to the next / previous highlight from where you are
 - Buttons are disabled at the endpoints (first highlight disables up, last disables down)
 - The widget updates automatically when highlights are created, deleted, restored, or when popups open/close
 - `navNavigating` flag suppresses intermediate widget updates during navigation (prevents flicker)
@@ -218,7 +216,7 @@
 - Custom search bar (Step 8d) and the popup transition API it relied on (Step 8c: `JR.openHighlight`, `JR.transitionTo`, `JR.go`), removed at the user's request to keep Popup to popups + the highlight navigation widget. The storage model notes from 8c (`quoteId` groups versions, `parentItemId` scopes children to a parent version) still apply.
 - The × that hid ChatGPT's own "Ask ChatGPT" selection button (Step 8h): removed at the user's request; Popup no longer touches that button.
 - Console API is now only `JR.diagnose()` (hook self-check, see `src/site-adapter.js`).
-- The nav widget counts every level-1 highlight in the conversation (including turns ChatGPT has virtualized away) and scrolls to unmounted ones.
+- The nav widget counts every highlight in the conversation (including turns ChatGPT has virtualized away) and scrolls to unmounted ones.
 
 ## Planned
 - **Debugging & polish** (Step 8) — right-side popup placement, delete confirmation refinements, nav widget fix, export highlights, disable toggle, public release prep

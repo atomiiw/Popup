@@ -40,23 +40,5 @@ check("user's own message not recognised", !JR.isPopupMessage("Regarding this pa
   check("whole response", p && p.question === "Summarize" && p.wholeResponse === true, p);
 }
 
-// renderMarkdown never lets HTML or script URLs through
-[
-  "<img src=x onerror=alert(1)>",
-  "[a](javascript:alert(1))",
-  '[a](https://x.com/" onmouseover="alert(1))',
-  "`<b>` and ```js\n<script>x</script>\n```",
-  "| a | b |\n|---|---|\n| <i>1</i> | 2 |",
-].forEach(s => {
-  const html = JR.renderMarkdown(s);
-  check("escaped: " + JSON.stringify(s).slice(0, 40), !/<(img|script|i>|b>)|href="javascript:|onmouseover="/i.test(html), html);
-});
-
-// Formulas in read-back answers: plain TeX, untouched by emphasis, no inner padding.
-{
-  const html = JR.renderMarkdown("Use \\( Z_0 + R_S_x \\) and *x*.");
-  check("formula kept as TeX", html.indexOf("\\(Z_0 + R_S_x\\)") !== -1 && html.indexOf("<em>x</em>") !== -1, html);
-}
-
 console.log(failed ? failed + " FAILED" : "all passed");
 process.exit(failed ? 1 : 0);

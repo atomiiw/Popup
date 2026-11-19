@@ -23,6 +23,7 @@ Without the extension installed, the user still sees all Q&A in their normal cha
 - `src/site-adapter.js` — The only place with ChatGPT DOM selectors; `JR.diagnose()` self-check; on other sites it hands `JR.site` to `src/sites/deepseek.js` / `src/sites/claude.js` (same interface)
 - `src/site-hosts.js` — per-site storage key, conversation id and hide CSS, needed before the site layers load (early-hide.js, storage.js)
 - `src/site-render.js` — hidden same-origin frame where the site draws an answer that isn't on the page (ChatGPT, claude.ai; DeepSeek forbids framing)
+- `src/site-answer.js` — a popup's answer is the site's own drawing: the active popup's copy follows its original node by node, and clicks on the site's controls go to the original (`GLOSSARY.md`: site answer, original, copy). Popup has no Markdown renderer of its own
 - `src/qa-content.js` — Message format, hiding Q&A turns, reading answers back from ChatGPT
 - `src/scroll-guard.js`, `src/net-tap.js`, `src/sites/deepseek-net.js` — MAIN-world helpers (block the site's auto-scroll during a send; read the answer stream on ChatGPT / DeepSeek)
 - `src/attachments.js` — Files in popup questions (attachment layer, notes, read-back)

@@ -242,7 +242,7 @@
       var first = el.querySelector(".ds-virtual-list-visible-items > [data-virtual-list-item-key]");
       var start = first ? Number(first.getAttribute("data-virtual-list-item-key")) : NaN;
       if (!(start >= 0)) return 0;
-      var h = hiddenIds(), need = Number(document.documentElement.getAttribute("data-jr-ds-need")) || 0, real = 0, hidden = 0;
+      var h = hiddenIds(), need = Math.max.apply(null, (document.documentElement.getAttribute("data-jr-ds-need") || "0").split(" ").map(Number).filter(function (n) { return n >= 0; }).concat(0)), real = 0, hidden = 0;
       for (var id = start; id < start + 5000 && real < 30; id++) { if (h.has(id)) hidden++; else real++; }
       return 60 * Math.max(hidden, need > start ? need - start + 2 : 0);
     };
@@ -254,7 +254,20 @@
         el._jrExtra = extraFor(el);
         el._jrTall = true;
       });
-      try { return fn(); } finally { els.forEach(function (el) { el._jrTall = false; }); }
+      var before = els.map(function (el) { return el.style.getPropertyValue("--container-height"); });
+      try { return fn(); } finally {
+        els.forEach(function (el, i) {
+          el._jrTall = false;
+          // its scroll area read the same height in the same measuring, for its scrollbar track: that much taller and
+          // following the scroll, the track made the chat longer and blank at the bottom (live 2026-11-19) — the real one
+          var v = el.style.getPropertyValue("--container-height");
+          if (v === before[i] || !el._jrExtra || !(parseFloat(v) >= 0)) return; // (DeepSeek writes "<n>px" to both)
+          var real = Math.max(0, parseFloat(v) - el._jrExtra) + "px";
+          el.style.setProperty("--container-height", real);
+          var g = el.querySelector(":scope > .ds-scroll-area__gutters");
+          if (g) g.style.setProperty("--container-height", real);
+        });
+      }
     };
     window.ResizeObserver = function (cb) {
       var obs = new NativeRO(function (entries) {

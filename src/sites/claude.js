@@ -111,8 +111,38 @@
              C.row + ":has(" + C.answer + "[" + KEY + '="' + q(key) + REPLY + '"])';
     },
     findTurnByKey: function (key) { return key ? answerRowOf(root(), key) : null; },
+    /** The conversation, from the data claude.ai's page loads: its turn keys in order (current branch; rocksteady mounts
+     *  only rows near the view, so the rows alone can't order or reach the others) and each turn's question and answer
+     *  as text (Markdown), for answers not on the page: { order: [key], turns: { key: { question, answer } } }. */
+    fetchConversation: function (conv) {
+      var org = (document.cookie.match(/(?:^|; )lastActiveOrg=([^;]+)/) || [])[1];
+      if (!org || !conv) return Promise.resolve(null);
+      return fetch("/api/organizations/" + org + "/chat_conversations/" + conv + "?tree=True&rendering_mode=messages", { credentials: "include" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || !j.chat_messages) return null;
+          var by = {}, kids = {}, onBranch = {}, order = [], turns = {};
+          // a step the page can't show (web search…) comes as this text: not part of the answer (live 2026-11-18)
+          var NA = /^\s*```\s*This block is not supported on your current device yet\.\s*```\s*$/;
+          function text(m) {
+            return (m.content || []).filter(function (c) { return c.type === "text" && !NA.test(c.text); }).map(function (c) { return c.text; }).join("\n\n") || m.text || "";
+          }
+          j.chat_messages.forEach(function (m) { by[m.uuid] = m; (kids[m.parent_message_uuid] = kids[m.parent_message_uuid] || []).push(m); });
+          for (var m = by[j.current_leaf_message_uuid], g = 0; m && g < 100000; g++, m = by[m.parent_message_uuid]) {
+            onBranch[m.uuid] = true;
+            if (m.sender === "human") order.push(m.uuid);
+          }
+          j.chat_messages.forEach(function (h) {
+            if (h.sender !== "human") return;
+            var as = (kids[h.uuid] || []).filter(function (a) { return a.sender === "assistant"; });
+            var a = as.filter(function (x) { return onBranch[x.uuid]; })[0] || as[as.length - 1]; // the answer shown, else the latest
+            if (a) turns[h.uuid] = { question: text(h), answer: text(a) };
+          });
+          return { order: order.reverse(), turns: turns };
+        });
+    },
 
-    // Hidden same-origin render frame (src/chatgpt-render.js): claude.ai allows it (frame-ancestors 'self')
+    // Hidden same-origin render frame (src/site-render.js): claude.ai allows it (frame-ancestors 'self')
     frameScroller: function (doc) { return doc.querySelector(C.scroller); },
     frameTurn: function (doc, key) { return key ? answerRowOf(doc, key) : null; },
     frameTurnCount: function (doc) { return doc.querySelectorAll(C.row).length; },
@@ -200,28 +230,27 @@
 
     // --- Layout ---
     scrollContainer: function () { return scroller() || document.scrollingElement; },
+    /** Before Popup scrolls the chat: at the bottom, claude.ai keeps it pinned there (any later change in the list
+     *  brings it back down, live 2026-11-18) and lets go only when the user scrolls up — a wheel event (tested live). */
+    unpin: function () {
+      var s = scroller();
+      if (s) s.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+    },
     /** Level-1 popups live in the transcript column: full height, not one of rocksteady's rows. */
     popupHost: function (turn) {
       var host = (turn && turn.closest && turn.closest(C.list)) || first(C.list, root()) || root().querySelector(C.sizer);
       return host || scroller() || document.body;
     },
     chatColumn: function () { return scroller(); },
-    /** On screen: from the scroller's top to the composer box's top. */
+    /** On screen: from the scroller's top (below the chat header laid over it) to the composer box's top. */
     visibleBand: function () {
-      var sc = scroller(), box = S.composerBox(S.composer());
-      var top = sc ? sc.getBoundingClientRect().top : 0;
+      var sc = scroller(), box = S.composerBox(S.composer()), head = document.querySelector("[data-testid=chat-header]");
+      var top = Math.max(sc ? sc.getBoundingClientRect().top : 0, head ? head.getBoundingClientRect().bottom : 0);
       var bottom = box ? box.getBoundingClientRect().top - 8 : window.innerHeight;
       return { top: top, bottom: Math.min(bottom, window.innerHeight) };
     },
 
     // --- Rich content (code / math unconfirmed: browser request C1) ---
-    codeBlocks: function (r) {
-      return Array.prototype.map.call(r.querySelectorAll(C.codeBlock), function (b) {
-        var code = b.querySelector(C.codeSource) || b;
-        var m = (code.className || "").match(/language-([\w+#-]+)/);
-        return { block: b, code: code, lang: m ? m[1].charAt(0).toUpperCase() + m[1].slice(1) : "" };
-      });
-    },
     codeBlockSelector: C.codeBlock,
     codeSourceSelector: C.codeSource,
     codeLineEls: function () { return []; },

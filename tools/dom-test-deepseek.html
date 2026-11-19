@@ -28,7 +28,7 @@ function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAI
 var S = JR.sites.deepseek;
 check("Step 4a: early-hide selector (site-hosts.js) = turnSelector", JR_HOST.all.deepseek.hide("512") === S.turnSelector("512"), JR_HOST.all.deepseek.hide("512"));
 check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.filePreviewUrl("/file?file_id=1&state=x") === "https://files.deepseeksvc.com/api/file?file_id=1&state=x&ty=p", S.filePreviewUrl("/file?file_id=1&state=x"));
-(function () { // 2026-11-18 (user: option A): DeepSeek's question outline shows a Popup question as "↳ question"; the user's own stay
+(function () { // 2026-11-18 (user: option A): DeepSeek's question outline shows a Popup question as "· question"; the user's own stay
   var box = document.createElement("div");
   box.innerHTML = '<div class="ds-virtual-list"><div class="ds-virtual-list-visible-items">' +
     '<div><div>用一个公式解释光合作用</div></div><div><div>Regarding this part of your response:\n"t s"\n\nwhy so?\n\n(For this response only: x)</div></div></div></div>';
@@ -40,7 +40,7 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
   var rows = box.querySelectorAll(".ds-virtual-list-visible-items > div");
   check("outline: the user's own question untouched", !rows[0].classList.contains("jr-outline-popup"), rows[0].className);
-  check("outline: Popup's question shown as ↳ question", rows[1].classList.contains("jr-outline-popup") && rows[1].firstElementChild.getAttribute("data-jr-q") === "\u21b3 why so?", rows[1].firstElementChild.getAttribute("data-jr-q"));
+  check("outline: Popup's question shown as · question", rows[1].classList.contains("jr-outline-popup") && rows[1].firstElementChild.getAttribute("data-jr-q") === "\u00b7 why so?", rows[1].firstElementChild.getAttribute("data-jr-q"));
   box.remove();
 })();
 (function () { // 2026-11-18: the question item is hidden even when its answer item is not mounted (end of DeepSeek's window)
@@ -99,7 +99,6 @@ document.documentElement.setAttribute("data-jr-ds-generating", "");
 check("while generating: no send button, a stop button, isGenerating", !S.sendButton(c) && !!S.stopButton() && S.isGenerating());
 document.documentElement.removeAttribute("data-jr-ds-generating");
 check("popupHost: the full-height list", S.popupHost(item(2)).classList.contains("ds-virtual-list-items"));
-check("codeBlocks: .md-code-block > pre", S.codeBlocks(document).length === 1 && S.codeText(S.codeBlocks(document)[0].code).indexOf('print("hi")') === 0);
 check("conversationId", S.conversationId("/a/chat/s/fb177f05-850e-4834-8f98-f5639b25ee69") === "fb177f05-850e-4834-8f98-f5639b25ee69" && S.conversationId("/") === null);
 
 // --- DeepThink's reasoning is never part of the answer the popup shows ---
@@ -113,14 +112,10 @@ thinkItem.firstChild.insertAdjacentHTML("beforeend", '<div class="ds-markdown ds
 check("thinking + answer: only the answer", S.assistantText(thinkItem) === "answer", S.assistantText(thinkItem));
 thinkItem.remove();
 
-// --- After a reload: history Markdown → DeepSeek's answer classes ---
+// --- After a reload: the answer text from DeepSeek's history (for reading back; never drawn by Popup) ---
 check("answerMarkdown: content", S.answerMarkdown({ content: "**a**" }) === "**a**");
 check("answerMarkdown: fragments without a RESPONSE fall back to content", S.answerMarkdown({ content: "c", fragments: [{ type: "THINK", content: "hm" }] }) === "c");
 check("answerMarkdown: RESPONSE fragments only", S.answerMarkdown({ fragments: [{ type: "THINK", content: "hm" }, { type: "SEARCH", content: "r" }, { type: "RESPONSE", content: "ok" }] }) === "ok");
-JR.renderMarkdown = function (md) { return "<h3>T</h3><p>" + md + "</p><hr>"; }; // stub: the real one is qa-content.js
-var ra = document.createElement("div"); ra.innerHTML = S.renderAnswer("x");
-check("renderAnswer: DeepSeek's root and paragraph classes", !!ra.querySelector(".ds-markdown.ds-assistant-message-main-content > p.ds-markdown-paragraph") && !!ra.querySelector("h3") && !!ra.querySelector("hr"), ra.innerHTML);
-
 // --- Network parser ---
 var N = window.JRDeepSeekNet;
 function feed(lines) { var a = new N.Answer(); lines.forEach(function (l) { a.patch(l); }); return a; }
@@ -182,9 +177,33 @@ var roDone = Promise.resolve().then(function () {
   check("list window: offsetHeight while measuring = real + 60 × hidden items ahead (2–5)", a === 100 + 240, a);
   check("list window: with a hidden answer to reach (id 50) it reaches that far", b === 100 + 60 * 51, b);
   check("list window: any other read is the real height", list.offsetHeight === 100, list.offsetHeight);
+  // live 2026-11-19 (B12/B14 blank at the bottom): DeepSeek's scroll area sets --container-height from offsetHeight in
+  // the same measuring; its scrollbar track, that tall and following the scroll, made the chat longer and blank below
+  list.insertAdjacentHTML("afterbegin", '<div class="ds-scroll-area__gutters"></div>');
+  var gut = list.firstChild;
+  measuring([list], function () { var h = list.offsetHeight + "px"; list.style.setProperty("--container-height", h); gut.style.setProperty("--container-height", h); });
+  check("list window: DeepSeek's scroll area gets the real height (its scrollbar)", list.style.getPropertyValue("--container-height") === "100px" && gut.style.getPropertyValue("--container-height") === "100px",
+    list.style.getPropertyValue("--container-height") + " " + gut.style.getPropertyValue("--container-height"));
   list.remove(); hideRules.remove();
 });
-roDone.then(function () {
+// design A (2026-11-18): an original is kept drawn in DeepSeek's list while it is live, let go on release
+var origDone = roDone.then(function () {
+  return JR.siteOriginal("5").then(function (t) {
+    var kept = document.documentElement.getAttribute("data-jr-ds-need");
+    JR.siteOriginalRelease("5");
+    check("siteOriginal: the list item, kept drawn until released", t === item(5) && kept === "5" && !document.documentElement.hasAttribute("data-jr-ds-need"), JSON.stringify([!!t, kept]));
+    // review of dev.128: a send and a popup each keep their own item drawn (they took the one slot from each other)
+    S.keepMounted("7");
+    return JR.siteOriginal("5").then(function () {
+      var both = document.documentElement.getAttribute("data-jr-ds-need");
+      JR.siteOriginalRelease("5");
+      var sendOnly = document.documentElement.getAttribute("data-jr-ds-need");
+      S.keepMounted(null);
+      check("keepMounted: a send's item and a popup's original are kept drawn together", both === "7 5" && sendOnly === "7" && !document.documentElement.hasAttribute("data-jr-ds-need"), JSON.stringify([both, sendOnly]));
+    });
+  });
+});
+origDone.then(function () {
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";

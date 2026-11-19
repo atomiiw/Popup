@@ -49,12 +49,6 @@
     return false;
   }
 
-  // Answer markup after a reload (no DeepSeek DOM to mirror): Popup's Markdown renderer, re-dressed in the
-  // classes DeepSeek's own answer uses so DeepSeek's page CSS styles it the same. Measured 2026-11-17:
-  // root .ds-markdown.ds-assistant-message-main-content, p.ds-markdown-paragraph, plain h3 / hr.
-  // shortcut: code blocks, tables, lists, KaTeX classes still to be measured (B1) — add them here.
-  var DS_CLASS = { P: "ds-markdown-paragraph" };
-
   // --- Temporary keys of just-sent messages → real ids (from jr-net "turn") ---
   var realOf = {};   // "-3" → "512"
   var tempsOf = {};  // "512" → ["-3"]
@@ -100,6 +94,7 @@
   }
 
   JR.sites = JR.sites || {};
+  var need = {}; // keepMounted: owner → the key it keeps drawn
   var S = JR.sites.deepseek = {
     name: "deepseek",
     label: "DeepSeek",
@@ -255,11 +250,6 @@
     },
 
     // --- Rich content ---
-    codeBlocks: function (r) {
-      return Array.prototype.map.call(r.querySelectorAll(C.codeBlock), function (b) {
-        return { block: b, code: b.querySelector(C.codeSource) || b, lang: "" };
-      });
-    },
     codeBlockSelector: C.codeBlock + ", pre",
     codeSourceSelector: C.codeSource,
     codeLineEls: function () { return []; },
@@ -319,17 +309,6 @@
       var u = /^https?:\/\//.test(signedPath) ? signedPath : "https://files.deepseeksvc.com/api" + signedPath;
       return u + (u.indexOf("?") === -1 ? "?" : "&") + "ty=p";
     },
-    /** Markdown → HTML in DeepSeek's answer classes (JR.renderMarkdown draws, this re-dresses it). */
-    renderAnswer: function (md) {
-      var box = document.createElement("div");
-      box.innerHTML = JR.renderMarkdown(md || "");
-      Array.prototype.forEach.call(box.querySelectorAll("a"), function (a) { if (/^\d+$/.test(a.textContent)) a.classList.add("jr-cite"); }); // a source number
-      Object.keys(DS_CLASS).forEach(function (tag) {
-        Array.prototype.forEach.call(box.getElementsByTagName(tag), function (el) { el.classList.add(DS_CLASS[tag]); });
-      });
-      return '<div class="ds-markdown ds-assistant-message-main-content">' + box.innerHTML + "</div>";
-    },
-
     /** For JR.SEL.turn (closest/matches on any node). */
     turnSelectorAll: C.item,
     /** A turn's place in the conversation: DeepSeek's message ids count up in conversation order. */
@@ -337,13 +316,17 @@
 
     /** Keep this hidden answer drawn in DeepSeek's list (0 px, unseen) so Popup can copy DeepSeek's own rendering
      *  (it can't be framed); null lets go. deepseek-net.js widens the list's window to reach it. */
-    keepMounted: function (key) {
-      if (key) document.documentElement.setAttribute("data-jr-ds-need", String(key));
+    /** Keep the item with this key drawn (null: let it go). owner: "send" (chat.js, while it answers) or "popup" (the
+     *  active popup's original) — each keeps its own (review: they took the one slot from each other). */
+    keepMounted: function (key, owner) {
+      need[owner || "send"] = key || null;
+      var v = Object.keys(need).map(function (o) { return need[o]; }).filter(Boolean).join(" ");
+      if (v) document.documentElement.setAttribute("data-jr-ds-need", v);
       else document.documentElement.removeAttribute("data-jr-ds-need");
     },
 
     /** Called every 500 ms (content.js): DeepSeek's question outline at the right edge lists every user message.
-     *  Popup's are shown there as their question only ("↳ question", user, 2026-11-18: not hidden — the outline places
+     *  Popup's are shown there as their question only ("· question", user, 2026-11-18: a small dot, not hidden — the outline places
      *  rows by index, hiding left gaps); a click opens that popup. Entries have build-hashed classes: found by text. */
     tidy: function () {
       Array.prototype.forEach.call(document.querySelectorAll(C.scroller + " .ds-virtual-list-visible-items"), function (box) {
@@ -357,27 +340,30 @@
     },
   };
   /**
-   * DeepSeek's own rendering of a hidden answer (math, code blocks), as site-render.js gives ChatGPT's: DeepSeek can't
-   * be framed, but the answer is in its list — have it drawn (0 px, unseen; keepMounted), copy it once its drawing holds
-   * still, let go. Null after ~5 s (an answer above the list's first drawn item can't be reached).
+   * The original of a hidden answer (site-answer.js, design A): DeepSeek can't be framed, but the answer is in its list —
+   * kept drawn there (0 px, unseen; keepMounted) until JR.siteOriginalRelease(key). Null after ~5 s if the list doesn't
+   * draw it (still kept) (an answer above the list's first drawn item can't be reached).
    */
-  JR.siteRender = function (key) {
-    S.keepMounted(key);
-    var last = -1, n = 0;
+  var kept = null;
+  JR.siteOriginal = function (key) {
+    S.keepMounted(kept = key, "popup");
+    var n = 0;
     return new Promise(function (resolve) {
       (function poll() {
-        // the whole drawing holds still (DeepSeek colours code a moment after the text is in), not only the text
-        var turn = S.findTurnByKey(key), len = turn && S.assistantText(turn).trim() ? S.assistantHTML(turn).length : -1;
-        if (turn && len > 0 && len === last) {
-          var r = { html: S.assistantHTML(turn), question: S.userText(turn) };
-          S.keepMounted(null);
-          return resolve(r);
-        }
-        last = len;
-        if (++n > 25) { S.keepMounted(null); return resolve(null); }
+        if (kept !== key) return resolve(null); // released meanwhile
+        var turn = S.findTurnByKey(key);
+        if (turn && S.assistantText(turn).trim()) return resolve(turn);
+        // (still kept: its popup asks again while it is active, and the release clears it — review: on / off every
+        // 8 s made DeepSeek redraw its list again and again)
+        if (++n > 25) return resolve(null);
         setTimeout(poll, 200);
       })();
     });
+  };
+  JR.siteOriginalRelease = function (key) {
+    if (kept !== key) return;
+    kept = null;
+    S.keepMounted(null, "popup");
   };
 
   var outlineSeen = new WeakSet();
@@ -415,7 +401,7 @@
       var text = row.firstElementChild || row, msg = text.textContent || "";
       var p = JR.isPopupMessage(msg) ? JR.parsePopupMessage(msg) : null;
       var gone = !!p && deleted(recs, msg, p);
-      var label = !p ? null : gone ? "\u21b3 deleted" : p.question ? "\u21b3 " + p.question.replace(/\s+/g, " ").trim() : null;
+      var label = !p ? null : gone ? "\u00b7 deleted" : p.question ? "\u00b7 " + p.question.replace(/\s+/g, " ").trim() : null;
       if (row.classList.contains("jr-outline-popup") !== !!label) row.classList.toggle("jr-outline-popup", !!label);
       if (row.classList.contains("jr-outline-gone") !== gone) row.classList.toggle("jr-outline-gone", gone);
       if (label && text.getAttribute("data-jr-q") !== label) text.setAttribute("data-jr-q", label);

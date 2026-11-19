@@ -195,7 +195,7 @@
     }
     // The open popup is gone from the page (ChatGPT re-rendered what held it, and it could not go back): it is closed
     if (st.activePopup && !st.activePopup.isConnected) { JR.repositionAll(); if (!st.activePopup.isConnected) JR.removeAllPopups(); }
-    if (!st.activePopup && st.popupStack.length === 0) return;
+    if (!st.activePopup && st.popupStack.length === 0) { JR.removeAllPopups(); return; }
     if (st.confirmingDelete) {
       // Click outside popup cancels delete confirmation
       if (st.activePopup && !st.activePopup.contains(e.target)) {
@@ -218,7 +218,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
       if (triggerBtn) { removeTriggerBtn(); return; }
-      if (!st.activePopup) return;
+      if (!st.activePopup) { JR.removeAllPopups(); return; }
       if (st.confirmingDelete) return;
       JR.removePopup();
     }

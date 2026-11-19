@@ -773,25 +773,26 @@
     var MAX_WIDTH = 720;
 
     var CORNER_ZONE = 12;
-    // { x: "left"|"right"|null, y: true when on the edge away from the highlight } or null.
-    // The edge next to the highlight (the arrow side) never resizes; the trash button stays a button.
+    // { x: "left"|"right"|null, y: "top"|"bottom"|null } or null. Both edges resize the height (user, 2026-11-18):
+    // dragged outward it grows, and the highlight never moves — the popup grows on its far side (an "above" popup
+    // keeps its bottom on the arrow). Every corner but the trash button's (top right) resizes both ways.
     function getEdge(e) {
       if (e.target.closest && e.target.closest(".jr-toolbar-delete")) return null;
       var rect = popup.getBoundingClientRect();
-      var above = (popup._jrLockedDirection) === "above";
-      var y = above ? e.clientY <= rect.top + EDGE_ZONE : e.clientY >= rect.bottom - EDGE_ZONE;
-      if (y) { // only a popup at its height limit: width only otherwise (read only near that edge)
+      var y = e.clientY <= rect.top + EDGE_ZONE ? "top" : e.clientY >= rect.bottom - EDGE_ZONE ? "bottom" : null;
+      if (y) { // only a popup at its height limit: width only otherwise (read only near those edges)
         var resp = popup.querySelector(":scope > .jr-popup-response");
-        y = !!resp && resp.scrollHeight > resp.clientHeight;
+        if (!resp || resp.scrollHeight <= resp.clientHeight) y = null;
       }
       var zone = y ? CORNER_ZONE : EDGE_ZONE;
       var x = e.clientX <= rect.left + zone ? "left" : e.clientX >= rect.right - zone ? "right" : null;
-      return x || y ? { x: x, y: y, above: above } : null;
+      if (x === "right" && y === "top") x = null; // the trash corner: height only
+      return x || y ? { x: x, y: y } : null;
     }
     function cursorFor(edge) {
       if (!edge.y) return "col-resize";
       if (!edge.x) return "row-resize";
-      return (edge.x === "right") !== edge.above ? "nwse-resize" : "nesw-resize";
+      return (edge.x === "left") === (edge.y === "top") ? "nwse-resize" : "nesw-resize";
     }
 
     popup.addEventListener("mousemove", function (e) {
@@ -841,7 +842,7 @@
         if (edge.y) {
           // Height as a share of the window (40-70vh), so it keeps its share when the window resizes
           var dy = ev.clientY - startY;
-          var h = Math.max(40, Math.min(70, (startHeight + (edge.above ? -dy : dy)) / window.innerHeight * 100));
+          var h = Math.max(40, Math.min(70, (startHeight + (edge.y === "top" ? -dy : dy)) / window.innerHeight * 100));
           popup.style.setProperty("--jr-popup-h", h + "vh");
           if (anchorBottom !== null) popup.style.top = (anchorBottom - popup.offsetHeight) + "px";
         }
@@ -931,7 +932,7 @@
       // Don't interfere with link/entity clicks — let the click handler handle them
       if (e.target.closest("a")) return;
       if (e.target.closest(JR.site.entitySelector)) return;
-      if (e.target.closest("button") && !e.target.closest(".jr-code-block")) return;
+      if (e.target.closest("button")) return;
       var hlSpan = e.target.closest(".jr-source-highlight");
       if (hlSpan && st.activeSourceHighlights.indexOf(hlSpan) !== -1) {
         var sel = window.getSelection();
@@ -998,6 +999,9 @@
    * Save the current popup state to the stack.
    */
   JR.pushPopupState = function () {
+    // only the active popup follows its original: a parent's patches would also redraw its paragraphs, taking away the
+    // highlight its child was opened from (review); removePopup has it follow again when it is active again
+    if (JR.siteAnswer) JR.siteAnswer.stop();
     st.popupStack.push({
       popup: st.activePopup,
       sourceHighlights: st.activeSourceHighlights,
@@ -1077,6 +1081,7 @@
     var pos = turnPosition(order);
     var target = pos(key);
     if (!scroller || target < 0) { done(false); return; }
+    if (JR.site.unpin) JR.site.unpin();
     // First jump to the estimated position (when the whole order is known), then step a screen at a time.
     if (order.length) scroller.scrollTop = scroller.scrollHeight * (target / order.length) - scroller.clientHeight / 2;
     var tries = 0;
@@ -1085,28 +1090,156 @@
       if (++tries > 40) { done(false); return; }
       var mounted = JR.site.turns().map(function (t) { return pos(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
       var dir = mounted.length && Math.min.apply(null, mounted) > target ? -1 : 1;
+      if (JR.site.unpin) JR.site.unpin();
       scroller.scrollTop += dir * scroller.clientHeight * 0.8;
       setTimeout(step, 100);
     })();
   };
 
+  // --- Navigation order (user, 2026-11-18: "popups in their physical on-page order, popups in popups right after
+  // their parent"): highlights by conversation turn, then by place in their answer's text; inside a popup, its
+  // highlights by place in its answer (a Reply last), recursively, on the versions shown. A place not on the page
+  // comes from the site's data (JR.qa.answerText) once, else creation time.
+  var navRecords = null, navPos = new Map(), navAsked = new Set(), navConv = null;
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    // a highlight added or deleted: counted again at once, not at the next press
+    chrome.storage.onChanged.addListener(function () { navRecords = null; JR.updateNavWidget(); });
+  }
+  function records() {
+    var conv = JR_HOST.convKey(); // another conversation (the sites move by pushState, not popstate): its own records
+    if (conv !== navConv) { navConv = conv; navRecords = null; navPos.clear(); navAsked.clear(); }
+    if (navRecords === null && typeof getHighlightsByUrl === "function") {
+      var ask = navRecords = {}; // loading; a read started before a change or in another conversation is dropped
+      getHighlightsByUrl().then(function (r) {
+        if (navRecords === ask) { navRecords = r; JR.updateNavWidget(); }
+      }, function () { if (navRecords === ask) navRecords = null; });
+    }
+    return Array.isArray(navRecords) ? navRecords : null;
+  }
+  function nthIndex(hay, needle, nth) {
+    if (!hay || !needle) return -1;
+    var i = -1;
+    for (var k = 0; k <= (nth || 0); k++) { i = hay.indexOf(needle, i + 1); if (i < 0) return -1; }
+    return i;
+  }
+  /** Offset of a highlight in its answer's text when it is on the page (in the chat or in an open popup), else -1. */
+  function domPos(entry) {
+    var span = entry && entry.spans && entry.spans[0];
+    if (!span || !span.isConnected) return -1;
+    var root = span.closest(".jr-popup-response") ||
+      JR.site.assistantBodies(JR.site.turnOf(span)).filter(function (b) { return b.contains(span); })[0];
+    if (!root) return -1;
+    var r = document.createRange();
+    r.setStart(root, 0);
+    r.setEndBefore(span);
+    return r.toString().length;
+  }
+  function htmlText(html) { var d = document.createElement("div"); d.innerHTML = html || ""; return d.textContent; }
+  var LATER = 1e12; // place unknown: after the known ones, by creation time
+
+  /** Ids to step through, in that order (null until the stored items are read). */
+  function navOrder() { var recs = records(); return recs ? JR.navOrderOf(recs) : null; }
+  JR.navOrderOf = function (recs) {
+    var byQuote = {}, byId = {};
+    recs.forEach(function (r) { (byQuote[r.quoteId] = byQuote[r.quoteId] || []).push(r); byId[r.id] = r; });
+    function shown(q) { // the version its popup shows
+      var e = st.completedHighlights.get(q), it = e && e.items && e.items[e.activeItemIndex != null ? e.activeItemIndex : e.items.length - 1];
+      var rs = byQuote[q];
+      return rs.filter(function (r) { return it && r.id === it.id; })[0] || rs.filter(function (r) { return r.active; })[0] || rs[rs.length - 1];
+    }
+    var shownRecs = Object.keys(byQuote).map(shown), kids = {};
+    shownRecs.forEach(function (r) { if (r.parentId) (kids[r.parentItemId] = kids[r.parentItemId] || []).push(r); });
+    if (!JR.qa.turnOrderCache && JR.qa.apiStatus !== "loading" && JR.qa.turnOrder) JR.qa.turnOrder().then(function () { JR.updateNavWidget(); });
+    var tpos = turnPosition(JR.qa.turnOrderCache);
+    function rootPlace(r) { // a turn's highlights are all on the page or all not: offsets of one kind per turn
+      var d = domPos(st.completedHighlights.get(r.quoteId));
+      if (d >= 0) return d;
+      if (navPos.has(r.quoteId)) return navPos.get(r.quoteId); // in the site's data (Markdown)
+      if (r.sourceTurnKey && JR.qa.answerText && !navAsked.has(r.quoteId)) {
+        navAsked.add(r.quoteId);
+        JR.qa.answerText(r.sourceTurnKey).then(function (t) {
+          var i = nthIndex(t, r.text, r.nth);
+          if (i >= 0 && !navPos.has(r.quoteId)) { navPos.set(r.quoteId, i); JR.updateNavWidget(); }
+        });
+      }
+      return LATER + (r.createdAt || 0);
+    }
+    function childPlace(parent, c) {
+      if (c.wholeResponse) return 2 * LATER + (c.createdAt || 0); // a Reply: after the answer's highlights
+      var d = domPos(st.completedHighlights.get(c.quoteId));
+      if (d >= 0) return d;
+      var got = JR.qa.peek ? JR.qa.peek(parent.turnKeys || []) : null;
+      var t = got && (got.responseHTML ? htmlText(got.responseHTML) : got.answerText); // (held: its text from the data)
+      var i = t ? nthIndex(t, c.text, c.nth) : -1;
+      return i >= 0 ? i : LATER + (c.createdAt || 0);
+    }
+    var out = [];
+    function emit(list, placeOf) {
+      list.map(function (r) { return { r: r, k: placeOf(r) }; })
+        .sort(function (a, b) { return a.k[0] - b.k[0] || a.k[1] - b.k[1] || (a.r.createdAt || 0) - (b.r.createdAt || 0); })
+        .forEach(function (x) {
+          out.push(x.r.quoteId);
+          emit(kids[x.r.id] || [], function (c) { return [0, childPlace(x.r, c)]; });
+        });
+    }
+    emit(shownRecs.filter(function (r) { return !r.parentId && !r.wholeResponse; }), function (r) {
+      var t = r.sourceTurnKey ? tpos(r.sourceTurnKey) : -1;
+      return [t >= 0 ? t : Infinity, rootPlace(r)];
+    });
+    out.chain = function (q) { // the versions to open, from the chat down to q (as the outline does)
+      var r = byQuote[q] && shown(q), chain = r ? [r] : [];
+      while (chain.length && chain[0].parentId) {
+        var up = byId[chain[0].parentItemId] || (byQuote[chain[0].parentId] && shown(chain[0].parentId));
+        if (!up) break;
+        chain.unshift(up);
+      }
+      return chain;
+    };
+    out.turnOf = function (q) { var c = out.chain(q); return c.length ? c[0].sourceTurnKey : null; }; // its root's turn
+    return out;
+  };
+
+  /** With no popup open: the index ∨ (direction 1) or ∧ (−1) goes to, from the highlights on the page now; -1: none. */
+  function nearestFromView(ids, direction) {
+    var band = JR.site.visibleBand(), firstBelow = -1, lastAbove = -1;
+    ids.forEach(function (id, i) {
+      var e = st.completedHighlights.get(id), sp = e && e.spans && e.spans[0];
+      if (!sp || !sp.isConnected || sp.closest(".jr-popup")) return;
+      var r = sp.getBoundingClientRect();
+      if (direction > 0 && firstBelow < 0 && r.top >= band.top) firstBelow = i;
+      if (direction < 0 && r.bottom <= band.bottom) lastAbove = i;
+    });
+    if (direction > 0 ? firstBelow >= 0 : lastAbove >= 0) return direction > 0 ? firstBelow : lastAbove;
+    // None on the page that way (its turns not mounted — a long chat, the review of dev.104): by turn, from the turns
+    // in view — the first highlight in a turn after them, or the last in one before them
+    var pos = turnPosition(JR.qa.turnOrderCache), lo = Infinity, hi = -1, pick = -1;
+    Array.prototype.forEach.call(document.querySelectorAll(JR.SEL.turn), function (t) {
+      var r = t.getBoundingClientRect(), p = pos(JR.site.turnKey(t));
+      if (p >= 0 && r.height > 0 && r.bottom > band.top && r.top < band.bottom) { lo = Math.min(lo, p); hi = Math.max(hi, p); }
+    });
+    var unknown = hi < 0 || !ids.turnOf;
+    if (!unknown) ids.forEach(function (id, i) {
+      var p = pos(ids.turnOf(id));
+      if (p < 0) { unknown = true; return; }
+      if (direction > 0 && pick < 0 && p > hi) pick = i;
+      if (direction < 0 && p < lo) pick = i;
+    });
+    if (pick >= 0 || !unknown) return pick; // -1: none that way
+    return direction > 0 ? ids.length - 1 : 0; // no turn order to tell: the last / first
+  }
+
   /**
-   * Find the L1 ancestor index for the current activeHighlightId.
+   * Find the index of the open popup (or its nearest listed parent) for the current activeHighlightId.
    */
   function findCurrentL1Index(ids) {
-    if (!st.activeHighlightId) return -1;
-    var idx = ids.indexOf(st.activeHighlightId);
-    if (idx !== -1) return idx;
-    // Walk up chained parents to find the root L1
-    var entry = st.completedHighlights.get(st.activeHighlightId);
-    if (entry && entry.parentId) {
-      var parentId = entry.parentId;
-      var parentEntry = st.completedHighlights.get(parentId);
-      while (parentEntry && parentEntry.parentId) {
-        parentId = parentEntry.parentId;
-        parentEntry = st.completedHighlights.get(parentId);
-      }
-      return ids.indexOf(parentId);
+    // no popup open: none is current, even if an id was left behind (live dev.105: ∨ at the top went 36 → 37, the last)
+    if (!st.activeHighlightId || !st.activePopup) return -1;
+    // the popup itself, else its nearest listed parent (a new one, not saved yet, inside a level-3 popup: level 3)
+    for (var id = st.activeHighlightId, n = 0; id && n < 100; n++) {
+      var idx = ids.indexOf(id);
+      if (idx !== -1) return idx;
+      var entry = st.completedHighlights.get(id);
+      id = entry && entry.parentId;
     }
     return -1;
   }
@@ -1152,54 +1285,13 @@
   }
 
   /**
-   * Determine user's scroll position relative to highlights.
-   * If any highlight is visible on screen → "between".
-   * If none visible and all below viewport → "above".
-   * If none visible and all above viewport → "below".
-   */
-  function getVisibleBounds(el) {
-    var top = 0;
-    var bottom = window.innerHeight;
-    var parent = el.parentElement;
-    while (parent) {
-      var ov = getComputedStyle(parent).overflowY;
-      if (ov === "auto" || ov === "hidden" || ov === "scroll") {
-        var pr = parent.getBoundingClientRect();
-        if (pr.top > top) top = pr.top;
-        if (pr.bottom < bottom) bottom = pr.bottom;
-      }
-      parent = parent.parentElement;
-    }
-    return { top: top, bottom: bottom };
-  }
-
-  function getScrollPosition(ids) {
-    // Find the visible bounds (viewport clipped by scroll containers)
-    var firstEntry = st.completedHighlights.get(ids[0]);
-    if (!firstEntry || !firstEntry.spans || !firstEntry.spans[0].isConnected) return "between";
-    var bounds = getVisibleBounds(firstEntry.spans[0]);
-
-    for (var i = 0; i < ids.length; i++) {
-      var entry = st.completedHighlights.get(ids[i]);
-      if (!entry || !entry.spans || !entry.spans[0].isConnected) continue;
-      var r = entry.spans[0].getBoundingClientRect();
-      if (r.height === 0 && r.width === 0) continue;
-      if (r.bottom > bounds.top && r.top < bounds.bottom) return "between";
-    }
-    // No highlight visible — check first highlight position vs visible area
-    var firstRect = firstEntry.spans[0].getBoundingClientRect();
-    if (firstRect.top >= bounds.bottom) return "above";
-    return "below";
-  }
-
-  /**
    * Create, update, or hide the floating highlight navigation widget.
    * Only tracks level-1 (non-chained) highlights.
    */
   JR.updateNavWidget = function () { // [LAYOUT-LOCKED] sidebar hide/show logic
     if (navNavigating) return;
 
-    var ids = JR.getLevel1HighlightIds();
+    var ids = navOrder() || JR.getLevel1HighlightIds();
     var sidebarOpen = JR.isRightSidebarOpen();
 
     if (ids.length < 1 || sidebarOpen) {
@@ -1273,9 +1365,8 @@
     }
     var currentIdx = findCurrentL1Index(ids);
     if (currentIdx === -1) {
-      var pos = getScrollPosition(ids);
-      upBtn.disabled = (pos === "above");
-      downBtn.disabled = (pos === "below");
+      upBtn.disabled = nearestFromView(ids, -1) < 0;
+      downBtn.disabled = nearestFromView(ids, 1) < 0;
     } else {
       upBtn.disabled = (currentIdx === 0);
       downBtn.disabled = (currentIdx === ids.length - 1);
@@ -1296,27 +1387,21 @@
 
     var nextIdx;
     if (currentIdx === -1) {
-      var pos = getScrollPosition(ids);
-      if (pos === "below") {
-        if (direction > 0) return; // down disabled
-        nextIdx = ids.length - 1;
-      } else if (pos === "above") {
-        if (direction < 0) return; // up disabled
-        nextIdx = 0;
-      } else {
-        // Between — up goes to first, down goes to last
-        nextIdx = direction > 0 ? ids.length - 1 : 0;
-      }
+      // The next one from where the user is (user, 2026-11-18: at the top ∨ jumped to the 42nd; with none in view it
+      // did nothing — only the first highlight was looked at, and the ones after the view weren't mounted)
+      nextIdx = nearestFromView(ids, direction);
     } else {
       nextIdx = currentIdx + direction;
     }
     if (nextIdx < 0 || nextIdx >= ids.length) return;
 
     var targetId = ids[nextIdx]; // may not be in memory yet (turn not mounted); scrollToAndOpenPopup handles it
+    var chain = ids.chain ? ids.chain(targetId) : [];
 
     // Suppress intermediate updateNavWidget calls during navigation
     navNavigating = true;
-    JR.scrollToAndOpenPopup(targetId);
+    if (chain.length > 1) openChain(chain, function () {}); // a popup inside a popup: open its parents first
+    else JR.scrollToAndOpenPopup(targetId);
     navNavigating = false;
     JR.updateNavWidget();
   };
@@ -1374,16 +1459,19 @@
   function openChain(chain, trace) {
     var k = 0, waited = 0;
     function wait(what, again) {
+      if (gen !== navGen) return trace("dropped: another jump"); // as in scrollToAndOpenPopup
       if ((waited += 100) > 6000) return trace("stuck: " + what);
       setTimeout(again, 100);
     }
     showVersion(chain[0]);
     JR.scrollToAndOpenPopup(chain[0].quoteId);
+    var gen = navGen;
     (function level() {
+      if (gen !== navGen) return trace("dropped: another jump");
       var rec = chain[k];
       if (!st.activePopup || st.activeHighlightId !== rec.quoteId) return wait("level " + (k + 1) + " popup", level);
       if (showVersion(rec)) JR.rebuildPopupAfterEdit(st.activePopup, rec.quoteId); // was not in memory before it opened
-      if (++k >= chain.length) { JR.revealPopup(st.activePopup); return trace("opened " + chain.length + " level(s)"); }
+      if (++k >= chain.length) return trace("opened " + chain.length + " level(s)");
       var child = chain[k];
       waited = 0;
       (function openChild() {
@@ -1392,58 +1480,75 @@
         if (!target || !st.completedHighlights.has(child.quoteId)) return wait("level " + (k + 1) + " highlight", openChild);
         showVersion(child);
         waited = 0;
-        target.click(); // as the user would: Reply, or the highlight inside the popup
+        openAt(target, function () { target.click(); }); // as the user would: Reply, or the highlight inside the popup
         level();
       })();
     })();
   }
 
   /**
-   * After a jump the user asked for (outline, ^ v): scroll so the popup is fully in view, also while it grows for
-   * the next 2 s (its answer arriving). Opening a popup by clicking its highlight never scrolls (R18).
+   * A jump the user asked for (^ v, the outline) brings the highlight to the bottom fifth of the chat's visible part
+   * (user, 2026-11-18): the popup opens above it with room to grow, and from then on the highlight stays put —
+   * nothing scrolls while the answer loads (the popup grows upward).
    */
-  JR.revealPopup = function (popup) {
+  function bringLow(span) {
     var sc = JR.site.scrollContainer();
-    if (!sc || !popup) return;
-    function fit() {
-      if (!popup.isConnected) return;
-      var band = JR.site.visibleBand(), r = popup.getBoundingClientRect(), margin = 12;
-      var d = r.top < band.top + margin ? r.top - band.top - margin
-        : r.bottom > band.bottom - margin ? Math.min(r.bottom - band.bottom + margin, r.top - band.top - margin) : 0;
-      if (Math.abs(d) > 1) sc.scrollTop += d;
+    if (!sc || !span || !span.isConnected) return;
+    var band = JR.site.visibleBand(), h = band.bottom - band.top;
+    if (JR.site.unpin) JR.site.unpin();
+    sc.scrollTop += span.getBoundingClientRect().top - (band.top + 0.82 * h);
+    // Where it can't get that low (the start of the chat): the top, so the popup opens below and grows down — not
+    // below a high highlight, behind the composer (Codex, DeepSeek's first highlights)
+    var top = span.getBoundingClientRect().top;
+    if (top < band.top + 0.82 * h - 2) sc.scrollTop += top - (band.top + 0.15 * h);
+  }
+  /** Every popup a jump opens, at any level (user, 2026-11-18: "the same for the 1st or the 100th"): its highlight goes
+   *  low first, then it opens — choosing its side where the highlight now is: above. Its height is as on a click. */
+  function openAt(span, open) {
+    var resp = span.closest(".jr-popup-response"); // inside a parent popup: in view in its answer first
+    if (resp) {
+      var rr = resp.getBoundingClientRect(), sr = span.getBoundingClientRect();
+      if (sr.top < rr.top || sr.bottom > rr.bottom) resp.scrollTop += sr.top - rr.top - (rr.height - sr.height) / 2;
     }
-    fit();
-    var ro = new ResizeObserver(fit);
-    ro.observe(popup);
-    setTimeout(function () { ro.disconnect(); }, 2000);
-  };
+    bringLow(span);
+    open();
+  }
 
   /**
    * Convenience: close all popups, scroll to a highlight, and open its popup.
    */
+  var navGen = 0; // a jump still scrolling to its highlight is dropped once another jump starts or popups are closed
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
+    var gen = navGen;
     var entry = st.completedHighlights.get(hlId);
     var connected = entry && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected;
+    var sc0 = JR.site.scrollContainer();
+    JR.navTrace = hlId.slice(0, 8) + (connected ? " on page y=" + Math.round(entry.spans[0].getBoundingClientRect().top) : " not on page");
     if (connected) {
-      entry.spans[0].scrollIntoView({ block: "center" });
-      JR.createPopup({ completedId: hlId });
-      JR.revealPopup(st.activePopup);
+      openAt(entry.spans[0], function () {
+        JR.navTrace += " → y=" + Math.round(entry.spans[0].getBoundingClientRect().top) + " scrollTop=" + Math.round(sc0 ? sc0.scrollTop : -1);
+        JR.createPopup({ completedId: hlId });
+      });
       return;
     }
     // Highlight's turn isn't in the DOM (virtualized): scroll until ChatGPT
     // mounts it, wait for the highlight to be re-applied, then open it.
     var q = entry || JR.pendingL1Quotes().filter(function (p) { return p.quoteId === hlId; })[0];
-    if (!q || !q.sourceTurnKey) return;
+    if (!q || !q.sourceTurnKey) { JR.navTrace += ", no turn key"; return; }
+    JR.navTrace += ", turn " + q.sourceTurnKey.slice(0, 8) + " at " + turnPosition(JR.qa.turnOrderCache)(q.sourceTurnKey) + "/" + (JR.qa.turnOrderCache || []).length;
     JR.scrollToTurnKey(q.sourceTurnKey, function (ok) {
-      if (!ok) return;
+      JR.navTrace += ", reached=" + ok + (gen !== navGen ? " (dropped)" : "");
+      if (!ok || gen !== navGen) return;
       var waited = 0;
       (function open() {
+        if (gen !== navGen) return; // the user went elsewhere meanwhile (user, 2026-11-18: two popups at once)
         var e = st.completedHighlights.get(hlId);
         if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
-          e.spans[0].scrollIntoView({ block: "center" });
-          JR.createPopup({ completedId: hlId });
-          JR.revealPopup(st.activePopup);
+          openAt(e.spans[0], function () {
+            JR.navTrace += ", opened at y=" + Math.round(e.spans[0].getBoundingClientRect().top);
+            JR.createPopup({ completedId: hlId });
+          });
           JR.updateNavWidget();
           return;
         }
@@ -1458,11 +1563,19 @@
    * Close all open popups (active + entire stack).
    */
   JR.removeAllPopups = function () {
+    navGen++;
     st.confirmingDelete = false;
     if (JR.removeTriggerBtn) JR.removeTriggerBtn();
     while (st.activePopup || st.popupStack.length > 0) {
       JR.removePopup();
     }
+    // A popup Popup lost track of (two jumps racing, user 2026-11-18) can't stay behind: it would never fill in nor close
+    Array.prototype.forEach.call(document.querySelectorAll(".jr-popup"), function (p) {
+      if (!p._jrMade) return;
+      if (p._jrAboveObserver) p._jrAboveObserver.disconnect();
+      if (p._jrScrollCleanup) p._jrScrollCleanup();
+      p.remove();
+    });
   };
 
   function detachPopupState() {
@@ -1528,6 +1641,11 @@
       st.activeSourceHighlights = prev.sourceHighlights;
       st.activeHighlightId = prev.highlightId;
     }
+    // Only the active popup follows its original (design A): this one let go; the parent, active again, follows its
+    // own — a moment later, unless it is closed too (closing all of them)
+    if (JR.siteAnswer) JR.siteAnswer.stop();
+    var back = st.activePopup, backResp = back && back.querySelector(":scope > .jr-popup-response");
+    if (backResp && backResp._jrSiteFollow) setTimeout(function () { if (st.activePopup === back && backResp.isConnected) backResp._jrSiteFollow(); }, 0);
     JR.syncHighlightActive(st.activeHighlightId);
     JR.updateNavWidget();
   };

@@ -66,10 +66,10 @@
     return textIn(root, null, blockBreaks, false);
   };
 
-  /** A popup answer's text (for "Reply"), without Popup's own Reply button and code headers. */
+  /** A popup answer's text (for "Reply"), without any button's label (Popup's Reply, the site's Copy / Run / …). */
   JR.popupResponseText = function (responseDiv) {
     var copy = responseDiv.cloneNode(true);
-    copy.querySelectorAll(".jr-reply-whole-btn, .jr-code-header").forEach(function (el) { el.remove(); });
+    copy.querySelectorAll("button, [role=button]").forEach(function (el) { el.remove(); });
     return textIn(copy, null, true, false).trim();
   };
 

@@ -1,7 +1,7 @@
 # claude.ai support (Step 4, after DeepSeek) — design, probe, evals
 
 Owner: background worker (2026-11-17), for the commander. Source of truth for claude.ai. R36 (ChatGPT) owns the
-shared files; nothing here edits them yet — §8 lists the shared-file edits to apply with DeepSeek's (docs/DEEPSEEK.md §8).
+shared files; §8 lists the shared-file edits, applied with DeepSeek's in 1.2.13-dev.32 (docs/DEEPSEEK.md §8).
 Structure follows docs/DEEPSEEK.md.
 
 ## 1. User decisions (2026-11-17)
@@ -14,7 +14,7 @@ Structure follows docs/DEEPSEEK.md.
 ## 2. Probe 2026-11-17 (read-only, Apple Events; one background tab opened by the worker and closed; the user's own claude.ai tab untouched)
 | | Finding | vs 2026-10-28 |
 |---|---|---|
-| Framing | `frame-ancestors 'self'` (read in-page; curl only sees Cloudflare's challenge) | **new, decisive**: the hidden same-origin render frame (src/chatgpt-render.js) works here — verified: a frame of `/chat/<id>` loaded in ~14 s, rendered 7 rows / 4 replies, no Cloudflare challenge |
+| Framing | `frame-ancestors 'self'` (read in-page; curl only sees Cloudflare's challenge) | **new, decisive**: the hidden same-origin render frame (src/site-render.js, was chatgpt-render.js) works here — verified: a frame of `/chat/<id>` loaded in ~14 s, rendered 7 rows / 4 replies, no Cloudflare challenge |
 | Scroller | `div[data-autoscroll-container=true]` (overflow-y auto) | new selector |
 | Virtual list | **"rocksteady"**: `[data-testid=transcript-sizer][data-rocksteady-sizer][data-sizer-excess]` (full height, `position:relative`) > `transcript-leading` (absolute overlay) · top `transcript-spacer` (height = rows above the window) · mounted rows · bottom `transcript-spacer` | **new library**; 30-row chat: 7 rows mounted, sizer 8429 px |
 | Rows | `[data-testid=transcript-row]` with `data-index`, `data-rs-index`, `data-perf-row=human|assistant`, `data-perf-row-from-tail`, `data-perf-row-streaming`; inline `display:flow-root; position:relative`; padding/margin 0 | was `[data-testid=transcript-row]` — same id, new attributes |
@@ -79,7 +79,7 @@ Structure follows docs/DEEPSEEK.md.
 
 ## 6. Mirror plan
 - **While streaming:** mirror the hidden assistant row (claude.ai's DOM) into the popup — no Popup re-render.
-- **After it ends / after a reload:** the hidden same-origin render frame (src/chatgpt-render.js, generalized as the site's
+- **After it ends / after a reload:** the hidden same-origin render frame (src/site-render.js, generalized as the site's
   render frame — it calls `JR.site.frame*` / `assistantHTML` / `assistantText` / `conversationId`, but **hard-codes
   ChatGPT's URL** `"/c/" + conv`: it must use `JR.site.chatUrl(conv)` — §8.8): load `/chat/<id>` in an
   off-screen iframe (Popup doesn't run in frames → nothing hidden there), scroll its list to the row with `K-hub-reply`,
@@ -88,8 +88,10 @@ Structure follows docs/DEEPSEEK.md.
   inside the frame (if any, e.g. code highlighting) must be scoped to frame-sourced answers (R36g plan) — check in C1.
 
 ## 7. Read-back after a reload
-- No REST/JSON read of answers needed: the render frame gives claude.ai's own rendering. (If ever needed, REST
-  `chat_conversations/<id>/chat_messages` may be JSON — not probed; binary StreamTimeline is off limits.)
+- Since dev.102 Popup reads claude.ai's conversation JSON (`/api/organizations/<lastActiveOrg>/chat_conversations/<id>?tree=True&rendering_mode=messages`,
+  `sites/claude.js` `fetchConversation`): the question, the answer's text (for ordering highlights) and the turn order —
+  in memory only. The popup still shows only claude.ai's own drawing from the render frame (`JR.qa.upgrade`, no
+  deadline since dev.105). Binary StreamTimeline stays off limits.
 
 ## 8. Shared-file edits beyond DeepSeek's list — **applied 1.2.13-dev.32** (docs/DEEPSEEK.md "Wiring")
 1. `manifest.json`: host `https://claude.ai/*`; load `src/sites/claude.js` before `site-adapter.js`; `chatgpt-render.js`

@@ -19,7 +19,6 @@
   --jr-mark-text: #fff;
   --jr-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), 0 0.25px 2px rgba(0, 0, 0, 0.1);
   --jr-focus-ring: rgba(25, 68, 241, 0.25);
-  --jr-link: #1944f1;
   --jr-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --jr-radius-pill: 6px;
   --jr-icon-btn-size: 16px;
@@ -45,7 +44,6 @@ body.dark /* DeepSeek */ {
   --jr-mark-text: #111821;
   --jr-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0.25px 2px rgba(0, 0, 0, 0.3);
   --jr-focus-ring: rgba(157, 183, 213, 0.35);
-  --jr-link: #9db7d5;
   --jr-radius-pill: 6px;
 }
 
@@ -676,105 +674,10 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response::before { top: -1px; box-shadow: 0 -50px 0 50px var(--jr-bg); }
 .jr-popup-response::after { bottom: -1px; box-shadow: 0 50px 0 50px var(--jr-bg); margin-top: -1px; }
 
-/* --- Markdown formatting --- */
-.jr-popup-response p { margin: 0 0 1em 0; }
-.jr-popup-response p:last-child { margin-bottom: 0; }
+/* The answer is the site's own drawing (its classes, the page's CSS): no element styles of Popup's own here (they
+   were for Popup's Markdown drawing, gone in 1.2.13, and overrode the site's spacing and inline code) */
 
-.jr-popup-response h1, .jr-popup-response h2, .jr-popup-response h3,
-.jr-popup-response h4, .jr-popup-response h5, .jr-popup-response h6 {
-  margin: 1.25em 0 0.5em 0; font-weight: 600; line-height: 1.3;
-}
-.jr-popup-response h1:first-child, .jr-popup-response h2:first-child,
-.jr-popup-response h3:first-child, .jr-popup-response h4:first-child,
-.jr-popup-response h5:first-child, .jr-popup-response h6:first-child { margin-top: 0; }
-
-.jr-popup-response hr { border: none; border-top: 1px solid var(--jr-border); margin: 1em 0; }
-
-/* Code blocks */
-.jr-popup-response .jr-code-block {
-  margin: 1em 0;
-  border-radius: var(--jr-radius);
-  overflow: hidden;
-  background: var(--token-sidebar-surface-secondary, #edebeb);
-  border: 1px solid var(--token-border-medium, #e3e1e1);
-}
-
-.jr-popup-response .jr-code-block:last-child { margin-bottom: 0; }
-
-.jr-popup-response .jr-code-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 16px;
-  background: var(--token-sidebar-surface-primary, #e3e1e1);
-  color: var(--token-text-secondary, var(--jr-text-muted));
-  font-size: 12px;
-  font-family: var(--jr-font);
-  border-bottom: 1px solid var(--token-border-medium, #e3e1e1);
-}
-
-.jr-popup-response .jr-code-lang { display: flex; align-items: center; gap: 6px; }
-.jr-popup-response .jr-code-header-btns { display: flex; align-items: center; gap: 2px; }
-
-.jr-popup-response .jr-code-header button {
-  background: none; border: none;
-  color: var(--token-text-secondary, var(--jr-text-muted));
-  cursor: pointer; padding: 4px 8px; font-size: 12px;
-  display: flex; align-items: center; gap: 4px;
-  border-radius: 4px; transition: color 0.15s ease;
-}
-
-.jr-popup-response .jr-code-header button:hover { color: var(--jr-action); }
-
-.jr-popup-response .jr-code-block pre {
-  margin: 0; padding: 16px; overflow-x: auto;
-  background: var(--token-sidebar-surface-secondary, #edebeb);
-  font-size: 13px; line-height: 1.7;
-}
-
-.jr-popup-response .jr-code-block pre code {
-  background: none; padding: 0; font-size: inherit;
-  white-space: pre; color: var(--token-text-primary, var(--jr-text));
-}
-
-.jr-popup-response code {
-  font-size: 0.9em; background: var(--jr-highlight-bg);
-  padding: 2px 4px; border-radius: 3px;
-}
-
-.jr-popup-response blockquote {
-  margin: 1em 0; padding: 8px 12px;
-  border-left: 3px solid var(--jr-highlight-border);
-  background: var(--jr-highlight-bg);
-  border-radius: 0 var(--jr-radius) var(--jr-radius) 0;
-  color: var(--jr-text-muted);
-}
-
-.jr-popup-response ul, .jr-popup-response ol { margin: 1em 0; padding-left: 1.5em; }
-.jr-popup-response ul { list-style-type: disc; }
-.jr-popup-response ol { list-style-type: decimal; }
-.jr-popup-response li { margin-bottom: 0.25em; }
-.jr-popup-response li:last-child { margin-bottom: 0; }
-
-/* Tables Popup draws itself (.jr-table-wrap, Popup's Markdown renderer). The sites' own tables (ChatGPT's, claude.ai's,
-   DeepSeek's — also DeepSeek's history redrawn in its classes, .ds-markdown) keep the site's look (user, 2026-11-18:
-   Popup's grid on DeepSeek's table looked ugly) */
-.jr-popup-response .jr-table-wrap:not(.ds-markdown *) table { border-collapse: collapse; width: 100%; font-size: 13px; }
-.jr-popup-response .jr-table-wrap:not(.ds-markdown *) :is(th, td) { border: 1px solid var(--jr-border); padding: 6px 10px; text-align: left; }
-.jr-popup-response .jr-table-wrap:not(.ds-markdown *) th { background: var(--jr-highlight-bg); font-weight: 600; }
-/* A wide table in a narrow popup scrolls sideways instead of squeezing its columns
-   (ChatGPT's page CSS lays tables out fixed, which ignores cell widths: T16) */
-.jr-popup-response .jr-table-wrap { overflow-x: auto; margin: 1em 0; scrollbar-width: thin; }
-.jr-popup-response .jr-table-wrap table { margin: 0; table-layout: auto !important; }
-.jr-popup-response .jr-table-wrap:not(.ds-markdown *) :is(th, td) { min-width: 5em !important; }
-/* A checkbox, drawn even though ChatGPT's page CSS resets every input to 0 × 0 (T16) */
-.jr-popup-response li:has(> .jr-task) { list-style: none; margin-left: -1.2em; }
-.jr-popup-response input.jr-task {
-  appearance: auto !important; width: 13px !important; height: 13px !important; border: revert !important;
-  flex: none; margin: 0 4px 0 0; vertical-align: -2px; accent-color: var(--jr-action);
-}
-
-.jr-popup-response a { color: var(--jr-link); text-decoration: underline; cursor: pointer; pointer-events: auto; }
+.jr-popup-response a { cursor: pointer; pointer-events: auto; } /* (its look is the site's: citations are pills there) */
 .jr-popup-response img { max-width: 100%; height: auto; }
 
 /* ==========================================================================
@@ -1112,7 +1015,7 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
   height: 0 !important; /* not display:none: that also drops the list's 6px flex gap and the page moved 6px at max scroll (R36a, E-send-3) */
 }
 /* DeepSeek: its question outline (right edge) lists Popup questions too: shown as their question only, indented
-   ("↳ …", sites/deepseek.js tidy). DeepSeek's own text stays in the row (it owns that node), hidden under ours. */
+   ("· …" with a muted dot, sites/deepseek.js tidy). DeepSeek's own text stays in the row (it owns that node), hidden under ours. */
 .jr-outline-popup > :first-child { visibility: hidden; position: relative; }
 .jr-outline-popup > :first-child::after {
   content: attr(data-jr-q); visibility: visible; position: absolute; inset: 0; padding-left: 0.6em;
@@ -1127,17 +1030,10 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
    gets its code turned around (lightness inverted, hues kept) — user's dark-mode run, 2026-11-18 */
 html[data-mode="dark"] .jr-popup-response [data-jr-theme="light"] pre code,
 html[data-mode="light"] .jr-popup-response [data-jr-theme="dark"] pre code { filter: invert(1) hue-rotate(180deg); }
-/* DeepSeek search sources in a popup drawn from its stream / history: a small round number, like DeepSeek's own */
-.jr-popup-response a.jr-cite {
-  display: inline-block; min-width: 1.4em; margin: 0 0.15em; padding: 0 0.35em; border-radius: 999px;
-  font-size: 0.72em; line-height: 1.6; text-align: center; vertical-align: 0.12em; text-decoration: none;
-  color: inherit; background: color-mix(in srgb, currentColor 10%, transparent);
-}
 /* claude.ai: the same reserved space is div[data-testid=chat-extra-space] with an inline min-height */
 html.jr-tail-hidden [data-testid="chat-extra-space"] {
   min-height: 0 !important;
 }
-
 
 /* ==========================================================================
    Attachments in a popup question (Step 2): a row of small squares between
@@ -1184,66 +1080,6 @@ html.jr-tail-hidden [data-testid="chat-extra-space"] {
    a simple, readable version of what ChatGPT draws in the page
    ========================================================================== */
 
-.jr-popup-response .jr-dil { margin: 8px 0; }
-.jr-popup-response .jr-dil > :first-child { margin-top: 0; }
-.jr-popup-response .jr-dil > :last-child { margin-bottom: 0; }
-.jr-popup-response .jr-dil-box, .jr-popup-response .jr-dil-card, .jr-popup-response .jr-dil-callout {
-  display: flex; flex-direction: column; gap: 6px; border-radius: var(--jr-radius);
-}
-.jr-popup-response .jr-dil-border, .jr-popup-response .jr-dil-card, .jr-popup-response .jr-dil-callout {
-  border: 1px solid var(--jr-border); padding: 10px 12px;
-}
-.jr-popup-response .jr-dil-bg { background: var(--jr-highlight-bg); padding: 8px 12px; }
-.jr-popup-response .jr-dil-center { align-items: center; text-align: center; }
-/* A box's own size from the answer (data-w / data-h, qa-content.js dilOpen), e.g. a relative-size bar (R15) */
-.jr-popup-response .jr-dil[data-w] { width: attr(data-w type(<length-percentage>)); align-self: flex-start; }
-.jr-popup-response .jr-dil[data-h] { height: attr(data-h type(<length-percentage>)); }
-.jr-popup-response .jr-dil-bg[data-h]:empty,
-.jr-popup-response .jr-dil-bg[data-h]:has(> .jr-dil-bg:empty:only-child) { padding: 0; overflow: hidden; } /* a bar and its track */
-.jr-popup-response .jr-dil-bg .jr-dil-bg:empty { background: var(--jr-text-muted); } /* the filled part of a bar */
-.jr-popup-response .jr-dil-row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
-.jr-popup-response .jr-dil-grid {
-  /* ChatGPT's column count at most; fewer when a card would get narrower than 120 px */
-  --jr-cols: 2; display: grid; gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(max(120px, calc((100% - (var(--jr-cols) - 1) * 8px) / var(--jr-cols))), 1fr));
-}
-.jr-popup-response .jr-dil-caption { font-size: 0.85em; color: var(--jr-text-muted); text-align: center; }
-.jr-popup-response .jr-dil-icon { color: var(--jr-text-muted); line-height: 1; }
-.jr-popup-response .jr-dil-badge {
-  display: inline-block; padding: 1px 8px; border-radius: var(--jr-radius-pill);
-  background: var(--jr-highlight-bg); font-size: 0.8em; color: var(--jr-text-muted);
-}
-
-.jr-popup-response .jr-dil-cols-1 { --jr-cols: 1; }
-.jr-popup-response .jr-dil-cols-3 { --jr-cols: 3; }
-.jr-popup-response .jr-dil-cols-4 { --jr-cols: 4; }
-.jr-popup-response .jr-dil-grid-item { min-width: 0; margin: 0; }
-.jr-popup-response .jr-dil-between { justify-content: space-between; }
-.jr-popup-response .jr-dil-title { font-weight: 600; font-size: 1.05em; margin: 0; }
-.jr-popup-response .jr-dil-small { font-size: 0.85em; }
-.jr-popup-response .jr-dil-muted { color: var(--jr-text-muted); }
-.jr-popup-response .jr-dil-spacer { height: 4px; margin: 0; }
-.jr-popup-response .jr-dil hr { margin: 4px 0; }
-
-/* Charts and maps Popup draws from an answer's data (T15) */
-.jr-popup-response .jr-chart, .jr-popup-response .jr-map { margin: 1em 0; }
-.jr-popup-response .jr-chart-title { font-weight: 600; }
-.jr-popup-response .jr-chart-desc { font-size: 0.85em; color: var(--jr-text-muted); }
-.jr-popup-response .jr-chart svg { display: block; width: 100%; height: auto; margin-top: 6px; overflow: visible; }
-.jr-popup-response .jr-chart-grid { stroke: var(--jr-border); stroke-width: 1; }
-.jr-popup-response .jr-chart-axis { fill: var(--jr-text-muted); font-size: 9px; }
-.jr-popup-response .jr-chart-line { fill: none; stroke: var(--jr-action); stroke-width: 2; }
-.jr-popup-response .jr-chart-dot, .jr-popup-response .jr-chart-bar { fill: var(--jr-action); }
-.jr-popup-response .jr-chart-s1 { opacity: 0.7; }
-.jr-popup-response .jr-chart-s2 { opacity: 0.5; }
-.jr-popup-response .jr-chart-s3 { opacity: 0.35; }
-.jr-popup-response .jr-chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.85em; color: var(--jr-text-muted); }
-.jr-popup-response .jr-chart-key::before { content: ""; display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; background: var(--jr-action); }
-.jr-popup-response .jr-map ul { list-style: none; padding: 0; margin: 6px 0 0; }
-.jr-popup-response .jr-map li { margin-bottom: 6px; }
-.jr-popup-response .jr-map-addr { display: block; font-size: 0.85em; color: var(--jr-text-muted); }
-.jr-popup-response .jr-dil-check { display: flex; align-items: baseline; gap: 2px; margin: 4px 0; }
-
 /* ChatGPT's own tables in a copied answer: its viewport is sized for the page, so in
    a popup it overflowed the right edge (T15); here it scrolls sideways instead */
 .jr-popup-response [data-d-component="table"], .jr-popup-response [data-d-table-viewport] {
@@ -1257,8 +1093,8 @@ html.jr-tail-hidden [data-testid="chat-extra-space"] {
    band (user: "丑"). The browser's thin bar instead. */
 .jr-popup-response .ds-scroll-area__gutters { display: none !important; }
 
-/* R34: hidden same-origin frame where ChatGPT draws a Popup answer (chatgpt-render.js). Off screen but
-   laid out (display:none would not render), at about a popup's width so ChatGPT sizes tables/code for it. */
+/* R34: hidden same-origin frame where the site draws a Popup answer (site-render.js). Laid out (display:none would
+   not render), at about a popup's width so the site sizes tables/code for it. */
 .jr-render-frame {
   /* Inside the viewport (unseen: transparent, behind the page, not clickable): claude.ai colours code only when it is
      on screen (IntersectionObserver), and off screen at -20000px a copied answer kept black-and-white code */

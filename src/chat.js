@@ -577,57 +577,7 @@
   // popup copy in place: existing nodes are kept (text updated, attributes
   // synced) and only new nodes are cloned in, so each new word animates once.
 
-  function sameKind(a, b) {
-    return a.nodeType === b.nodeType && (a.nodeType !== 1 || a.tagName === b.tagName);
-  }
-
-  function syncAttrs(src, dst) {
-    var i, a;
-    for (i = dst.attributes.length - 1; i >= 0; i--) {
-      a = dst.attributes[i].name;
-      if (!src.hasAttribute(a)) dst.removeAttribute(a);
-    }
-    for (i = 0; i < src.attributes.length; i++) {
-      a = src.attributes[i];
-      if (dst.getAttribute(a.name) !== a.value) dst.setAttribute(a.name, a.value);
-    }
-  }
-
-  /** Make dstParent's children mirror srcNodes (an array), reusing matching nodes. */
-  function syncChildren(srcNodes, dstParent) {
-    var d = dstParent.firstChild;
-    for (var i = 0; i < srcNodes.length; i++) {
-      var s = srcNodes[i];
-      if (d && sameKind(s, d)) {
-        if (s.nodeType === 3 || s.nodeType === 8) {
-          if (d.data !== s.data) d.data = s.data;
-        } else if (s.nodeType === 1) {
-          syncAttrs(s, d);
-          syncChildren(Array.prototype.slice.call(s.childNodes), d);
-        }
-        d = d.nextSibling;
-      } else {
-        dstParent.insertBefore(s.cloneNode(true), d);
-      }
-    }
-    while (d) {
-      var next = d.nextSibling;
-      dstParent.removeChild(d);
-      d = next;
-    }
-  }
-
-  /** Mirror a turn's answer (all markdown roots) into responseDiv incrementally. */
-  function syncAnswerInto(responseDiv, turn) {
-    var bodies = JR.site.assistantBodies(turn);
-    if (!bodies.length) return false;
-    // Mirror the markdown roots themselves: ChatGPT scopes all answer styling under the root's class and
-    // data-markdown-* attributes (spacing, sizes, tables, the per-word fade-in while streaming) — copying
-    // only the children lost all of it (R36b/h)
-    syncChildren(bodies, responseDiv);
-    if (JR.site.markCopy) Array.prototype.forEach.call(responseDiv.children, JR.site.markCopy);
-    return true;
-  }
+  // (the patching itself: site-answer.js, shared with every other path — design A)
 
   /**
    * Keep the user's place while ChatGPT answers: every frame, undo any drift
@@ -772,7 +722,6 @@
     var detached = false;
     var detachedSpans = null;
     var detachedHlId = editOpts ? editOpts.hlId : null;
-    var streamObserver = null;
     var injectionFailed = false;
 
     // Answer text from ChatGPT's network stream (net-tap.js, MAIN world). Used
@@ -806,41 +755,16 @@
         }
         return;
       }
-      net.text = d.text || net.text;
+      net.text = d.text || net.text; // (to tell when it is done, never drawn: the popup shows the site answer only)
       if (d.kind === "done") net.done = true;
-      if (netRaf) return;
-      netRaf = requestAnimationFrame(function () { netRaf = 0; if (!domAnswerUsable()) renderNetText(); });
     }
-    var netRaf = 0;
     document.addEventListener("jr-net", onNet);
 
     /** ChatGPT's DOM has a usable answer for our turn right now. */
     function domAnswerUsable() {
       var t = liveResponseTurn();
-      if (t && JR.site.hasUndrawnWidget(t) && net.text.trim()) return false; // a copy would show a blank chart or map: Popup draws it
+      if (t && JR.site.hasUndrawnWidget(t)) return false; // a copy would show a blank chart or map: the frame's original
       return !!(t && !JR.site.renderFailed(t) && JR.site.assistantText(t).trim());
-    }
-
-    function renderNetText() {
-      if (mirrorDiv) return; // ChatGPT's own drawing is already shown: keep it (R36f)
-      var targetPopup = getStreamTarget();
-      if (!targetPopup || !net.text) return;
-      var responseDiv = targetPopup.querySelector(".jr-popup-response");
-      if (!responseDiv) {
-        var loadingEl = targetPopup.querySelector(".jr-popup-loading");
-        if (loadingEl) loadingEl.remove();
-        responseDiv = document.createElement("div");
-        responseDiv.className = "jr-popup-response";
-        targetPopup.appendChild(responseDiv);
-        JR.repositionPopup();
-      }
-      var tmp = document.createElement("div");
-      tmp.innerHTML = JR.renderAnswerText(net.text);
-      syncChildren(Array.prototype.slice.call(tmp.childNodes), responseDiv);
-      targetPopup.classList.add("jr-popup--streaming");
-      if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
-      JR.typeAnswer(targetPopup);
-      JR.followAnswer(responseDiv);
     }
 
     /**
@@ -910,11 +834,7 @@
       // Turns the freeze hid that turned out not to be ours: show them again.
       var notOurs = frozen.filter(function (k) { return qaKeys.indexOf(k) === -1; });
       if (notOurs.length && qaKeys.length) JR.unhideTurnKeys(notOurs);
-      if (streamObserver) {
-        streamObserver.disconnect();
-        streamObserver = null;
-      }
-      if (netRaf) { cancelAnimationFrame(netRaf); netRaf = 0; } // never draws over the finished answer
+      if (detached && mirrorDiv && JR.siteAnswer.current() === mirrorDiv) JR.siteAnswer.stop(); // no popup shows it
       if (unlockScroll) unlockScroll();
       document.querySelectorAll(".jr-popup--streaming").forEach(function (p) { p.classList.remove("jr-popup--streaming"); });
       if (location.hash.indexOf("jr-") !== -1) setTimeout(JR.diagnose, 500); // test tools: keep #jr-diagnostics current after each send
@@ -950,77 +870,45 @@
       if (!responseKey) return null;
       if (responseTurn && responseTurn.isConnected) return responseTurn;
       var fresh = JR.site.findTurnByKey(responseKey);
-      if (fresh) {
-        responseTurn = fresh;
-        if (streamObserver) observeStream();
-      }
+      if (fresh) responseTurn = fresh;
       return fresh;
     }
 
     /**
-     * Clone current response content into the popup (replaceChildren instead
-     * of innerHTML to avoid flicker).
+     * While it streams, the popup it goes to (when active: only the active popup follows an original) shows the site
+     * answer: its answer area follows our answer's original (site-answer.js, design A) — node by node, as fast as the
+     * site draws it. Called on start and on every poll (the popup may have closed, reopened, or another be active).
      */
-    function syncStreamContent() {
-      if (JR.perf) JR.perf.count("streamSync");
-
-      var turn = liveResponseTurn();
-      if (!turn) return;
-      // ChatGPT's "couldn't load", or a chart/map it draws only on screen (a copy would be blank): the network text
-      // is drawn instead — drop the mirror so renderNetText and captureResponse use it (review #1)
-      if (JR.site.renderFailed(turn) || (JR.site.hasUndrawnWidget(turn) && net.text.trim())) { mirrorDiv = null; return; }
-      // ChatGPT mounts an empty answer placeholder first: keep "Loading…" until text arrives.
-      if (!JR.site.assistantText(turn).trim()) return;
+    function streamInto() {
       var targetPopup = getStreamTarget();
-      if (!targetPopup) return;
-
-      // Create or reuse the response div
+      if (!targetPopup || targetPopup !== st.activePopup || !responseKey) return;
+      var turn = liveResponseTurn(); // (its answer drawn on the page first: an empty placeholder would send it elsewhere)
+      if (!turn || !JR.site.assistantBodies(turn).length) return;
       var responseDiv = targetPopup.querySelector(".jr-popup-response");
-      var isNew = false;
+      if (responseDiv && JR.siteAnswer.current() === responseDiv && followedKeys === qaKeys.join()) return; // it does
       if (!responseDiv) {
         responseDiv = document.createElement("div");
         responseDiv.className = "jr-popup-response";
-        isNew = true;
       }
-      if (!syncAnswerInto(responseDiv, turn)) return;
-      mirrorDiv = responseDiv;
-      JR.typeAnswer(targetPopup); // the new text stays hidden until it is typed out, from this same frame on
-      targetPopup.classList.add("jr-popup--streaming");
-      if (isNew) {
-        var loadingEl = targetPopup.querySelector(".jr-popup-loading");
-        if (loadingEl) loadingEl.remove();
-        targetPopup.appendChild(responseDiv);
-      }
-
-      // Delegated click handler for links + images (attach once via shared helper)
-      if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
-
-      // A new answer area: the arrow moves to it ("above" popups then stay pinned by attachAboveAnchorObserver)
-      if (isNew) JR.repositionPopup();
-      JR.followAnswer(responseDiv);
+      followedKeys = qaKeys.join();
+      JR.siteAnswer.follow(responseDiv, qaKeys.slice(), function () {
+        if (JR.perf) JR.perf.count("streamSync");
+        // ChatGPT mounts an empty answer placeholder first: keep "Loading…" until text arrives
+        if (!responseDiv.textContent.trim()) return;
+        mirrorDiv = responseDiv;
+        JR.typeAnswer(targetPopup); // the new text stays hidden until it is typed out, from this same frame on
+        targetPopup.classList.add("jr-popup--streaming");
+        if (!responseDiv.parentNode) {
+          var loadingEl = targetPopup.querySelector(".jr-popup-loading");
+          if (loadingEl) loadingEl.remove();
+          targetPopup.appendChild(responseDiv);
+          JR.repositionPopup(); // a new answer area: the arrow moves to it
+        }
+        if (JR.wireResponseClicks) JR.wireResponseClicks(responseDiv);
+        JR.followAnswer(responseDiv);
+      });
     }
-
-    /**
-     * MutationObserver callback: copy at once, before this frame paints (no frame of lag behind ChatGPT).
-     */
-    function onStreamMutation() {
-      syncStreamContent();
-    }
-
-    function observeStream() {
-      if (streamObserver) streamObserver.disconnect();
-      streamObserver = new MutationObserver(onStreamMutation);
-      streamObserver.observe(responseTurn, { childList: true, subtree: true, characterData: true });
-    }
-
-    /**
-     * Attach a MutationObserver to the response turn so the popup
-     * updates at the same speed ChatGPT renders tokens.
-     */
-    function startStreaming() {
-      syncStreamContent();
-      observeStream();
-    }
+    var followedKeys = "";
 
     // Closing the popup mid-answer detaches: the watch keeps running and saves
     // the answer to the highlight in the background.
@@ -1075,22 +963,13 @@
     function captureResponse() {
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
 
-      // Stop streaming before final capture
-      if (streamObserver) {
-        streamObserver.disconnect();
-        streamObserver = null;
-      }
-
       var turn = liveResponseTurn();
       var responseHTML = null;
       if (domAnswerUsable()) {
         responseHTML = JR.site.assistantHTML(turn);
       } else if (mirrorDiv && mirrorDiv.textContent.trim()) {
         responseHTML = mirrorDiv.innerHTML; // the hidden turn is gone: what the popup mirrored is ChatGPT's rendering (R36f)
-      } else if (net.text.trim()) {
-        responseHTML = JR.renderAnswerText(net.text); // turn not in the DOM, or ChatGPT failed to render it
-        var drawnByPopup = true;
-      } else if (turn) {
+      } else if (turn && !net.text.trim()) {
         // Empty answer (user stopped, error): save as __TIMEOUT__
         finishWithTimeout();
         return;
@@ -1099,10 +978,11 @@
         // keys; the content is read back when the turn mounts again (JR.qa).
         responseHTML = "__LOADING__";
       }
+      // (else — the turn not in the DOM, ChatGPT's "couldn't load", a chart it draws only on screen — "Loading…" until
+      // the site answer comes from its original elsewhere: the render frame; user 2026-11-18, no backup)
       if (responseHTML !== "__LOADING__") qaKeys.forEach(function (k) {
-        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true, drawnByPopup: !!drawnByPopup });
+        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true });
       });
-      if (drawnByPopup) JR.qa.upgrade(qaKeys); // the hidden turn was gone at the end: ChatGPT draws it in the render frame (R34)
       cleanup();
 
       var sourceTurnKey = spans.length > 0 ? JR.getTurnKey(spans[0]) : null;
@@ -1307,19 +1187,19 @@
             if (JR.site.hasAssistant(fresh[ri])) {
               responseTurn = fresh[ri];
               responseKey = JR.site.turnKey(responseTurn);
-              startStreaming();
+              streamInto();
               break;
             }
           }
         }
       }
 
+      streamInto();
       var turn = liveResponseTurn();
       var generating = JR.isGenerating();
 
       // 2. Done: ChatGPT stopped generating and the answer has text.
       if (turn && !generating && JR.site.assistantText(turn).trim().length > 0) {
-        if (streamObserver) syncStreamContent();
         setTimeout(captureResponse, 300);
         return;
       }

@@ -10,54 +10,10 @@
 
   // --- Private helpers (not on JR.*) ---
 
-  /**
-   * Wire up Copy buttons inside a popup response div.
-   */
-  var CODE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
-  var COPY_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-  var CHECK_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-  /** Create a Copy button with a live click handler. */
-  function wireCopyButton(container) {
-    var btn = document.createElement("button");
-    btn.innerHTML = COPY_ICON + " Copy";
-    btn.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      var codeBlock = btn.closest(".jr-code-block");
-      var codeEl = codeBlock ? codeBlock.querySelector("pre code") : null;
-      var text = codeEl ? codeEl.textContent : "";
-      navigator.clipboard.writeText(text).then(function () {
-        btn.innerHTML = CHECK_ICON + " Copied!";
-      }, function () {
-        btn.innerHTML = COPY_ICON + " Couldn\u2019t copy";
-      });
-      setTimeout(function () { btn.innerHTML = COPY_ICON + " Copy"; }, 2000);
-    });
-    container.appendChild(btn);
-  }
-
-  /**
-   * Popup's own code blocks (drawn by JR.renderMarkdown, the fallback) get working Copy buttons again;
-   * ChatGPT's code blocks are left as ChatGPT drew them.
-   */
-  function rebuildCodeBlocks(responseDiv) {
-    // First, handle any previously-rebuilt .jr-code-block elements (from stored HTML).
-    // These have dead buttons (event listeners lost on serialize/deserialize).
-    // Rewire their Copy buttons with fresh handlers.
-    var existingBlocks = responseDiv.querySelectorAll(".jr-code-block");
-    for (var eb = 0; eb < existingBlocks.length; eb++) {
-      var block = existingBlocks[eb];
-      var oldBtns = block.querySelector(".jr-code-header-btns");
-      if (oldBtns) oldBtns.remove();
-      var btnsDiv = document.createElement("div");
-      btnsDiv.className = "jr-code-header-btns";
-      wireCopyButton(btnsDiv);
-      var header = block.querySelector(".jr-code-header");
-      if (header) header.appendChild(btnsDiv);
-    }
-
-    // ChatGPT's own code blocks stay exactly as ChatGPT draws them (R34: the popup shows ChatGPT's
-    // formats as they stream); their Copy button is handled in wireResponseClicks.
+  /** The popup is active and still shows this "Loading…" (not flipped / switched away while the answer was read):
+   *  only then may it take the one live follow (review: a late one took it from the popup on screen, its buttons died). */
+  function stillWaiting(popup, loadingEl) {
+    return st.activePopup === popup && !!loadingEl && loadingEl.isConnected;
   }
 
   /**
@@ -68,17 +24,40 @@
   // ChatGPT entity links (spans with React handlers, e.g. open a side panel)
   var ENTITY_SELECTOR = JR.site.entitySelector;
 
+  JR.wireResponseClicks = wireResponseClicks; // (tests)
   function wireResponseClicks(responseDiv) {
     if (responseDiv._jrClickWired) return;
     responseDiv._jrClickWired = true;
     responseDiv.addEventListener("click", function (e) {
-      // --- ChatGPT's code block, shown as ChatGPT drew it: its toolbar buttons have no handlers here ---
-      if (e.target.closest("button")) {
-        var cb = JR.site.codeBlocks(responseDiv).filter(function (b) { return b.block.contains(e.target); })[0];
-        if (cb) {
+      // --- Any control the site drew (a code block's Run / Copy / wrap / Download, whatever it adds): the site's own,
+      // clicked at the same place in the original (design B); its result comes back through the copy ---
+      var siteBtn = e.target.closest("button, [role=button]");
+      // (not an image's button: Popup's lightbox below — the site's viewer would open in the unseen frame, review; a
+      // citation's favicon is no image of the answer)
+      var pic = siteBtn && siteBtn.querySelector("img");
+      if (siteBtn && responseDiv.contains(siteBtn) && !siteBtn._jrReplyAnchor && !(pic && pic.getBoundingClientRect().width >= 48)) {
+        var orig = JR.siteAnswer && JR.siteAnswer.counterpart(siteBtn);
+        // its original is still being found (a parent active again after its child closed — live B6: the click went
+        // nowhere): it goes there once it is, for up to 4 s (the site's Copy needs the click's activation: 5 s)
+        var finding = !orig && JR.siteAnswer && JR.siteAnswer.current() === responseDiv;
+        if (orig || finding) {
           e.preventDefault();
           e.stopPropagation();
-          navigator.clipboard.writeText(JR.site.codeText(cb.code));
+          (function forward(tries) {
+            var o = orig || (JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(siteBtn));
+            if (!o) { if (tries > 0) setTimeout(function () { forward(tries - 1); }, 100); return; }
+            // an original in the render frame: the site's Copy writes the clipboard only from a focused document (live
+            // 2026-11-18: ChatGPT's Copy in a popup copied nothing) — the frame has it for the click, then the page again
+            var w = o.ownerDocument.defaultView;
+            if (w && w !== window) {
+              if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
+              // the control itself, not the frame's own focused composer: a key meanwhile goes nowhere (review)
+              try { o.focus({ preventScroll: true }); } catch (er) {}
+              var fd = o.ownerDocument;
+              if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
+            }
+            o.click();
+          })(40);
           return;
         }
       }
@@ -109,7 +88,7 @@
 
       // --- ChatGPT buttons (citations, etc.) — proxy to hidden turn ---
       var btn = e.target.closest("button");
-      if (btn && responseDiv.contains(btn) && !btn.closest(".jr-code-block")
+      if (btn && responseDiv.contains(btn)
           && !btn.classList.contains("jr-reply-whole-btn")
           && !btn._jrReplyAnchor) {
         var btnImg = btn.querySelector("img");
@@ -140,63 +119,12 @@
    * Find the matching element in the original hidden response turn and click it,
    * triggering ChatGPT's React handlers (e.g., open sidebar panel).
    */
-  function proxyClickToHiddenTurn(popupEl, responseDiv) {
-    // Find the highlight ID for this popup
-    var popup = responseDiv.closest(".jr-popup");
-    if (!popup) return;
-    var hlId = popup._jrHighlightId || st.activeHighlightId;
-    if (!hlId) return;
-    var entry = st.completedHighlights.get(hlId);
-    if (!entry) return;
-
-    // Get the response turn index from the active version
-    var activeItem = (entry.items && entry.items.length > 0)
-      ? entry.items[entry.activeItemIndex || 0]
-      : null;
-    var keys = activeItem ? (activeItem.turnKeys || []) : [];
-
-    // Find the hidden Q&A turn in the DOM (only possible while ChatGPT has it mounted)
-    var hiddenTurn = null;
-    for (var t = keys.length - 1; t >= 0 && !hiddenTurn; t--) hiddenTurn = JR.site.findTurnByKey(keys[t]);
-    if (!hiddenTurn) return;
-
-    var markdown = JR.site.assistantBodies(hiddenTurn)[0];
-    if (!markdown) return;
-
-    // Match by text content and tag + class
-    var matchText = (popupEl.textContent || "").trim();
-    var matchTag = popupEl.tagName.toLowerCase();
-
-    // Try entity spans first
-    var candidates = markdown.querySelectorAll(ENTITY_SELECTOR);
-    for (var c = 0; c < candidates.length; c++) {
-      if ((candidates[c].textContent || "").trim() === matchText) {
-        candidates[c].click();
-        return;
-      }
-    }
-
-    // Try buttons
-    if (matchTag === "button") {
-      var btnCandidates = markdown.querySelectorAll("button");
-      for (var b = 0; b < btnCandidates.length; b++) {
-        if ((btnCandidates[b].textContent || "").trim() === matchText) {
-          btnCandidates[b].click();
-          return;
-        }
-      }
-    }
-
-    // Fallback: find any element with same tag, class substring, and text
-    var allSame = markdown.querySelectorAll(matchTag);
-    for (var f = 0; f < allSame.length; f++) {
-      if ((allSame[f].textContent || "").trim() === matchText
-          && allSame[f].className === popupEl.className) {
-        allSame[f].click();
-        return;
-      }
-    }
+  /** A click on something in the copy that the site handles (an entity link): on the same element of the original. */
+  function proxyClickToHiddenTurn(popupEl) {
+    var orig = JR.siteAnswer && JR.siteAnswer.counterpart(popupEl);
+    if (orig) orig.click();
   }
+
 
   /**
    * Post-process cloned links: ensure all <a> tags have target, rel,
@@ -751,7 +679,10 @@
   var TRASH_SVG = '<svg class="jr-icon-reg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM192,208H64V64H192ZM80,24a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,24Z"/></svg><svg class="jr-icon-bold" viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40a12,12,0,0,0,0,24h4V208a20,20,0,0,0,20,20H192a20,20,0,0,0,20-20V72h4a12,12,0,0,0,0-24ZM188,204H68V72H188ZM76,20A12,12,0,0,1,88,8h80a12,12,0,0,1,0,24H88A12,12,0,0,1,76,20Z"/></svg>';
 
 
-  function showDeleteConfirmation(hlId, entry) {
+  function showDeleteConfirmation(hlId, entry, own) {
+    // The trash of a popup with popups open inside it: those close, and it asks on its own popup (user, 2026-11-18:
+    // it asked on the newest one). (The trash stops its mousedown, so the popup's own close-to-this-level doesn't run.)
+    while (own && st.activePopup && st.activePopup !== own && st.popupStack.length > 0) JR.removePopup();
     if (!st.activePopup) return;
     var popup = st.activePopup;
 
@@ -924,14 +855,13 @@
       if (oldLoading) oldLoading.remove();
 
       if (v.responseHTML && !JR.isPlaceholderHTML(v.responseHTML)) {
-        appendResponseWithReply(popup, hlId, entry, entry.contentContainer, v.id);
-        JR.qa.upgrade(v.turnKeys);
+        appendResponseWithReply(popup, hlId, entry, entry.contentContainer, v.id); // (follows its original)
       } else {
         // Waiting for that version's answer (after a reload): keep the answer's height, the popup doesn't jump
         var wait = popup.appendChild(JR.createLoadingDiv());
         if (oldH) wait.style.setProperty("--jr-hold-h", oldH + "px");
         // After a reload an older version's answer is read (or held for the site's drawing) only when shown, as on open
-        if (v.responseHTML === "__LOADING__") JR.qa.ensure(v.turnKeys).then(function () { JR.qa.upgrade(v.turnKeys); });
+        if (v.responseHTML === "__LOADING__") JR.qa.ensure(v.turnKeys).then(function () { if (stillWaiting(popup, wait)) JR.qa.upgrade(v.turnKeys); });
       }
 
       updateNav();
@@ -977,9 +907,12 @@
         items: chEntry.items, activeItemIndex: chEntry.activeItemIndex,
       }, contentContainer);
     });
-    // Also check storage for children not yet in memory (after a reload): all versions, so edits keep their arrows
+    // Also check storage for children not yet in memory (after a reload): all versions, so edits keep their arrows —
+    // until each is (then they come from memory: this runs on every patch of a followed copy)
+    var storeKey = parentQuoteId + "/" + activeParentItemId;
+    if (responseDiv._jrStoredChildrenIn === storeKey) return;
     getChildHighlights(parentQuoteId, activeParentItemId).then(function (records) {
-      var map = JR.groupByQuote(records);
+      var map = JR.groupByQuote(records), all = true;
       Object.keys(map).forEach(function (childKey) {
         var child = map[childKey];
         if (child.wholeResponse) {
@@ -1004,8 +937,9 @@
           return;
         }
         if (responseDiv.querySelector('[data-jr-highlight-id="' + childKey + '"]')) return;
-        JR.restoreHighlightInElement(responseDiv, child, contentContainer);
+        if (!JR.restoreHighlightInElement(responseDiv, child, contentContainer)) all = false;
       });
+      if (all) responseDiv._jrStoredChildrenIn = storeKey;
     });
   }
 
@@ -1106,6 +1040,10 @@
         item.responseHTML = "__TIMEOUT__";
         updateHighlightFields(item.id, { responseHTML: "__TIMEOUT__" });
       }
+      // No Q&A known for it (none in the chat links to it): nothing can ever load it — "failed" with Retry, not
+      // "Loading…" for good (live 2026-11-18, an old item). In memory only: if its Q&A turns up, adoption links it.
+      // (not while the conversation data is still read: adoption may link it in a moment — review: a Retry then sent it twice)
+      if (item.responseHTML === "__LOADING__" && !(item.turnKeys || []).length && JR.qa.apiStatus !== "loading" && JR.qa.apiStatus !== "unused") item.responseHTML = "__TIMEOUT__";
       entry.question = item.question;
       entry.responseHTML = item.responseHTML;
     }
@@ -1327,7 +1265,7 @@
     deleteBtn.innerHTML = TRASH_SVG;
     deleteBtn.addEventListener("click", function (e) {
       e.stopPropagation();
-      showDeleteConfirmation(id, entry);
+      showDeleteConfirmation(id, entry, popup);
     });
     deleteBtn.addEventListener("mousedown", function (e) {
       e.stopPropagation();
@@ -1338,16 +1276,15 @@
       var activeItem = (entry.items && entry.items.length > 0)
         ? entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0]
         : null;
-      appendResponseWithReply(popup, id, entry, contentContainer, activeItem ? activeItem.id : null);
-      // An answer Popup drew from Markdown gets ChatGPT's own drawing — only answers that are opened (review #2)
-      if (activeItem) JR.qa.upgrade(activeItem.turnKeys);
+      appendResponseWithReply(popup, id, entry, contentContainer, activeItem ? activeItem.id : null); // (follows its original)
     } else if (JR.isPlaceholderHTML(entry.responseHTML)) {
       popup.appendChild(JR.createLoadingDiv());
       // Answer not in the DOM: read it from ChatGPT's conversation data; the
       // popup refreshes itself when it arrives (JR.onQAContentLoaded).
       var loadingItem = entry.items && entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0];
       if (entry.responseHTML === "__LOADING__" && loadingItem) {
-        JR.qa.ensure(loadingItem.turnKeys).then(function () { JR.qa.upgrade(loadingItem.turnKeys); });
+        var waitEl = popup.querySelector(".jr-popup-loading");
+        JR.qa.ensure(loadingItem.turnKeys).then(function () { if (stillWaiting(popup, waitEl)) JR.qa.upgrade(loadingItem.turnKeys); });
       }
     }
   }
@@ -1437,8 +1374,21 @@
     wireResponseClicks(responseDiv);
     processResponseLinks(responseDiv);
     processResponseImages(responseDiv);
-    rebuildCodeBlocks(responseDiv);
     restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);
+    // Design A (GLOSSARY.md): from now on the copy follows its original — whatever the site draws or changes there
+    // shows here; Popup's own layer is put back after each patch. Again when this popup is active again (removePopup).
+    if (activeItem && activeItem.turnKeys && activeItem.turnKeys.length && JR.siteAnswer) {
+      responseDiv._jrSiteFollow = function () {
+        JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function () {
+          processResponseLinks(responseDiv);
+          processResponseImages(responseDiv);
+          restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);
+        });
+      };
+      // (not one under an open child — a capture rebuild of a parent: only the active popup follows; removePopup has it
+      // follow again when it is active again)
+      if (!st.popupStack.some(function (s) { return s.popup === popup; })) responseDiv._jrSiteFollow();
+    }
 
     // Reply button — per-version via activeItemId
     var replyBtn = document.createElement("button");
@@ -1508,6 +1458,7 @@
     replyBtn.addEventListener("mousedown", function (ev) {
       ev.stopPropagation();
     });
+    replyBtn.setAttribute("data-jr-keep", ""); // stays when the copy follows its original (site-answer.js)
     responseDiv.appendChild(replyBtn);
 
     return responseDiv;
@@ -1572,6 +1523,7 @@
     // --- Create popup element ---
     var popup = document.createElement("div");
     popup.className = "jr-popup" + (isChained ? " jr-popup--chained" : "");
+    popup._jrMade = true; // removeAllPopups sweeps Popup's own popups it lost track of
     popup._jrChained = isChained;
     var w = isChained ? st.customPopupWidthChained : st.customPopupWidthL1;
     if (w) popup.style.width = w + "px";

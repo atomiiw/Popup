@@ -747,7 +747,7 @@
     var missing = loadingKeys.filter(function (k) { return !JR.qa.get([k]); });
     if (missing.length) {
       JR.qa.ensure(missing);
-      if (JR.siteRenderPrewarm && JR.site.name === "chatgpt") JR.siteRenderPrewarm(); // opening one then takes ~1 s, not 5–15
+      if (JR.siteRenderPrewarm) JR.siteRenderPrewarm(); // (ChatGPT, claude.ai) opening one then takes ~1 s, not 5–15
     }
     if (!unlinked) return;
     JR.qa.popupTurnsFromApi().then(function (turns) {
@@ -791,30 +791,6 @@
     });
     // Don't rebuild under the user while they're editing the question.
     if (refresh && !st.activePopup.querySelector(".jr-popup-question--editing")) {
-      JR.rebuildPopupAfterEdit(st.activePopup, refresh);
-    }
-  };
-
-  /**
-   * ChatGPT's own rendering of these answers arrived (JR.qa.upgrade): use it instead of Popup's Markdown
-   * drawing, and redraw the open popup showing one of them (not while it's being edited or answered).
-   */
-  JR.onQAUpgraded = function (turnKeys) {
-    var refresh = null;
-    st.completedHighlights.forEach(function (entry, qid) {
-      var touched = false;
-      (entry.items || []).forEach(function (it) {
-        if (JR.isPlaceholderHTML(it.responseHTML) || it.responseHTML === "__TIMEOUT__") return;
-        if (!(it.turnKeys || []).some(function (k) { return turnKeys.indexOf(k) !== -1; })) return;
-        var c = JR.qa.get(it.turnKeys);
-        if (c && c.responseHTML) { it.responseHTML = c.responseHTML; touched = true; }
-      });
-      if (touched) {
-        syncActive(entry);
-        if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid) refresh = qid;
-      }
-    });
-    if (refresh && !st.responseWatchActive && !st.activePopup.querySelector(".jr-popup-question--editing")) {
       JR.rebuildPopupAfterEdit(st.activePopup, refresh);
     }
   };

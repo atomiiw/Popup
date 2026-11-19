@@ -409,36 +409,6 @@
       return null;
     },
 
-    /**
-     * New-DOM code blocks inside root (no <pre>; T4):
-     * [data-code-block] > [data-code-block-source] > code, controls in [data-code-block-controls].
-     * Returns [{ block, code, lang }]. Legacy <pre> blocks are handled by the caller.
-     */
-    codeBlocks: function (root) {
-      var out = [];
-      var blocks = root.querySelectorAll(C.codeBlock[0]);
-      for (var i = 0; i < blocks.length; i++) {
-        var src = blocks[i].querySelector(JR.site.codeSourceSelector) || blocks[i];
-        var code = src.querySelector("code") || src;
-        var lang = src.getAttribute("data-language") || "";
-        if (lang) lang = lang.charAt(0).toUpperCase() + lang.slice(1);
-        var m = (code.className || "").match(/language-([\w+#-]+)/);
-        if (m) lang = m[1].charAt(0).toUpperCase() + m[1].slice(1);
-        if (!lang) {
-          // Language label: short text in the block outside the source and controls.
-          var walker = document.createTreeWalker(blocks[i], NodeFilter.SHOW_TEXT, null);
-          var n;
-          while ((n = walker.nextNode())) {
-            if (src.contains(n) || (n.parentElement && n.parentElement.closest(C.codeControls[0]))) continue;
-            var t = n.nodeValue.trim();
-            if (t && t.length < 30) { lang = t; break; }
-          }
-        }
-        out.push({ block: blocks[i], code: code, lang: lang });
-      }
-      return out;
-    },
-
     /** Entity links in answers: spans with React click handlers (not plain <a href>). */
     entitySelector: "span[data-inline-mention-interactive], span.cursor-pointer[class*='entity-underline'], span.cursor-pointer[class*='entity-accent']",
 
@@ -599,6 +569,8 @@
         hiddenTurns: JR.state.hiddenTurnKeys ? JR.state.hiddenTurnKeys.size : 0,
         cachedQA: JR.qa ? JR.qa.cacheSize() : 0,
         conversationApi: JR.qa ? JR.qa.apiStatus : null,
+        turnOrder: JR.qa && JR.qa.turnOrderCache ? JR.qa.turnOrderCache.length : null, // turns known in order (navigation)
+        lastJump: JR.navTrace || null, // what the last ^ v / outline jump did (JR.scrollToAndOpenPopup)
         fileUrlStatus: JR.qa ? JR.qa.fileUrlStatus || null : null, // last /backend-api/files/download answer (Step 2c)
         pendingRestore: JR.pendingRestoreCount ? JR.pendingRestoreCount() : 0,
         popupLost: !!(JR.state.activePopup && !JR.state.activePopup.isConnected), // open, but gone from the page

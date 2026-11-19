@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Popup - Ask inline follow-ups in ChatGPT",
+  "name": "Popup - Ask inline follow-ups in ChatGPT, DeepSeek and Claude",
   "version": "1.2.12",
-  "version_name": "1.2.13-dev.88",
-  "description": "Ask ChatGPT where questions come up. Highlight. Ask. Keep reading. Stay in your flow.",
+  "version_name": "1.2.13-dev.143",
+  "description": "Ask where questions come up — in ChatGPT, DeepSeek and Claude. Highlight. Ask. Keep reading. Stay in your flow.",
   "permissions": [
     "storage"
   ],
@@ -101,6 +101,7 @@
       "js": [
         "src/site-adapter.js",
         "src/qa-content.js",
+        "src/site-answer.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",
         "src/highlight.js",

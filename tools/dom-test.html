@@ -23,6 +23,7 @@
 <script src="../src/attachments.js"></script>
 <script src="../src/qa-content.js"></script>
 <script src="../src/site-render.js"></script>
+<script src="../src/site-answer.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
 <script>
@@ -138,11 +139,11 @@ check("bare display formula is the sentence", bsent === "\\[\\frac{2}{3}c(1\\tex
 
 // R5: "Reply" quotes a popup's whole answer — without Popup's own buttons (Reply, code header).
 var pr = document.createElement("div");
-pr.innerHTML = '<p>Hi there.</p><div class="jr-code-block"><div class="jr-code-header"><span class="jr-code-lang">python</span><div class="jr-code-header-btns"><button>Copy</button></div></div><pre><code>x = 1</code></pre></div>' +
+pr.innerHTML = '<p>Hi there.</p><div class="site-code"><div><button aria-label="Copy">Copy</button><span role="button">Run</span></div><pre><code>x = 1</code></pre></div>' +
   '<p>Use <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>a</mi></mrow><annotation encoding="application/x-tex">a^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">a2</span></span> now.</p>' +
   '<button type="button" class="jr-reply-whole-btn"><svg></svg> Reply</button>';
 var whole = JR.popupResponseText(pr);
-check("reply quote has the answer, not Popup's buttons", whole === "Hi there.\nx = 1\nUse \\(a^2\\) now.", JSON.stringify(whole));
+check("reply quote has the answer, no button labels (Popup's Reply, the site's Copy / Run)", whole === "Hi there.\nx = 1\nUse \\(a^2\\) now.", JSON.stringify(whole));
 
 // R1/R2: ChatGPT's 2026-10 answers (DIL renderer) wrap each list item's text in li > div > div > p,
 // and bold is span[data-d-default-strong]. Structure from collab/evidence/formats/r1.html, r2.html.
@@ -511,108 +512,10 @@ JR.showSentAttachments(aq, { _failedFiles: [] });
 check("Step 2: showing a version again clears its old note", !noteIn(aq) && !JR.stripAbove(aq));
 aq.remove();
 
-// R13: answers read back from ChatGPT's data carry its component markup (collab/evidence/r13/sample-1.txt):
-// Popup draws the components instead of showing the tags as text.
-var dil = JR.renderMarkdown('Before:\n\n<box border radius="lg" padding={3} gap={2} align="center"> <box background="surface-secondary" radius="md" padding={3} width="100%" align="center"> **DNS**：查询服务器 IP 地址 </box> <icon name="arrow-down" color="secondary"/> <box background="surface-secondary" radius="md"> TCP：与服务器建立连接 </box> </box> <caption>简化的流程。</caption>\n\nAfter `<box>` in code.\n\n```\n<box padding={1}>kept</box>\n```');
-var dd = document.createElement("div"); dd.innerHTML = dil;
-check("R13: no component tag is shown as text", !/<\/?(box|icon|caption)\b/.test(dd.textContent.replace("<box>", "").replace("<box padding={1}>kept</box>", "")), dd.textContent);
-check("R13: boxes are drawn (outer with a border, inner with a background), nested", !!dd.querySelector(".jr-dil-box.jr-dil-border .jr-dil-box.jr-dil-bg"), dil);
-check("R13: markdown inside a box still works", !!dd.querySelector(".jr-dil-box strong") && dd.querySelector(".jr-dil-box strong").textContent === "DNS");
-check("R13: an arrow icon becomes an arrow", !!dd.querySelector(".jr-dil-icon") && dd.querySelector(".jr-dil-icon").textContent === "\u2193");
-check("R13: a caption is a caption", !!dd.querySelector(".jr-dil-caption") && dd.querySelector(".jr-dil-caption").textContent.indexOf("简化的流程") !== -1);
-check("R13: tags inside code stay code", dd.querySelector("code").textContent === "<box>" && dd.querySelector("pre code").textContent.indexOf("<box padding={1}>kept</box>") !== -1);
-// The richer components of F6 (collab/evidence/r13/sample-3): two-column cards with a title row and badges.
-var cards = JR.renderMarkdown('<grid columns={2} gap={3}> <grid-item> <box border={{size:1,color:"rgba(230,155,45,0.35)"}} radius="xl" padding={3} gap={3} height="100%"> <row align="center" justify="between"> <title size="xl" color="default">TCP</title> <badge color="info">可靠传输</badge> </row> <text color="secondary" size="xs">Transmission Control Protocol</text> <divider color="subtle"/> <box gap={1}> <icon name="check-circle" color="success" inline/> 核心特点\n\n- 面向连接\n- 可靠传输\n </box> <spacer/> </box> </grid-item> <grid-item> <box border radius="xl"> <title size="xl">UDP</title> </box> </grid-item> </grid>');
-var cd = document.createElement("div"); cd.innerHTML = cards;
-check("R13: no tag of the richer components is left as text (border={{…}} included)", !/<\/?(grid|grid-item|box|row|title|badge|text|divider|icon|spacer)\b/.test(cd.textContent), cd.textContent);
-check("R13: a two-column grid of bordered cards", !!cd.querySelector(".jr-dil-grid.jr-dil-cols-2 > .jr-dil-grid-item > .jr-dil-box.jr-dil-border"), cards);
-check("R13: a title row with a badge, spread to both ends", !!cd.querySelector(".jr-dil-row.jr-dil-between .jr-dil-title") && !!cd.querySelector(".jr-dil-row .jr-dil-badge"));
-check("R13: small secondary text, a divider, a check icon and a markdown list inside a box",
-  !!cd.querySelector(".jr-dil-small") && !!cd.querySelector(".jr-dil hr") && cd.querySelector(".jr-dil-icon").textContent === "\u2713" && cd.querySelectorAll(".jr-dil-box li").length === 2);
-
-// Inside a component every line is its own line (sample-3: the points of a card were run together)
-var lines = JR.renderMarkdown('<box gap={1}> 核心特点\n面向连接，需要三次握手\n保证字节流按序交付\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n</box>\n\nOutside\nstill one line'), ld = document.createElement("div"); ld.innerHTML = lines;
-check("R13: the lines inside a box stay separate lines; lists, tables and text outside are unchanged",
-  ld.querySelectorAll(".jr-dil-box p").length === 3 && ld.querySelectorAll(".jr-dil-box li").length === 2 && !!ld.querySelector(".jr-dil-box table td") &&
-  Array.prototype.some.call(ld.querySelectorAll("p"), function (p) { return p.textContent === "Outside still one line"; }), lines);
-
-// While streaming, a component tag cut off at the end is not shown as text for a moment
-var cut = document.createElement("div"); cut.innerHTML = JR.renderMarkdown('Intro\n\n<box border radius="x');
-var cut2 = document.createElement("div"); cut2.innerHTML = JR.renderMarkdown('a <b and <boxer');
-check("R13: a half-written component tag at the end is hidden; other text is kept",
-  cut.textContent === "Intro" && cut2.textContent === "a <b and <boxer", [cut.textContent, cut2.textContent]);
-
-// Formats in a narrow popup (300 px, the width a popup can be dragged down to): task lists,
-// wide tables and card grids stay readable
-var reset = document.createElement("style"); reset.textContent = "input { appearance: none; width: 0; height: 0; border: 0; } table { table-layout: fixed; } th, td { min-width: 0; }"; document.head.appendChild(reset); // ChatGPT's page CSS (T16)
-var narrow = document.createElement("div"); narrow.className = "jr-popup"; narrow.style.cssText = "position:static;width:300px;max-height:none;opacity:1";
-var nr = document.createElement("div"); nr.className = "jr-popup-response"; narrow.appendChild(nr); document.body.appendChild(narrow);
-nr.innerHTML = JR.renderMarkdown('- [ ] open task\n- [x] done task\n\n| 对比项目 | 租房 | 买房 | 主要成本 | 灵活性 | 长期影响 |\n|---|---|---|---|---|---|\n| 前期投入 | 较低 | 较高 | 押金 / 首付 | 租房更高 | 影响现金储备 |\n\n<grid columns={3}> <grid-item> <box border> A </box> </grid-item> <grid-item> <box border> B </box> </grid-item> <grid-item> <box border> C </box> </grid-item> </grid>');
-var boxes = nr.querySelectorAll("input[type=checkbox]");
-check("formats: a task list shows checkboxes (the second ticked), not [ ] / [x], visible despite the page's input reset",
-  boxes.length === 2 && !boxes[0].checked && boxes[1].checked && boxes[0].disabled && nr.textContent.indexOf("[") === -1 && boxes[0].offsetWidth >= 12 && boxes[0].offsetHeight >= 12, nr.innerHTML);
-var ths = nr.querySelectorAll("th"), wrap = nr.querySelector("table").parentElement;
-check("formats: a wide table in a narrow popup scrolls sideways instead of squeezing its columns",
-  Array.prototype.every.call(ths, function (th) { return th.offsetWidth >= 60; }) && wrap.scrollWidth > wrap.clientWidth && narrow.scrollWidth <= 300,
-  Array.prototype.map.call(ths, function (th) { return th.offsetWidth; }));
-var gi = nr.querySelectorAll(".jr-dil-grid-item");
-check("formats: a 3-column card grid in a narrow popup uses fewer columns (each card at least 120 px)",
-  gi.length === 3 && Array.prototype.every.call(gi, function (g) { return g.offsetWidth >= 120; }), Array.prototype.map.call(gi, function (g) { return g.offsetWidth; }));
-narrow.remove(); reset.remove();
-
-// T15: more components in answers read back after a reload (collab/evidence/formats/t15/*-reload.txt)
-function md2(src) { var d = document.createElement("div"); d.innerHTML = JR.renderMarkdown(src); return d; }
-var cb = md2('Code:\n\n<CodeBlock language="python" editable> x = 2 ** 10\ny = {"a": 1}\nprint(f"{x:,.2f} | {y}") </CodeBlock>\n\nafter');
-check("T15: a CodeBlock is a code block, verbatim (line breaks and ** kept)",
-  !!cb.querySelector("pre code.language-python") && cb.querySelector("pre code").textContent === 'x = 2 ** 10\ny = {"a": 1}\nprint(f"{x:,.2f} | {y}")' && !cb.querySelector("strong") && cb.textContent.indexOf("CodeBlock") === -1, cb.innerHTML);
-var ch = md2('<Chart content={{"chartType":"line","meta":{"title":"EV sales","description":"millions"},"xKey":"year","series":[{"dataKey":"sales","label":"Sales","valueSuffix":" M"}],"yAxisMin":0,"yAxisMax":24,"data":[{"year":"2020","sales":3.0},{"year":"2021","sales":6.6},{"year":"2022","sales":10.2}]}}/>\n\nTrend.<Cite ref="turn5search5"/>');
-check("T15: a line Chart is drawn as an SVG with its title, a line and the x labels; Cite is hidden",
-  !!ch.querySelector(".jr-chart svg polyline") && ch.querySelector(".jr-chart-title").textContent === "EV sales" &&
-  ch.querySelector("svg").textContent.indexOf("2021") !== -1 && ch.textContent.indexOf("Chart") === -1 && ch.textContent.indexOf("Cite") === -1 && ch.textContent.indexOf("Trend.") !== -1, ch.innerHTML);
-var bar = md2('<Chart content={{"chartType":"bar","xKey":"k","series":[{"dataKey":"v"}],"data":[{"k":"a","v":1},{"k":"b","v":2}]}}/>');
-var pie = md2('<Chart content={{"chartType":"pie","xKey":"k","series":[{"dataKey":"v","label":"Value"}],"data":[{"k":"a","v":1},{"k":"b","v":2}]}}/>');
-check("T15: a bar Chart has one bar per value; another chart type becomes a data table",
-  bar.querySelectorAll(".jr-chart svg rect.jr-chart-bar").length === 2 && !!pie.querySelector("table") && pie.querySelectorAll("tbody tr").length === 2 && pie.querySelector("th:last-child").textContent === "Value", [bar.innerHTML, pie.innerHTML]);
-var bad = md2('<Chart content={{"chartType":"line", broken}}/>');
-check("T15: a Chart with broken data is left out, not shown as text", bad.textContent.trim() === "", bad.innerHTML);
-var map = md2('# Tokyo\n\n<MapWidgetV2 title="Sights" points={[ {"id":"t","name":"Tokyo Tower","address":"4 Chome-2-8 Shibakoen, Tokyo","icon":"🗼"}, {"id":"s","name":"Senso-ji","address":"2 Chome-3-1 Asakusa"} ]} carousel={{visibility:"hidden"}} />\n\n<AsyncImage query="Tokyo Tower" aspectRatio="4:3"/>\n\n1. <Entity category="point_of_interest" location="Minato" value="Tokyo Tower (东京塔)"/>\n\nA tower.');
-var links = map.querySelectorAll(".jr-map a");
-check("T15: a map becomes a list of places with a map link each; AsyncImage is hidden; Entity is its name",
-  map.querySelectorAll(".jr-map li").length === 2 && links.length === 2 && links[0].href.indexOf("https://www.google.com/maps/search/?api=1&query=") === 0 &&
-  decodeURIComponent(links[0].href).indexOf("Tokyo Tower") !== -1 && map.textContent.indexOf("Shibakoen") !== -1 &&
-  !/MapWidget|AsyncImage|Entity/.test(map.textContent) && map.textContent.indexOf("Tokyo Tower (东京塔)") !== -1, map.innerHTML);
-var tl = md2('### List\n\n{@body const tasks = ["Budget","Rate","Rent"]} {@body const [done,setDone] = DIL.useState([true,false,true])}\n\nChecklist\n\n{done.filter(Boolean).length} / 3 done\n\n{#each tasks as task,i}\n\n<checkbox key={i} checked={done[i]} onChange={v=>setDone(old=>old.map((x,j)=>j===i?v:x))}>{task}</checkbox> {/each}\n\nEnd');
-var tb = tl.querySelectorAll("input[type=checkbox]");
-check("T15: a scripted task list is drawn from its data (no code run, no template text shown)",
-  tb.length === 3 && tb[0].checked && !tb[1].checked && tb[2].checked && tl.textContent.indexOf("Rate") !== -1 &&
-  tl.textContent.indexOf("2 / 3 done") !== -1 && !/@body|#each|\/each|useState|onChange|\{|\}/.test(tl.textContent), tl.innerHTML);
-var lk = md2('Source: <Link url="https://www.iea.org/x" title="IEA \u2014 Sales"/> and <Link url="javascript:alert(1)" title="bad"/>');
-check("T16: a Link is a link (http/https only; others are their title as text)",
-  lk.querySelectorAll("a").length === 1 && lk.querySelector("a").href === "https://www.iea.org/x" && lk.querySelector("a").textContent === "IEA \u2014 Sales" &&
-  lk.textContent.indexOf("bad") !== -1 && lk.textContent.indexOf("Link") === -1, lk.innerHTML);
-var ic = md2('In Svelte write `{#if user}` … `{/if}`, with {@body const n = 3} `let s = {n}`.\n\nIn Docusaurus use `<CodeBlock>` for code.\n\nMore **bold** here.\n\n- item');
-check("review: inline code is never read as template or CodeBlock",
-  ic.querySelectorAll("code")[0].textContent === "{#if user}" && ic.querySelectorAll("code")[1].textContent === "{/if}" &&
-  ic.querySelectorAll("code")[2].textContent === "let s = {n}" && ic.querySelectorAll("code")[3].textContent === "<CodeBlock>" &&
-  !ic.querySelector("pre") && !!ic.querySelector("strong") && !!ic.querySelector("li"), ic.innerHTML);
-var sc = md2('Items: <checkbox checked={true}/> Buy milk\n\n<box border/>\n\nNext paragraph');
-check("review: a self-closing <checkbox/> or <box/> is closed at once (the text after it is not inside)",
-  !!sc.querySelector(".jr-dil-check input:checked") && sc.querySelector(".jr-dil-check").textContent === "" &&
-  !sc.querySelector(".jr-dil-box").textContent && Array.prototype.some.call(sc.children, function (c) { return c.tagName === "P" && c.textContent === "Next paragraph"; }), sc.innerHTML);
-var xs = md2('<MapWidgetV2 title="<img src=x onerror=alert(1)>" points={[{"name":"<img src=x onerror=alert(2)>","address":"\\"><b>a</b>","icon":"<i>"}]}/>\n\n<Chart content={{"chartType":"line","meta":{"title":"<img src=x onerror=alert(3)>"},"xKey":"k","series":[{"dataKey":"v","label":"<b>L</b>"}],"data":[{"k":"<b>x</b>","v":1}]}}/>\n\n<Entity value="<img src=x onerror=alert(4)>"/>');
-check("review: text in maps, charts and entities is escaped", !xs.querySelector("img, b, i") && xs.textContent.indexOf("onerror=alert(2)") !== -1, xs.innerHTML);
-
-var tl2 = md2('{@body const x = compute()} {#each x as a}<checkbox checked={a.on}>{a.name}</checkbox>{/each}\n\nPlain {braces} stay.');
-check("T15: a template Popup can't read is hidden; braces in a normal answer stay",
-  tl2.textContent.indexOf("Plain {braces} stay.") !== -1 && !/@body|#each|compute|checkbox/.test(tl2.textContent), tl2.innerHTML);
-
 var wt = document.createElement("div"); wt.innerHTML = '<p>x</p><div data-client-defined-widget="visualization"></div>';
 var ct = document.createElement("div"); ct.innerHTML = '<p>x</p><div data-client-defined-widget="code_block"></div>';
-check("T15: an answer with a chart or map is drawn by Popup, not copied (the copy is blank); a code block is copied",
+check("T15: an answer with a chart or map isn't copied from the page (the copy is blank: the frame's is used); a code block is",
   JR.site.hasUndrawnWidget(wt) && !JR.site.hasUndrawnWidget(ct));
-
-var evil = JR.renderMarkdown('<box background="x\" onmouseover=alert(1) \"">hi</box>'), ed = document.createElement("div"); ed.innerHTML = evil;
-check("R13: attribute values never reach the page (a malformed tag stays text)", !ed.querySelector("[onmouseover]") && ed.textContent.indexOf("onmouseover=alert(1)") !== -1 && !ed.querySelector("div"), evil);
 
 // R8: Popup works only in chats (a /c/<id> path): normal, GPT and project chats.
 var U = "0f3c2a1b-1234-4abc-8def-0123456789ab";
@@ -695,42 +598,18 @@ check("Step 2: the queue does not send while files upload", JR.state.messageQueu
 JR.state.messageQueue.length = 0;
 JR.state.attaching = false;
 
-// --- Step 3: answer formats (R15, R22), answers captured in P5 ---
-var resp15 = document.createElement("div");
-resp15.className = "jr-popup-response";
-resp15.style.width = "600px";
-document.body.appendChild(resp15);
-function bar15(color, w) {
-  return '<box gap={1}>\n        <box background="surface-tertiary" radius="full" height="12px" clip>\n          <box background="' + color +
-    '" width="' + w + '" height="100%" radius="full"/>\n        </box>\n        <text color="secondary" size="xs">size</text>\n      </box>';
-}
-resp15.innerHTML = JR.renderMarkdown('<grid columns={1} gap={3}>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3} height="100%">\n      ' +
-  bar15("#3B82F6", "12%") + '\n    </box>\n  </grid-item>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3}>\n      ' +
-  bar15("#F59E0B", "52%") + '\n    </box>\n  </grid-item>\n  <grid-item>\n    <box border radius="xl" padding={3} gap={3}>\n      ' +
-  bar15("#10B981", "100%") + "\n    </box>\n  </grid-item>\n</grid>");
-var fills15 = Array.prototype.filter.call(resp15.querySelectorAll(".jr-dil"), function (el) { return !el.children.length && !el.textContent.trim(); });
-var ratios15 = fills15.map(function (f) { return Math.round(f.offsetWidth / f.parentElement.clientWidth * 100); });
-check("R15: a relative-size bar is drawn at the width the answer gives (12% / 52% / 100%)", ratios15.join() === "12,52,100", ratios15.join() + " " + resp15.innerHTML.slice(0, 300));
-check("R15: the bar track is as tall as the answer says (12px)", fills15.length && fills15[0].parentElement.offsetHeight === 12, fills15.length && fills15[0].parentElement.offsetHeight);
-check("R15: the filled part is visible against its track",
-  fills15.length && getComputedStyle(fills15[0]).backgroundColor !== getComputedStyle(fills15[0].parentElement).backgroundColor, fills15.length && getComputedStyle(fills15[0]).backgroundColor);
-var bgcard15 = document.createElement("div");
-bgcard15.innerHTML = JR.renderMarkdown('<grid columns={2}>\n  <grid-item>\n    <box background="surface-secondary" padding={4} height="100%">\n      **Card** text\n    </box>\n  </grid-item>\n</grid>');
-resp15.appendChild(bgcard15);
-var bgbox15 = bgcard15.querySelector(".jr-dil-bg");
-check("R15: a background card with height=\"100%\" keeps its padding", bgbox15 && parseFloat(getComputedStyle(bgbox15).paddingLeft) > 0, bgbox15 && getComputedStyle(bgbox15).paddingLeft);
-bgcard15.remove();
-var card15 = resp15.querySelector(".jr-dil-border");
-check("R15: a card with height=\"100%\" keeps its padding", card15 && parseFloat(getComputedStyle(card15).paddingLeft) > 0, card15 && getComputedStyle(card15).paddingLeft);
-resp15.innerHTML = JR.renderMarkdown('<grid columns={4} gap={2}>\n  {#each [{a:"0x00",v:"42"},{a:"0x04",v:"17"},{a:"0x08",v:"255"},{a:"0x1C",v:"12"}] as cell,i}\n    <grid-item>\n' +
-  '      <box border radius="lg" padding={3} gap={2} align="center" background={i===2?"rgba(59,130,246,0.08)":"surface"}>\n' +
-  '        <text size="xs" color="secondary">{cell.a}</text>\n        <divider color="subtle"/>\n        <title size="xl" color="default" tabularNums>{cell.v}</title>\n' +
-  "      </box>\n    </grid-item>\n  {/each}\n</grid>\n\nAfter {braces} stay.");
-var t22 = resp15.textContent;
-check("R22: {#each} over a list written in place repeats its block (4 cells)", resp15.querySelectorAll(".jr-dil-grid-item").length === 4, resp15.querySelectorAll(".jr-dil-grid-item").length);
-check("R22: {cell.a} / {cell.v} are filled in", /0x00[\s\S]*42[\s\S]*0x1C[\s\S]*12/.test(t22) && !/cell\.|#each|\/each/.test(t22), t22.replace(/\s+/g, " ").slice(0, 200));
-check("R22: braces outside templates stay", t22.indexOf("After {braces} stay.") !== -1, t22.slice(-60));
-resp15.remove();
+// live 2026-11-18 (ChatGPT 8/74): an item no Q&A in the chat links to ("Loading…", no turn keys) can never load —
+// it shows as failed (here: its question wasn't saved), not "Loading…" for good
+(function () {
+  var nk = document.createElement("div"); nk.className = "jr-popup";
+  nk.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(nk);
+  JR.state.completedHighlights.set("nk-hl", { question: null, responseHTML: "__LOADING__", spans: [], items: [{ id: "nk-1", question: null, responseHTML: "__LOADING__", turnKeys: [] }], activeItemIndex: 0 });
+  try { JR.rebuildPopupAfterEdit(nk, "nk-hl"); } catch (e) { out.push("NOTE nk rebuild threw: " + e.message); }
+  var nkMsg = nk.querySelector(".jr-popup-loading");
+  check("an item with no Q&A shows as failed, not Loading… for good", !!nkMsg && /Couldn/.test(nkMsg.textContent), nkMsg && nkMsg.textContent);
+  nk.remove(); JR.state.completedHighlights.delete("nk-hl");
+})();
 
 // --- Step 3: popup height and direction (R16, R18-R21) ---
 // A fake chat: a scroll container the size of the window, a host as tall as the conversation, a highlight in it.
@@ -826,13 +705,24 @@ check("R19: not below 40vh (or the 3-line answer minimum)", Math.abs(p19.offsetH
 r19 = p19.getBoundingClientRect();
 drag3(p19, r19.left + 100, r19.bottom - 2, 0, 500);
 check("R19: not above 70vh", Math.abs(p19.offsetHeight - H70) <= 1, p19.offsetHeight);
+// user 2026-11-18: the edge next to the highlight resizes too — pulled in shorter, pushed out taller; the highlight
+// (here: the top, a below popup's arrow side) never moves, the far side does
 r19 = p19.getBoundingClientRect();
 drag3(p19, r19.left + 100, r19.top + 2, 0, 100);
-check("R19: the edge next to the highlight does not resize", Math.abs(p19.offsetHeight - H70) <= 1, p19.offsetHeight);
+var r19b = p19.getBoundingClientRect();
+check("R19: the edge next to the highlight pulled in: shorter, that edge stays", Math.abs(p19.offsetHeight - (H70 - 100)) <= 2 && Math.abs(r19b.top - r19.top) <= 1, p19.offsetHeight + " top " + r19.top + "→" + r19b.top);
+drag3(p19, r19b.left + 100, r19b.top + 2, 0, -100);
 r19 = p19.getBoundingClientRect();
+check("R19: ...pushed out: taller, that edge stays", Math.abs(p19.offsetHeight - H70) <= 2 && Math.abs(r19.top - r19b.top) <= 1, p19.offsetHeight + " top " + r19b.top + "→" + r19.top);
 var w19 = p19.offsetWidth;
 drag3(p19, r19.right - 2, r19.bottom - 2, -40, -50);
 check("R20: dragging a far corner changes width and height", Math.abs(p19.offsetWidth - (w19 - 40)) <= 2 && Math.abs(p19.offsetHeight - (H70 - 50)) <= 2, p19.offsetWidth + "x" + p19.offsetHeight);
+r19 = p19.getBoundingClientRect(); w19 = p19.offsetWidth;
+drag3(p19, r19.left + 2, r19.top + 2, -40, -50);
+check("R20: a corner next to the highlight (not the trash's) changes width and height", Math.abs(p19.offsetWidth - (w19 + 40)) <= 2 && Math.abs(p19.offsetHeight - H70) <= 2, p19.offsetWidth + "x" + p19.offsetHeight);
+r19 = p19.getBoundingClientRect(); w19 = p19.offsetWidth;
+drag3(p19, r19.right - 2, r19.top + 2, 40, 0);
+check("R20: the trash button's corner (top right) never changes the width", p19.offsetWidth === w19, p19.offsetWidth + " vs " + w19);
 p19.remove();
 var pa = popup3(new Array(200).join("<p>line</p>"));
 JR.positionPopup(pa, place3(C3, 1500, 1500 - 0.8 * W3), host3, null, []);
@@ -1278,16 +1168,15 @@ asyncChecks.push(new Promise(function (done) {
   pop.remove();
 })();
 
-// review #2: only answers Popup drew from Markdown get ChatGPT's drawing, once — never ChatGPT's own mirror
-// (after 100 ms: an earlier test stubs JR.qa for 50 ms)
+// review #2: only answers a popup waits for get the site answer — never one already in the site's own drawing
+// (design A: its popup follows the original itself)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var realRender = JR.siteRender, calls = [];
-  JR.siteRender = function (k) { calls.push(k); return Promise.resolve(null); };
-  JR.qa.put("rv2-mirror", { responseHTML: "<div data-markdown-text-style='assistant-message'>a</div>", drawnByPopup: false });
-  JR.qa.put("rv2-md", { responseHTML: "<p>a</p>", drawnByPopup: true });
-  JR.qa.upgrade(["rv2-mirror"]); JR.qa.upgrade(["rv2-md"]);
-  check("review #2: ChatGPT's own drawing is not re-rendered; Popup's is", calls.join() === "rv2-md", calls.join());
-  JR.siteRender = realRender;
+  var realFollow = JR.siteAnswer.follow, calls = [];
+  JR.siteAnswer.follow = function (el, keys) { calls.push(keys.join()); };
+  JR.qa.put("rv2-mirror", { responseHTML: "<div data-markdown-text-style='assistant-message'>a</div>" });
+  JR.qa.upgrade(["rv2-mirror"]); JR.qa.upgrade(["rv2-wait"]);
+  check("review #2: the site's own drawing isn't followed again; a waiting answer is", calls.join() === "rv2-wait", calls.join());
+  JR.siteAnswer.follow = realFollow;
   done();
 }, 100); }));
 
@@ -1329,6 +1218,94 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.qa.question = realQuestion;
 })();
 
+// 2026-11-18 (user): a jump puts the highlight in the bottom fifth; at the chat's start (can't go that low) the top fifth
+(function () {
+  var realSc = JR.site.scrollContainer, realBand = JR.site.visibleBand, realCreate = JR.createPopup;
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:3000px;position:relative"><span id="bl-a" style="position:absolute;top:60px">a</span><span id="bl-b" style="position:absolute;top:1500px">b</span></div>';
+  document.body.appendChild(box);
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  var got = [];
+  ["bl-a", "bl-b"].forEach(function (id) {
+    // measured as the popup opens: it picks its side from where the highlight is then (a nested one opened first and
+    // moved after went below, behind the composer — user 2026-11-18; every level opens through the same openAt)
+    JR.createPopup = function () { got.push(Math.round(document.getElementById(id).getBoundingClientRect().top)); };
+    JR.state.completedHighlights.set(id, { spans: [document.getElementById(id)], items: [] });
+    JR.scrollToAndOpenPopup(id);
+    JR.state.completedHighlights.delete(id);
+  });
+  check("jump: as its popup opens, a highlight is in the bottom fifth (410), one at the chat's start in the top fifth (75 or less)", Math.abs(got[1] - 410) <= 2 && got[0] <= 76, got.join(","));
+  JR.site.scrollContainer = realSc; JR.site.visibleBand = realBand; JR.createPopup = realCreate; box.remove();
+})();
+
+// 2026-11-18 (user screenshot): a nested popup a jump opens is placed as a first-level one — its highlight is brought
+// low (and into view in its parent's answer) before it opens; it opened first and moved after, so it went below
+(function () {
+  var st = JR.state, real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand, create: JR.createPopup, nav: JR.updateNavWidget, widget: st.navWidget };
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:3000px;position:relative"><span id="nv-a" style="position:absolute;top:1500px">a</span>' +
+    '<div class="jr-popup" style="position:absolute;top:1000px;width:200px"><div class="jr-popup-response" style="height:100px;overflow:auto">' +
+    '<div style="height:600px;position:relative"><span id="nv-b" data-jr-highlight-id="nB" style="position:absolute;top:300px">b</span></div></div></div></div>';
+  document.body.appendChild(box);
+  var a = document.getElementById("nv-a"), b = document.getElementById("nv-b"), resp = box.querySelector(".jr-popup-response"), got = null;
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  JR.updateNavWidget = function () {};
+  JR.createPopup = function (o) { st.activePopup = box.querySelector(".jr-popup"); st.activeHighlightId = o.completedId; };
+  b.addEventListener("click", function () { // as the popup opens
+    var r = b.getBoundingClientRect(), rr = resp.getBoundingClientRect();
+    got = { top: Math.round(r.top), inView: r.top >= rr.top && r.bottom <= rr.bottom };
+    st.activeHighlightId = "nB";
+  });
+  st.completedHighlights.set("nA", { spans: [a], items: [] });
+  st.completedHighlights.set("nB", { spans: [b], items: [], parentId: "nA" });
+  var ids = ["nA", "nB"];
+  ids.chain = function (q) { return q === "nB" ? [{ id: "a1", quoteId: "nA" }, { id: "b1", quoteId: "nB", parentId: "nA" }] : [{ id: "a1", quoteId: "nA" }]; };
+  st.navWidget = { _jrIds: ids }; st.activeHighlightId = "nA"; st.activePopup = document.createElement("div"); // A's popup is open: ∨ goes to B, inside it
+  JR.navigateHighlight(1);
+  check("jump to a nested popup: as it opens, its highlight is in the bottom fifth (410) and in view in its parent", got && Math.abs(got.top - 410) <= 2 && got.inView, JSON.stringify(got));
+  st.completedHighlights.delete("nA"); st.completedHighlights.delete("nB");
+  st.activePopup = null; st.activeHighlightId = null; st.navWidget = real.widget;
+  JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.updateNavWidget = real.nav; box.remove();
+})();
+
+// 2026-11-18 (user screenshots): a jump still on its way is dropped once popups are closed; a lost popup is swept
+(function () {
+  var realScroll = JR.scrollToTurnKey, realCreate = JR.createPopup, pending = null, created = 0;
+  JR.scrollToTurnKey = function (key, done) { pending = done; };
+  JR.createPopup = function () { created++; };
+  JR.state.completedHighlights.set("race-hl", { question: "q", spans: [], sourceTurnKey: "race-turn", items: [] });
+  JR.scrollToAndOpenPopup("race-hl");
+  JR.removeAllPopups(); // the user goes elsewhere before the turn is reached
+  if (pending) pending(true);
+  check("race: a jump overtaken by a close opens nothing", !!pending && created === 0, "pending=" + !!pending + " created=" + created);
+  JR.scrollToTurnKey = realScroll; JR.createPopup = realCreate; JR.state.completedHighlights.delete("race-hl");
+  var lost = document.createElement("div"); lost.className = "jr-popup"; lost._jrMade = true; document.body.appendChild(lost);
+  JR.removeAllPopups();
+  check("race: a popup Popup lost track of is swept on close", !lost.isConnected, "still there");
+})();
+
+// 2026-11-18 (user): navigation steps through popups in their place on the page, nested ones right after their parent
+(function () {
+  var realOrder = JR.qa.turnOrderCache, realPeek = JR.qa.peek, realText = JR.qa.answerText;
+  JR.qa.turnOrderCache = ["t0", "t1"];
+  JR.qa.peek = function (keys) { return keys[0] === "ka" ? { responseHTML: "<p>yy then xx</p>" } : null; };
+  JR.qa.answerText = function () { return Promise.resolve(null); };
+  var recs = [
+    { id: "a1", quoteId: "A", text: "alpha", sourceTurnKey: "t1", turnKeys: ["ka"], active: true, createdAt: 3 },
+    { id: "b1", quoteId: "B", text: "beta", sourceTurnKey: "t0", turnKeys: ["kb"], active: true, createdAt: 9 },
+    { id: "c1", quoteId: "C", parentId: "A", parentItemId: "a1", text: "xx", turnKeys: ["kc"], active: true, createdAt: 4 },
+    { id: "d1", quoteId: "D", parentId: "A", parentItemId: "a1", text: "yy", turnKeys: ["kd"], active: true, createdAt: 5 },
+    { id: "r1", quoteId: "R", parentId: "A", parentItemId: "a1", wholeResponse: true, text: "", turnKeys: ["kr"], active: true, createdAt: 1 },
+    { id: "e1", quoteId: "E", parentId: "C", parentItemId: "c1", text: "q", turnKeys: ["ke"], active: true, createdAt: 6 },
+  ];
+  var order = JR.navOrderOf(recs);
+  check("navigation order: by turn, nested after their parent by place in its answer, Reply last", order.join(",") === "B,A,D,C,E,R", order.join(","));
+  check("navigation chain: a nested one opens from the chat down", order.chain("E").map(function (r) { return r.id; }).join(">") === "a1>c1>e1", order.chain("E").map(function (r) { return r.id; }).join(">"));
+  JR.qa.turnOrderCache = realOrder; JR.qa.peek = realPeek; JR.qa.answerText = realText;
+})();
+
 // R36a / 2026-11-17: ChatGPT wraps the turn list in a display:contents div; popups must go in the list (a box), not the wrapper
 (function () {
   var conv = document.createElement("div"); conv.setAttribute("data-thread-find-target", "conversation");
@@ -1341,7 +1318,524 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   conv.remove();
 })();
 
+// live 2026-11-18 (claude.ai): renders run newest first — the popup just opened doesn't wait for every popup flipped past
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var realConv = JR.site.conversationId, got = [];
+  JR.site.conversationId = function () { return null; }; // each render then ends at once
+  ["a", "b", "c"].forEach(function (k) { JR.siteOriginal(k).then(function () { got.push(k); }); });
+  setTimeout(function () {
+    JR.site.conversationId = realConv;
+    check("site render: the newest request goes next (a in progress, then c, then b)", got.join() === "a,c,b", got.join());
+    // live 2026-11-18 (dev.115 trace: 9 let-go requests queued, each run later for nobody): let go before it runs, a
+    // request is dropped — it isn't run, it ends with nothing
+    var runs = 0, ends = [];
+    JR.site.conversationId = function () { runs++; return null; };
+    JR.siteOriginal("d").then(function (t) { ends.push("d" + t); });
+    JR.siteOriginal("e").then(function (t) { ends.push("e" + t); });
+    JR.siteOriginalRelease("e");
+    setTimeout(function () {
+      JR.site.conversationId = realConv;
+      check("site render: a request let go before it runs is dropped (not run, ends with nothing)", runs === 1 && ends.sort().join() === "dnull,enull", runs + " " + ends.join());
+      done();
+    }, 50);
+  }, 50);
+}, 150); }));
+
+// live 2026-11-18 (claude.ai "Loading…" forever): an answer not on the page comes from claude.ai's conversation data,
+// held for claude.ai's own drawing (as ChatGPT's); its question and the turn order from the same single fetch
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = JR.site, fetches = 0, q = JR.buildMessage({ question: "Why?", text: "cold", sentence: "a cold wave", mode: "concise" });
+  JR.site = Object.create(real);
+  JR.site.name = "claude";
+  JR.site.conversationId = function () { return "cl-conv"; };
+  JR.site.fetchConversation = function () { fetches++; return Promise.resolve({ order: ["cl1", "cl2"], turns: { cl2: { question: q, answer: "**Because**" } } }); };
+  JR.qa.resetApi();
+  Promise.all([JR.qa.ensure(["cl2"]), JR.qa.turnOrder()]).then(function (r) {
+    var c = JR.qa.peek(["cl2"]);
+    check("claude.ai: answer read from its data as text only (design A), question parsed, held for its own drawing",
+      r[0].join() === "cl2" && c && c.answerText === "**Because**" && !c.responseHTML && c.question === "Why?" && JR.qa.get(["cl2"]) === null,
+      JSON.stringify([r[0], c && c.question, c && c.answerText]));
+    check("claude.ai: turn order from the same fetch", r[1].join() === "cl1,cl2" && JR.qa.turnOrderCache.join() === "cl1,cl2" && fetches === 1, r[1].join() + " fetches=" + fetches);
+  }).finally(function () { JR.site = real; JR.qa.resetApi(); done(); });
+}, 250); }));
+
+// review of dev.104: with no popup open and no highlight on the page that way (their turns not mounted), ∨ goes to the
+// first highlight in a turn after the ones in view — not the last of the chat (the user's "jumped to the 42nd")
+(function () {
+  var st = JR.state, real = { band: JR.site.visibleBand, open: JR.scrollToAndOpenPopup, nav: JR.updateNavWidget, widget: st.navWidget, order: JR.qa.turnOrderCache, active: st.activeHighlightId }, got = [];
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px";
+  box.innerHTML = '<div data-turn-key="vt1" style="height:100px">in view, no highlight</div>';
+  document.body.appendChild(box);
+  JR.site.visibleBand = function () { return { top: 0, bottom: 200 }; };
+  JR.scrollToAndOpenPopup = function (id) { got.push(id); };
+  JR.updateNavWidget = function () {};
+  JR.qa.turnOrderCache = ["vt0", "vt1", "vt2", "vt3"];
+  var ids = ["h0", "h2", "h3"], turnOf = { h0: "vt0", h2: "vt2", h3: "vt3" };
+  ids.chain = function (q) { return [{ id: q, quoteId: q }]; };
+  ids.turnOf = function (q) { return turnOf[q]; };
+  st.navWidget = { _jrIds: ids }; st.activeHighlightId = null;
+  JR.navigateHighlight(1); JR.navigateHighlight(-1);
+  check("∨ / ∧ with nothing mounted that way: the next / previous highlight by turn (h2, h0), not the chat's last / first", got.join() === "h2,h0", got.join());
+  // user 2026-11-18 (screenshot): none in view, the first one mounted above it, the next ones not mounted — ∨ did nothing
+  got = [];
+  var sp0 = document.createElement("span"); sp0.style.cssText = "position:fixed;top:-100px"; sp0.textContent = "h0"; document.body.appendChild(sp0);
+  st.completedHighlights.set("h0", { spans: [sp0], items: [] });
+  JR.navigateHighlight(1);
+  check("∨ with the first highlight above the view and the next not mounted: the next by turn (h2)", got.join() === "h2", got.join());
+  st.completedHighlights.delete("h0"); sp0.remove();
+  // a new popup inside a level-3 one (its parent listed, not its root): ∨ goes on from level 3
+  got = [];
+  ids = ["x1", "x2", "y"]; ids.chain = function (q) { return [{ id: q, quoteId: q }]; };
+  st.completedHighlights.set("x1", { spans: [], items: [] });
+  st.completedHighlights.set("x2", { spans: [], items: [], parentId: "x1" });
+  st.completedHighlights.set("x3", { spans: [], items: [], parentId: "x2" });
+  st.navWidget = { _jrIds: ids }; st.activeHighlightId = "x3"; st.activePopup = document.createElement("div");
+  JR.navigateHighlight(1);
+  check("∨ from an unlisted popup inside level 3: on from its nearest listed parent (y), not from the root", got.join() === "y", got.join());
+  got = []; st.activePopup = null; st.activeHighlightId = "x1"; // closed, an id left behind: from the view, not on from x1
+  JR.navigateHighlight(1);
+  check("∨ with no popup open but an id left behind: not on from that id (x2)", got.length === 1 && got[0] !== "x2", got.join());
+  ["x1", "x2", "x3"].forEach(function (k) { st.completedHighlights.delete(k); });
+  st.navWidget = real.widget; st.activeHighlightId = real.active; JR.qa.turnOrderCache = real.order;
+  JR.site.visibleBand = real.band; JR.scrollToAndOpenPopup = real.open; JR.updateNavWidget = real.nav; box.remove();
+})();
+
+// user 2026-11-18 ("如果别的平台有别的codeblock操作你能不能支持", design B): every control the site drew is the site's
+// own — a click in the copy runs at the same place in the original (Run, Copy, wrap, Download, a new one), and
+// what it changes there comes back to the copy; Popup's own marks in the copy don't throw the place off
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "sb-1");
+  orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>see <b>x</b></p>' +
+    '<div data-code-block><div><button aria-label="Copy code">c</button><button aria-label="Run code">Run</button></div><pre>print(42)</pre></div></div></div>';
+  document.body.appendChild(orig);
+  var ran = [];
+  orig.querySelectorAll("button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      ran.push(b.getAttribute("aria-label"));
+      if (b.textContent === "Run") b.closest("[data-code-block]").insertAdjacentHTML("beforeend", "<output>42</output>");
+    });
+  });
+  var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["sb-1"], function (el) { // Popup's own layer: a highlight mark before the code block
+    var p = el.querySelector("p");
+    if (p && !p.querySelector(".jr-mark")) p.insertAdjacentHTML("afterbegin", '<span class="jr-mark">h</span>');
+  });
+  copy.querySelector('[aria-label="Run code"]').click();
+  copy.querySelector('[aria-label="Copy code"]').click();
+  setTimeout(function () {
+    check("site controls in a popup: clicked in the original (Run, Copy), Run's output comes back to the copy",
+      ran.join() === "Run code,Copy code" && !!copy.querySelector("[data-code-block] output"), JSON.stringify([ran, copy.innerHTML.slice(-80)]));
+    JR.siteAnswer.stop(); orig.remove(); copy.remove();
+    done();
+  }, 50);
+}, 1300); }));
+
+// user 2026-11-18 ("no backup, go all in"): a held answer shows only in the site answer — no fallback to Popup's
+// drawing; when no original is found it is looked for again (design A: from its original, site-answer.js)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, calls = 0;
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="held-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>SITE</p></div></div></div>';
+  document.body.appendChild(far);
+  JR.siteOriginal = function () {
+    calls++;
+    return calls === 1 ? Promise.resolve(null) : new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 6000); });
+  };
+  JR.siteOriginalRelease = function () {};
+  JR.qa.put("held-1", { question: "Q", responseHTML: "<p>POPUP</p>", held: true, isPopup: true });
+  JR.qa.upgrade(["held-1"]);
+  setTimeout(function () {
+    var early = JR.qa.get(["held-1"]);
+    setTimeout(function () {
+      var late = JR.qa.get(["held-1"]);
+      JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove();
+      check("held answer: still loading after 6 s (no fallback), then the site answer from its original", early === null && late && /SITE/.test(late.responseHTML) && late.question === "Q" && calls === 2, JSON.stringify([early && early.responseHTML, late && late.responseHTML, calls]));
+      done();
+    }, 3000);
+  }, 6000);
+}, 1500); }));
+
+// Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes
+// there (new text, a new block, a button's result) shows in the copy; Popup's own layer (onChange) is put back after
+// each patch; the page dropping the turn moves to the site's own place for it (JR.siteOriginal); stop lets it go
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "sa-1");
+  orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>first</p></div></div>';
+  document.body.appendChild(orig);
+  var copy = document.createElement("div"), changes = 0, realOrig = JR.siteOriginal, released = null;
+  document.body.appendChild(copy);
+  var keepP = null;
+  JR.siteAnswer.follow(copy, "sa-1", function (el) {
+    changes++;
+    var p = el.querySelector("p");
+    if (p && !p.querySelector(".jr-mark")) { keepP = document.createElement("span"); keepP.className = "jr-mark"; p.appendChild(keepP); }
+  });
+  var first = copy.textContent;
+  var md = orig.querySelector(".markdown");
+  md.querySelector("p").textContent = "first, more";
+  md.insertAdjacentHTML("beforeend", '<div data-new-block><button>Run</button></div><pre>out: 42</pre>');
+  setTimeout(function () {
+    var p0 = copy.querySelector("p");
+    var grew = copy.textContent.indexOf("first, more") !== -1 && !!copy.querySelector("[data-new-block] button") && copy.textContent.indexOf("out: 42") !== -1;
+    var layer = !!(p0 && p0.querySelector(".jr-mark"));
+    // the page drops the turn: the site's own place for it takes over (the render frame / DeepSeek's kept item)
+    var far = document.createElement("div");
+    far.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>first, more</p><pre>out: 42</pre><p>from the frame</p></div></div>';
+    var farDoc = document.createElement("div"); farDoc.hidden = true; farDoc.appendChild(far); document.body.appendChild(farDoc); // (in the frame's document)
+    JR.siteOriginal = function (key) { return Promise.resolve(key === "sa-1" ? far : null); };
+    JR.siteOriginalRelease = function (key) { released = key; };
+    orig.remove();
+    md.appendChild(document.createElement("p")); // (a change the observer sees, on a turn no longer on the page)
+    JR.siteAnswer.follow(copy, "sa-1", null); // what a reopen does
+    setTimeout(function () {
+      var moved = copy.textContent.indexOf("from the frame") !== -1;
+      JR.siteAnswer.stop();
+      far.querySelector(".markdown").insertAdjacentHTML("beforeend", "<p>after stop</p>");
+      setTimeout(function () {
+        check("site answer: the copy follows its original (text, a new block and button, a result), node by node",
+          first === "first" && grew, JSON.stringify([first, copy.innerHTML.slice(0, 160)]));
+        check("site answer: Popup's own layer is put back after each patch (onChange)", layer && changes >= 2, "changes=" + changes);
+        check("site answer: the page dropped the turn — the site's own place for it takes over; stop lets it go",
+          moved && copy.textContent.indexOf("after stop") === -1 && released === "sa-1", JSON.stringify([moved, released]));
+        JR.siteOriginal = realOrig; JR.siteOriginalRelease = undefined; copy.remove(); farDoc.remove();
+        done();
+      }, 50);
+    }, 50);
+  }, 50);
+}, 600); }));
+
+// design A: a page turn whose drawing isn't complete there (claude.ai: code uncoloured in a hidden row) isn't the
+// original once it stopped streaming — the site's own place for it is (the frame); while it streams, it is
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "sa-2");
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>page</p></div></div>';
+  document.body.appendChild(t);
+  var frameDoc = document.implementation.createHTMLDocument("frame").body; // (the frame's own document)
+  frameDoc.innerHTML = '<div data-turn-key="sa-2"><div data-message-author-role="assistant"><div class="markdown"><p>frame</p></div></div></div>';
+  var real = { h: JR.site.harvestable, g: JR.site.isGenerating, o: JR.siteOriginal, r: JR.siteOriginalRelease }, gen = true;
+  JR.site.harvestable = function () { return false; };
+  JR.site.isGenerating = function () { return gen; };
+  JR.siteOriginal = function () { return Promise.resolve(frameDoc.firstChild); };
+  JR.siteOriginalRelease = function () {};
+  var copy = document.createElement("div");
+  JR.siteAnswer.follow(copy, "sa-2", null);
+  setTimeout(function () {
+    var streaming = copy.textContent;
+    gen = false;
+    t.querySelector("p").textContent = "page, done"; // the turn changes as it ends
+    setTimeout(function () {
+      var after = copy.textContent;
+      JR.siteAnswer.stop();
+      check("site answer: an incomplete page drawing — followed while streaming, then the frame's", streaming === "page" && after === "frame", JSON.stringify([streaming, after]));
+      // review of dev.125: while something streams, an older incomplete page turn (not the newest) isn't the original
+      gen = true;
+      var newer = document.createElement("div"); newer.setAttribute("data-turn-key", "sa-2b"); document.body.appendChild(newer);
+      var copy2 = document.createElement("div");
+      JR.siteAnswer.follow(copy2, "sa-2", null);
+      setTimeout(function () {
+        check("site answer: while another turn streams, an older incomplete page turn isn't followed (the frame's is)", copy2.textContent === "frame", copy2.textContent);
+        JR.siteAnswer.stop();
+        JR.site.harvestable = real.h; JR.site.isGenerating = real.g; JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r;
+        t.remove(); newer.remove();
+        done();
+      }, 50);
+    }, 50);
+  }, 50);
+}, 1000); })); // (after the test above: one original is live at a time)
+
+// live 2026-11-18 (B6): a parent active again after its child closed shows its last copy while its original is found
+// again (the frame); a click on a site control then went nowhere — it goes to the original once that is found
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, ran = 0;
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="sl-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div></div></div>';
+  document.body.appendChild(far);
+  far.querySelector("button").addEventListener("click", function () { ran++; });
+  JR.siteOriginal = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
+  JR.siteOriginalRelease = function () {};
+  var copy = document.createElement("div"); copy.className = "jr-popup-response";
+  copy.innerHTML = '<div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div>'; // its last copy
+  document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["sl-1"], null);
+  copy.querySelector("button").click(); // before the original is found
+  setTimeout(function () {
+    check("site controls in a popup: a click while its original is still being found goes there once it is", ran === 1, ran);
+    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+    done();
+  }, 800);
+}, 9500); }));
+
+// live 2026-11-19 (dev.133 trace, ChatGPT B6): the site replaced the original's turn just after it was found again; a
+// click then went to the replaced (detached) one — nothing copied. It goes to the turn found again instead.
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, hits = [];
+  var far = document.createElement("div"); far.hidden = true; document.body.appendChild(far);
+  function turn(n) {
+    far.innerHTML = '<div data-turn-key="sr-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div></div></div>';
+    far.querySelector("button").addEventListener("click", function () { hits.push(n + (far.contains(this) ? "" : " detached")); });
+    return far.firstChild;
+  }
+  var asked = 0;
+  JR.siteOriginal = function () { asked++; var n = asked; return new Promise(function (r) { setTimeout(function () { r(n === 1 ? first : turn("second")); }, n === 1 ? 0 : 300); }); };
+  JR.siteOriginalRelease = function () {};
+  var first = turn("first");
+  var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["sr-1"], null);
+  setTimeout(function () {
+    var old = far.firstChild; far.removeChild(old); // the site replaced it (found again in 300 ms)
+    copy.querySelector("button").click();
+    setTimeout(function () {
+      check("site controls in a popup: a click right after the site replaced the original goes to the turn found again", hits.join() === "second", hits.join());
+      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+      done();
+    }, 800);
+  }, 50);
+}, 10500); }));
+
+// live 2026-11-19 (ChatGPT): the site focused its composer in the render frame when it loaded; the user's typing and Esc
+// went into the unseen chat. The keyboard goes back where it was (a forwarded click has the frame for a moment only)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { conv: JR.site.conversationId, url: JR.site.chatUrl, scr: JR.site.frameScroller, cnt: JR.site.frameTurnCount };
+  JR.site.conversationId = function () { return "focus-conv"; };
+  JR.site.chatUrl = function () { return "about:blank"; };
+  JR.site.frameScroller = function () { return { scrollTop: 0, scrollHeight: 1 }; }; // (the prewarm ends in 2 s)
+  JR.site.frameTurnCount = function () { return 1; };
+  var input = document.createElement("input"); document.body.appendChild(input); input.focus();
+  JR.siteRenderPrewarm();
+  var fs = document.querySelectorAll("iframe.jr-render-frame"), f = fs[fs.length - 1];
+  (function () { // (about:blank has loaded by then)
+    setTimeout(function () {
+      var fi = f.contentDocument.createElement("input"); f.contentDocument.body.appendChild(fi);
+      fi.focus(); // the site's composer
+      setTimeout(function () {
+        var back = document.activeElement === input;
+        JR.siteOriginalFocus(100); f.contentWindow.focus(); fi.focus(); // a forwarded click
+        var during = document.activeElement === f;
+        var esc = 0, onEsc = function (e) { if (e.key === "Escape") esc++; };
+        document.addEventListener("keydown", onEsc);
+        fi.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); // Esc right after a Copy
+        var keyBack = document.activeElement === input && esc === 1;
+        document.removeEventListener("keydown", onEsc);
+        setTimeout(function () {
+          check("render frame: never keeps the keyboard (it goes back), only for a forwarded click's moment; a key then is the page's",
+            back && during && keyBack && document.activeElement === input, JSON.stringify([back, during, keyBack, esc, document.activeElement && document.activeElement.tagName]));
+          setTimeout(function () { // (after the prewarm)
+            JR.site.conversationId = real.conv; JR.site.chatUrl = real.url; JR.site.frameScroller = real.scr; JR.site.frameTurnCount = real.cnt; input.remove();
+            done();
+          }, 2500);
+        }, 300);
+      }, 50);
+    }, 300);
+  })();
+}, 19500); }));
+
+// review of dev.135: an image's button opens Popup's lightbox (the site's viewer would open in the unseen frame); a
+// citation's small favicon button still goes to the site
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "si-1");
+  orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><button class="pic"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="200" height="100"></button>' +
+    '<button class="cite"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="16" height="16">src</button></div></div>';
+  document.body.appendChild(orig);
+  var cited = 0, pics = 0;
+  orig.querySelector(".cite").addEventListener("click", function () { cited++; });
+  orig.querySelector(".pic").addEventListener("click", function () { pics++; });
+  var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["si-1"], null);
+  copy.querySelector(".pic").click();
+  copy.querySelector(".cite").click();
+  setTimeout(function () {
+    var box = document.querySelector(".jr-lightbox");
+    check("site controls in a popup: an image opens Popup's lightbox, a citation's favicon button goes to the site",
+      !!box && pics === 0 && cited === 1, JSON.stringify([!!box, pics, cited]));
+    if (box) document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); // (its own close: its key listener goes too)
+    JR.siteAnswer.stop(); orig.remove(); copy.remove();
+    done();
+  }, 50);
+}, 19000); }));
+
+// review of dev.135: (a) no original for 3 rounds — it stopped looking and the popup stayed on "Loading…" for good;
+// (b) a re-find put the followed key first in the Q&A's keys, so its rebuilt popup no longer matched and looked again
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, asked = 0;
+  var far = document.createElement("div"); far.hidden = true; document.body.appendChild(far);
+  function turn() { far.innerHTML = '<div data-turn-key="st-a-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>late</p></div></div></div>'; return far.firstChild; }
+  JR.siteOriginal = function (key) { asked++; return Promise.resolve(asked > 6 && key === "st-a" ? turn() : null); }; // 3 rounds of 2 keys: none
+  JR.siteOriginalRelease = function () {};
+  var copy = document.createElement("div"); document.body.appendChild(copy);
+  JR.siteAnswer.follow(copy, ["st-q", "st-a"], null);
+  setTimeout(function () {
+    var a = copy.textContent === "late";
+    if (far.firstChild) far.removeChild(far.firstChild); // the site redrew it: found again (st-a now followed)
+    setTimeout(function () {
+      var before = asked;
+      JR.siteAnswer.follow(copy, ["st-q", "st-a"], null); // its popup rebuilt
+      setTimeout(function () {
+        check("site answer: still looked for after 3 rounds without an original (no Loading for good)", a, copy.textContent);
+        check("site answer: after a re-find the rebuilt popup is still the same Q&A (not looked for again)", asked === before, (asked - before) + " asked");
+        JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+        done();
+      }, 50);
+    }, 100);
+  }, 7000);
+}, 11500); }));
+
+// user 2026-11-18 (dev.111: "成功了但是太慢 而且为啥loading出来的版本下面没有reply"): Popup's Reply stays in the copy
+// through every patch; a rebuilt popup of the same Q&A gets the original already found (not looked for again)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, asked = 0, released = 0;
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="sc-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>one</p></div></div></div>';
+  document.body.appendChild(far);
+  JR.siteOriginal = function () { asked++; return Promise.resolve(far.firstChild); };
+  JR.siteOriginalRelease = function () { released++; };
+  var c1 = document.createElement("div");
+  JR.siteAnswer.follow(c1, ["sc-1"], null);
+  setTimeout(function () {
+    var c2 = document.createElement("div");
+    c2.innerHTML = '<p>old</p><button class="jr-reply-whole-btn" data-jr-keep>Reply</button>';
+    JR.siteAnswer.follow(c2, ["sc-1"], null); // its popup rebuilt
+    far.querySelector(".markdown").insertAdjacentHTML("beforeend", "<p>two</p>");
+    setTimeout(function () {
+      var reply = c2.querySelector("[data-jr-keep]");
+      check("site answer: Reply stays in the copy through patches; a rebuilt popup gets the original already found",
+        reply && c2.lastElementChild === reply && /one/.test(c2.textContent) && /two/.test(c2.textContent) && asked === 1 && released === 0,
+        JSON.stringify([c2.innerHTML.slice(0, 120), asked, released]));
+      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove();
+      done();
+    }, 50);
+  }, 50);
+}, 20000); })); // (after the held-answer test: one original is live at a time)
+
+// user 2026-11-18 (screenshot, dev.112): a frame original's generated code styles apply only in a marked copy — the
+// rebuilt popup's copy it is handed to is marked too (it lost them: no monospace, no indentation)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope }, marked = [];
+  var fdoc = document.implementation.createHTMLDocument("frame");
+  fdoc.body.innerHTML = '<div data-turn-key="sd-1"><div data-message-author-role="assistant"><div class="markdown"><p>code</p></div></div></div>';
+  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.firstChild); };
+  JR.siteOriginalRelease = function () {};
+  JR.siteOriginalScope = function (el) { if (marked.indexOf(el) === -1) marked.push(el); };
+  var c1 = document.createElement("div"), c2 = document.createElement("div");
+  JR.siteAnswer.follow(c1, ["sd-1"], null);
+  setTimeout(function () {
+    JR.siteAnswer.follow(c2, ["sd-1"], null); // its popup rebuilt
+    check("site answer: a frame original's copy is marked for its styles, also the rebuilt popup's", marked.indexOf(c1) !== -1 && marked.indexOf(c2) !== -1 && /code/.test(c2.textContent), marked.length);
+    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+    done();
+  }, 50);
+}, 21000); }));
+
+// live 2026-11-18 (dev.115 trace): the site replaces the whole turn of a followed original (ChatGPT redraws it in the
+// frame) — nothing changes inside the old one; the copy follows the new one
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope };
+  var fdoc = document.implementation.createHTMLDocument("frame"), turnHTML = function (t) { return '<div data-turn-key="se-1"><div data-message-author-role="assistant"><div class="markdown"><p>' + t + '</p></div></div></div>'; };
+  fdoc.body.innerHTML = turnHTML("old drawing");
+  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.querySelector("[data-turn-key]")); };
+  JR.siteOriginalRelease = function () {};
+  JR.siteOriginalScope = function () {};
+  var c = document.createElement("div");
+  JR.siteAnswer.follow(c, ["se-1"], null);
+  setTimeout(function () {
+    fdoc.body.innerHTML = turnHTML("new drawing"); // replaced, not changed
+    setTimeout(function () {
+      check("site answer: the site replaced the whole original — the copy follows the new one", /new drawing/.test(c.textContent), c.textContent);
+      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+      done();
+    }, 50);
+  }, 50);
+}, 22000); }));
+
+// review of dev.125: opening a child popup stops its parent's follow (only the active popup follows; the parent's
+// patches redrew its paragraphs and took away the highlight the child was opened from)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope }, st = JR.state;
+  var saved = { stack: st.popupStack.slice(), p: st.activePopup, h: st.activeSourceHighlights, id: st.activeHighlightId };
+  var fdoc = document.implementation.createHTMLDocument("frame");
+  fdoc.body.innerHTML = '<div data-turn-key="sf-1"><div data-message-author-role="assistant"><div class="markdown"><p>parent</p></div></div></div>';
+  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.firstChild); };
+  JR.siteOriginalRelease = function () {}; JR.siteOriginalScope = function () {};
+  var c = document.createElement("div");
+  JR.siteAnswer.follow(c, ["sf-1"], null);
+  setTimeout(function () {
+    var before = JR.siteAnswer.current() === c;
+    JR.pushPopupState();
+    check("site answer: opening a child popup stops the parent's follow", before && JR.siteAnswer.current() === null, before);
+    st.popupStack.length = 0; Array.prototype.push.apply(st.popupStack, saved.stack);
+    st.activePopup = saved.p; st.activeSourceHighlights = saved.h; st.activeHighlightId = saved.id;
+    JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+    done();
+  }, 50);
+}, 23000); }));
+
+// review of dev.128: a copy that followed a frame original and now follows a page one loses the frame's style scope
+// (its generated ͼ rules mean other things on the page: wrong code colours)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var pt = document.createElement("div"); pt.setAttribute("data-turn-key", "sg-1");
+  pt.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>page</p></div></div>';
+  document.body.appendChild(pt);
+  var c = document.createElement("div"); c.className = "jr-frame-answer"; c.setAttribute("data-jr-frame", "3");
+  JR.siteAnswer.follow(c, ["sg-1"], null);
+  setTimeout(function () {
+    check("site answer: a copy following a page original has no frame style scope", !c.hasAttribute("data-jr-frame") && !c.classList.contains("jr-frame-answer") && c.textContent === "page", c.outerHTML.slice(0, 80));
+    JR.siteAnswer.stop(); pt.remove();
+    done();
+  }, 50);
+}, 24000); }));
+
+// live 2026-11-19 (dev.130 trace, ChatGPT 9/80 ~40 s): the frame first showed earlier turns at a place, then — its
+// heights measured — later ones there; the search kept the bound from before and went to and fro in a window without
+// the turn (160 steps). Simulated frame: estimated heights, then measured ones after a few steps.
+var realSiteOriginal = JR.siteOriginal, realSiteOriginalRelease = JR.siteOriginalRelease;
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var N = 40, keys = [], sets = 0, st = 0, simDoc = null;
+  for (var k = 0; k < N; k++) keys.push("sim" + k);
+  function h(i) { return sets <= 3 ? (i < 12 ? 5000 : 40000 / 28) : (i < 23 ? 1500 : 65500 / 17); } // (the same total)
+  function pos(i) { var p = 0; for (var j = 0; j < i; j++) p += h(j); return p; }
+  var sc = { clientHeight: 400, get scrollHeight() { return pos(N); }, getBoundingClientRect: function () { return { top: 0 }; },
+    get scrollTop() { return st; },
+    set scrollTop(v) { sets++; st = Math.max(0, Math.min(v, pos(N) - 400)); mount(); } };
+  function mount() {
+    if (!simDoc) return;
+    simDoc.body.innerHTML = "";
+    keys.forEach(function (key, i) {
+      if (pos(i) >= st + 800 || pos(i) + h(i) <= st - 400) return;
+      var t = simDoc.createElement("div"); t.setAttribute("data-sim", key);
+      t.getBoundingClientRect = function () { return { top: pos(i) - st }; };
+      simDoc.body.appendChild(t);
+    });
+  }
+  var real = { conv: JR.site.conversationId, url: JR.site.chatUrl, scr: JR.site.frameScroller, cnt: JR.site.frameTurnCount,
+    ft: JR.site.frameTurn, tk: JR.site.turnKey, sel: JR.SEL.turn, ord: JR.qa.turnOrder, cache: JR.qa.turnOrderCache,
+    o: JR.siteOriginal, r: JR.siteOriginalRelease };
+  JR.siteOriginal = realSiteOriginal; JR.siteOriginalRelease = realSiteOriginalRelease;
+  JR.site.conversationId = function () { return "sim-conv"; };
+  JR.site.chatUrl = function () { return "about:blank"; };
+  JR.site.frameScroller = function (d) { if (simDoc !== d) { simDoc = d; mount(); } return sc; };
+  JR.site.frameTurnCount = function () { return 1; };
+  JR.site.frameTurn = function (d, key) { return d.querySelector('[data-sim="' + key + '"]'); };
+  JR.site.turnKey = function (t) { return t.getAttribute("data-sim"); };
+  JR.SEL.turn = "[data-sim]";
+  JR.qa.turnOrderCache = keys; JR.qa.turnOrder = function () { return Promise.resolve(keys); };
+  var found = null;
+  JR.siteOriginal("sim17").then(function (t) { found = t; });
+  setTimeout(function () {
+    check("site render: the turn is found though the frame's heights change during the search (once ~40 s)",
+      found && found.getAttribute("data-sim") === "sim17", (found ? found.getAttribute("data-sim") : found) + " after " + sets + " scrolls");
+    JR.siteOriginalRelease("sim17");
+    JR.site.conversationId = real.conv; JR.site.chatUrl = real.url; JR.site.frameScroller = real.scr; JR.site.frameTurnCount = real.cnt;
+    JR.site.frameTurn = real.ft; JR.site.turnKey = real.tk; JR.SEL.turn = real.sel; JR.qa.turnOrder = real.ord; JR.qa.turnOrderCache = real.cache;
+    JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r;
+    done();
+  }, 4500);
+}, 25000); }));
+
 Promise.all(asyncChecks).then(function () {
+  JR.siteAnswer.stop(); // (one a test left live keeps looking for its original)
   fakeForm.remove();
   out.push(failed ? failed + " FAILED" : "all passed");
   document.getElementById("out").textContent = out.join("\n");

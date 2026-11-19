@@ -183,6 +183,12 @@
     cacheSize: function () { return cache.size; },
     clear: function () { cache.clear(); },
 
+    /** The cached content of an item, also while its answer is held for the site's drawing (for ordering only). */
+    peek: function (turnKeys) {
+      for (var i = 0; i < (turnKeys || []).length; i++) { var c = cache.get(turnKeys[i]); if (c && (c.responseHTML || c.answerText)) return c; }
+      return JR.qa.get(turnKeys);
+    },
+
     /** The question an item asked, as read back — also while its answer is held for the site's drawing. */
     question: function (turnKeys) {
       for (var i = 0; i < (turnKeys || []).length; i++) {
@@ -198,14 +204,16 @@
       for (var i = 0; i < (turnKeys || []).length; i++) {
         var k = turnKeys[i];
         var c = cache.get(k);
-        if (c && c.held) return null; // shown only once the site's own drawing is in, or after 5 s (JR.qa.upgrade)
-        if (c && c.responseHTML) return c;
-        var turn = JR.site.findTurnByKey(k);
+        if (c && c.responseHTML && !c.held) return c;
+        var turn = JR.site.findTurnByKey(k); // mounted: the site's own drawing, also instead of a held one
         if (turn) {
           var h = harvest(turn);
+          // its question row may not be mounted (claude.ai's window can cut a pair): keep the question read from the data
+          if (h && c && h.question == null) { h.question = c.question; h.text = c.text; h.sentence = c.sentence; h.isPopup = c.isPopup; }
           if (h && h.responseHTML && !JR.site.isGenerating()) cache.set(k, h);
           if (h && h.responseHTML) return h;
         }
+        if (c && c.held) return null; // shown only once the site's own drawing is in (JR.qa.upgrade)
       }
       return null;
     },
@@ -318,23 +326,23 @@
   JR.qa.ensure = function (turnKeys) {
     var want = (turnKeys || []).filter(function (k) { return k && !cache.has(k); });
     if (!want.length) return Promise.resolve([]);
-    // claude.ai: no data to read (its timeline is binary, off limits) — JR.qa.upgrade draws it via the frame when opened
-    var read = JR.site.name === "deepseek" ? readDeepSeek(want) : JR.site.name === "chatgpt" ? readChatGPT(want) : Promise.resolve([]);
-    return read.then(function (filled) {
+    var read = { chatgpt: readChatGPT, deepseek: readDeepSeek, claude: readClaude }[JR.site.name];
+    return (read ? read(want) : Promise.resolve([])).then(function (filled) {
       if (filled.length && JR.onQAContentLoaded) JR.onQAContentLoaded(filled);
       return filled;
     });
   };
 
-  function putParsed(k, questionText, html, drawnByPopup) {
+  /** A Q&A read from the site's data: its question, and its answer as text only (ordering highlights in it) — the
+   *  popup waits ("held") for the site answer itself, from its original (design A, Q6: no drawing of Popup's). */
+  function putParsed(k, questionText, answerText) {
     var parsed = JR.parsePopupMessage(questionText || "");
     cache.set(k, {
       question: parsed ? parsed.question : null,
       text: parsed ? parsed.text : null,
       sentence: parsed ? parsed.sentence : null,
-      responseHTML: html,
-      drawnByPopup: drawnByPopup, // true: JR.qa.upgrade replaces it with the site's own drawing when it's opened
-      held: drawnByPopup && !!JR.siteRender, // the popup waits for that drawing (loading) instead of changing later
+      answerText: answerText,
+      held: true,
       isPopup: !!parsed,
     });
   }
@@ -345,31 +353,33 @@
       return want.filter(function (k) {
         var node = conv.mapping[k];
         var answer = node && node.message && answerFor(conv.mapping, k);
-        if (answer) putParsed(k, textOf(node.message), JR.renderMarkdown(answer), true);
+        if (answer) putParsed(k, textOf(node.message), answer);
         return !!answer;
       });
     });
   }
 
   // DeepSeek (docs/DEEPSEEK.md §6–7): the key is the answer's message id, its question is the parent message.
-  // This drawing (in DeepSeek's classes) is held until DeepSeek's own is copied from its list (JR.siteRender there).
-  var dsHistory = null; // { id, promise } once per conversation per page session; nothing stored
+  // Held: the popup shows DeepSeek's own drawing, followed from its list (JR.siteOriginal there, design A).
   function dsText(m) {
     if (typeof m.content === "string" && m.content) return m.content;
     return (m.fragments || []).map(function (f) { return typeof f.content === "string" ? f.content : ""; }).join("");
   }
-  function dsMessages() {
+  /** DeepSeek's history / claude.ai's conversation, as the page loads them: once per conversation per page session,
+   *  again after a failure; nothing stored. */
+  var siteConv = null; // { id, promise }
+  function siteData() {
     var conv = JR.site.conversationId();
     if (!conv) return Promise.resolve(null);
-    if (!dsHistory || dsHistory.id !== conv) {
-      var h = dsHistory = { id: conv, promise: JR.site.fetchHistory(conv) };
-      h.promise.then(function (msgs) { if (!msgs && dsHistory === h) dsHistory = null; }); // retry later
+    if (!siteConv || siteConv.id !== conv) {
+      var c = siteConv = { id: conv, promise: (JR.site.fetchHistory || JR.site.fetchConversation)(conv).catch(function () { return null; }) };
+      c.promise.then(function (d) { if (!d && siteConv === c) siteConv = null; }); // retry later
     }
-    return dsHistory.promise;
+    return siteConv.promise;
   }
   /** Files the question of answer k carried (its FILE fragment): { id, name, mime, url } — after a reload. */
   function dsAttachments(k) {
-    return dsMessages().then(function (msgs) {
+    return siteData().then(function (msgs) {
       var a = (msgs || []).filter(function (m) { return String(m.message_id) === String(k); })[0];
       var q = a && (msgs || []).filter(function (m) { return m.message_id === a.parent_id; })[0];
       var files = [];
@@ -380,57 +390,67 @@
     });
   }
   function readDeepSeek(want) {
-    return dsMessages().then(function (msgs) {
+    return siteData().then(function (msgs) {
       if (!msgs) return [];
       var byId = {};
       msgs.forEach(function (m) { byId[String(m.message_id)] = m; });
       return want.filter(function (k) {
         var a = byId[String(k)], md = a && JR.site.answerMarkdown(a);
-        if (md) putParsed(k, byId[String(a.parent_id)] ? dsText(byId[String(a.parent_id)]) : "", JR.site.renderAnswer(md), true); // upgraded to DeepSeek's own drawing when opened (sites/deepseek.js siteRender)
+        if (md) putParsed(k, byId[String(a.parent_id)] ? dsText(byId[String(a.parent_id)]) : "", md);
         return !!md;
       });
     });
   }
 
-  /** Markdown from the network stream, drawn in the site's own answer classes where it has them (DeepSeek). */
-  JR.renderAnswerText = function (md) {
-    return JR.site.renderAnswer ? JR.site.renderAnswer(md) : JR.renderMarkdown(md);
+  // claude.ai (sites/claude.js fetchConversation): held until claude.ai's own drawing comes from the render frame
+  // (live 2026-11-18: answers only the frame could give loaded forever)
+  function readClaude(want) {
+    return siteData().then(function (d) {
+      return want.filter(function (k) {
+        var t = d && d.turns[k];
+        if (t && t.answer) putParsed(k, t.question, t.answer);
+        return !!(t && t.answer);
+      });
+    });
+  }
+
+  /**
+   * The text of the answer in the turn with this key, from the site's own data (Markdown), for ordering highlights in
+   * answers that aren't on the page (navigation): ChatGPT's conversation, DeepSeek's history, claude.ai's conversation.
+   */
+  JR.qa.answerText = function (turnKey) {
+    if (JR.site.name === "chatgpt") return fetchConversation().then(function (conv) { return conv ? answerFor(conv.mapping, turnKey) || null : null; });
+    if (JR.site.name === "deepseek") {
+      return siteData().then(function (msgs) {
+        var m = (msgs || []).filter(function (x) { return String(x.message_id) === String(turnKey); })[0];
+        return m ? JR.site.answerMarkdown(m) : null;
+      });
+    }
+    if (JR.site.name === "claude") return siteData().then(function (d) { var t = d && d.turns[turnKey]; return t ? t.answer : null; });
+    return Promise.resolve(null);
   };
 
   /**
-   * Answers Popup drew from Markdown get the site's own rendering (site-render.js), in memory only;
-   * open popups showing them are refreshed (JR.onQAUpgraded). Once per turn per page.
+   * A Q&A the active popup waits for ("Loading…") gets the site answer (design A, GLOSSARY.md): followed from its
+   * original (site-answer.js) until the first copy, which is handed to the popups showing it (JR.onQAContentLoaded);
+   * the rebuilt popup then follows the original itself. No original:
+   * "Loading…" stays (user, 2026-11-18: no backup). In memory only.
    */
-  var upgraded = new Set();
   JR.qa.upgrade = function (turnKeys) {
-    (turnKeys || []).forEach(function (k) {
-      var c0 = cache.get(k);
-      var fromFrameOnly = !c0 && JR.site.name === "claude"; // nothing read before: the frame gives question and answer
-      if (!k || upgraded.has(k) || !JR.siteRender || !(fromFrameOnly || (c0 && c0.drawnByPopup))) return;
-      upgraded.add(k);
-      // A held answer shows when the site's drawing arrives, or Popup's own after 5 s — then it never changes
-      var settled = false;
-      function release() { settled = true; var c = cache.get(k); if (c) c.held = false; if (JR.onQAContentLoaded) JR.onQAContentLoaded([k]); }
-      var timer = c0 && c0.held ? setTimeout(release, 5000) : 0;
-      JR.siteRender(k).then(function (r) {
-        if (timer) {
-          if (settled) return;
-          clearTimeout(timer);
-          if (r) { var ch = cache.get(k); ch.responseHTML = r.html; ch.drawnByPopup = false; }
-          return release();
-        }
-        if (!r) { upgraded.delete(k); return; }
-        if (fromFrameOnly) {
-          putParsed(k, r.question, r.html, false);
-          if (JR.onQAContentLoaded) JR.onQAContentLoaded([k]);
-          return;
-        }
-        var c = cache.get(k) || {};
-        c.responseHTML = r.html;
-        c.drawnByPopup = false;
-        cache.set(k, c);
-        if (JR.onQAUpgraded) JR.onQAUpgraded([k]);
+    var keys = (turnKeys || []).filter(Boolean);
+    if (!keys.length || !JR.siteAnswer) return;
+    // already the site answer (a page copy: the popup showing it follows its original itself)
+    if (keys.some(function (k) { var c = cache.get(k); return c && c.responseHTML && !c.held; })) return;
+    var scratch = document.createElement("div");
+    JR.siteAnswer.follow(scratch, keys, function (el, turn) {
+      var html = el.innerHTML, q = null;
+      keys.forEach(function (k) { var c = cache.get(k); if (c && c.question != null) q = c; });
+      if (!q) { var parsed = JR.parsePopupMessage(JR.site.userText(turn) || ""); q = { question: parsed ? parsed.question : null, text: parsed ? parsed.text : null, sentence: parsed ? parsed.sentence : null, isPopup: !!parsed }; }
+      keys.forEach(function (k) {
+        cache.set(k, { question: q.question, text: q.text, sentence: q.sentence, isPopup: q.isPopup, responseHTML: html, held: false });
       });
+      if (JR.onQAContentLoaded) JR.onQAContentLoaded(keys); // one rebuild of the popup showing it
+      if (JR.siteAnswer.current() === scratch) JR.siteAnswer.stop(); // no popup took it over: let the original go
     });
   };
 
@@ -460,6 +480,14 @@
    */
   JR.qa.turnOrderCache = null;
   JR.qa.turnOrder = function () {
+    if (JR.site.name === "claude") {
+      var id = JR.site.conversationId();
+      return siteData().then(function (d) {
+        var order = d ? d.order : [];
+        if (JR.site.conversationId() === id) JR.qa.turnOrderCache = order; // a failure as [] too (as below)
+        return order;
+      });
+    }
     return fetchConversation().then(function (conv) {
       // Cache the empty result too: callers re-render when this resolves, and an
       // uncached [] made them fetch again forever (home page, API failure).
@@ -478,7 +506,7 @@
     });
   };
 
-  JR.qa.resetApi = function () { convFetch = null; JR.qa.apiStatus = "unused"; JR.qa.turnOrderCache = null; };
+  JR.qa.resetApi = function () { convFetch = null; siteConv = null; JR.qa.apiStatus = "unused"; JR.qa.turnOrderCache = null; };
 
   // ---------------------------------------------------------------------------
   // Turn mount observer: ChatGPT adds/removes turns as the user scrolls.
@@ -499,7 +527,7 @@
       var key = JR.site.turnKey(turns[i]);
       if (!key) continue;
       if (st.hiddenTurnKeys.has(key)) {
-        if (!cache.has(key) && !(st.watchingTurnKey === key)) {
+        if ((!cache.has(key) || cache.get(key).held) && !(st.watchingTurnKey === key)) { // held: its drawing wasn't shown yet
           var h = harvest(turns[i]);
           if (h && h.responseHTML) { cache.set(key, h); newlyLoaded.push(key); }
         }
@@ -614,425 +642,6 @@
     watchHostHeight();
     root.addEventListener("scroll", refreshDiagnosticsSoon, { passive: true });
     scheduleMountCheck();
-  };
-
-  // ---------------------------------------------------------------------------
-  // Markdown → HTML, for answers read from ChatGPT's network stream (net-tap.js)
-  // when the answer's turn isn't in the DOM. ChatGPT's own rendered HTML is
-  // always preferred when available. Everything is escaped first; only
-  // http(s) links are kept. Handles the common subset: headings, paragraphs,
-  // lists (nested by indent), code fences, blockquotes, tables, hr, inline
-  // code/bold/italic/strike/links. Unclosed fences (mid-stream) render as code.
-  // ---------------------------------------------------------------------------
-
-  function esc(t) {
-    return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-
-  function inline(t) {
-    var codes = [];
-    t = esc(t).replace(/`([^`]+)`/g, function (_, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
-    // Formulas stay plain TeX, written like JR.mathText (\( … \) with no inner
-    // padding) so a highlight saved on a formula is found again in this text.
-    var maths = [];
-    t = t.replace(/\\([(\[])\s*([\s\S]*?)\s*\\([)\]])/g, function (_, o, body, c) {
-      maths.push("\\" + o + body.replace(/\s+/g, " ") + "\\" + c);
-      return "\u0001" + (maths.length - 1) + "\u0001";
-    });
-    t = t
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, function (_, a, b) { return "<strong>" + (a || b) + "</strong>"; })
-      .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
-      .replace(/(^|[^\w_])_([^_\s][^_]*)_(?!\w)/g, "$1<em>$2</em>")
-      .replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    t = t.replace(/\u0001(\d+)\u0001/g, function (_, i) { return maths[+i]; });
-    return t.replace(/\u0000(\d+)\u0000/g, function (_, i) { return "<code>" + codes[+i] + "</code>"; });
-  }
-
-  // --- Components in ChatGPT's rich answers (R13) ---------------------------
-  // Answers in the 2026-10 rich format carry JSX-like component markup with
-  // markdown inside (<box border radius="lg">**DNS**…</box><icon name="arrow-down"/>).
-  // ChatGPT draws it in the page; Popup's hidden Q&As never reach its renderer,
-  // so Popup draws a simple version: boxes, rows, captions, badges, icons as
-  // symbols, code blocks, charts and maps from their data (T15). Attribute values
-  // only choose classes or are drawn as escaped text; they never reach the page as markup.
-  // Icons with a clear plain symbol; others (lightbulb, server, lock…) are left out
-  var DIL_ICONS = { "arrow-down": "\u2193", "arrow-up": "\u2191", "arrow-right": "\u2192", "arrow-left": "\u2190",
-    check: "\u2713", "check-circle": "\u2713", x: "\u2715", close: "\u2715", "x-circle": "\u2715", plus: "+", minus: "\u2212",
-    star: "\u2605", info: "\u24d8", "alert-circle": "!", warning: "\u26a0", "alert-triangle": "\u26a0", alert: "\u26a0", dot: "\u2022" };
-  // Where a tag starts (or inline code, skipped); readTag reads the rest of the tag
-  var TAG_RE = /(`+)[\s\S]*?\1|<(\/?)([A-Za-z][\w-]*)/g;
-  // Tags with no closing tag
-  var SELF = { icon: 1, divider: 1, spacer: 1, Chart: 1, MapWidgetV2: 1, Cite: 1, AsyncImage: 1, Entity: 1, Link: 1 };
-
-  /** Index just past the {…} that starts at s[i] (any depth; braces in strings don't count), or -1. */
-  function braceEnd(s, i) {
-    var depth = 0, quote = null;
-    for (; i < s.length; i++) {
-      var ch = s[i];
-      if (quote) { if (ch === "\\") i++; else if (ch === quote) quote = null; continue; }
-      if (ch === '"' || ch === "'" || ch === "`") quote = ch;
-      else if (ch === "{") depth++;
-      else if (ch === "}" && --depth === 0) return i + 1;
-    }
-    return -1;
-  }
-
-  /**
-   * The attributes of a tag whose name ends at s[i]: name="text", name={value} (the
-   * text inside the braces) or a bare name (true). Returns { attrs, self, end }, or
-   * null when the tag is malformed (it then stays text).
-   */
-  function readTag(s, i) {
-    var attrs = {}, name = /\s*([a-zA-Z][\w-]*)/y, ws = /\s*/y, m;
-    for (;;) {
-      ws.lastIndex = i; ws.exec(s); i = ws.lastIndex;
-      if (s[i] === ">") return { attrs: attrs, self: false, end: i + 1 };
-      if (s[i] === "/" && s[i + 1] === ">") return { attrs: attrs, self: true, end: i + 2 };
-      name.lastIndex = i;
-      if (!(m = name.exec(s))) return null;
-      i = name.lastIndex;
-      if (s[i] !== "=") { attrs[m[1]] = true; continue; }
-      i++;
-      if (s[i] === '"') {
-        var q = s.indexOf('"', i + 1);
-        if (q === -1) return null;
-        attrs[m[1]] = s.slice(i + 1, q); i = q + 1;
-      } else if (s[i] === "{") {
-        var e = braceEnd(s, i);
-        if (e === -1) return null;
-        attrs[m[1]] = s.slice(i + 1, e - 1); i = e;
-      } else return null;
-    }
-  }
-
-  function parseJSON(t) { try { return JSON.parse(t); } catch (e) { return undefined; } }
-
-  // --- Scripted parts (ChatGPT's template syntax): Popup never runs them. It only reads
-  // constants written as JSON ({@body const tasks = [...]}, DIL.useState([...])),
-  // repeats {#each} blocks over them and fills in simple {expressions}; anything else
-  // of a template is hidden.
-  function evalSimple(expr, scope) {
-    var m, v;
-    expr = expr.trim();
-    if ((m = /^(\w+)$/.exec(expr))) v = scope[m[1]];
-    else if ((m = /^(\w+)\[(\w+)\]$/.exec(expr)) && Array.isArray(scope[m[1]])) v = scope[m[1]][/^\d+$/.test(m[2]) ? +m[2] : scope[m[2]]];
-    else if ((m = /^(\w+)(\.filter\(Boolean\))?\.length$/.exec(expr)) && Array.isArray(scope[m[1]])) v = (m[2] ? scope[m[1]].filter(Boolean) : scope[m[1]]).length;
-    else if ((m = /^(\w+)\.(\w+)$/.exec(expr)) && scope[m[1]] && typeof scope[m[1]] === "object") v = scope[m[1]][m[2]];
-    return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? v : undefined;
-  }
-  function fillExpressions(text, scope, known) {
-    var out = "", i = 0, j;
-    while ((j = text.indexOf("{", i)) !== -1) {
-      var e = braceEnd(text, j);
-      if (e === -1) break;
-      var expr = text.slice(j + 1, e - 1), v = evalSimple(expr, scope);
-      var attr = text[j - 1] === "=";
-      if (v !== undefined) out += text.slice(i, j) + (attr ? "{" + v + "}" : String(v));
-      else if (attr || !known.test(expr)) out += text.slice(i, e); // not ours: kept as written
-      else out += text.slice(i, j); // a template expression Popup can't work out: hidden
-      i = e;
-    }
-    return out + text.slice(i);
-  }
-  function templates(text) {
-    if (!/\{[@#]\w/.test(text)) return text;
-    var vars = {}, out = "", i = 0, j, m;
-    while ((j = text.indexOf("{@", i)) !== -1) { // {@body const …}: read the JSON constants, drop the rest
-      var e = braceEnd(text, j);
-      if (e === -1) break;
-      var body = text.slice(j + 2, e - 1);
-      if ((m = /^body\s+const\s+(\w+)\s*=\s*([\s\S]*)$/.exec(body)) ||
-          (m = /^body\s+const\s*\[\s*(\w+)\s*,\s*\w+\s*\]\s*=\s*DIL\.useState\(([\s\S]*)\)$/.exec(body))) {
-        var val = parseJSON(m[2]);
-        if (val !== undefined) vars[m[1]] = val;
-      }
-      out += text.slice(i, j); i = e;
-    }
-    text = out + text.slice(i);
-    var names = Object.keys(vars);
-    var known = names.length ? new RegExp("\\b(?:" + names.join("|") + ")\\b") : /(?!)/;
-    // {#each list as item, i}…{/each}: list is a constant or written in place ([{a:"0x00",v:"42"}, …])
-    out = ""; i = 0;
-    while ((j = text.indexOf("{#each", i)) !== -1) {
-      var head = braceEnd(text, j), close = head === -1 ? -1 : text.indexOf("{/each}", head);
-      if (close === -1) break;
-      var h = /^#each\s+([\s\S]+?)\s+as\s+(\w+)\s*(?:,\s*(\w+))?\s*$/.exec(text.slice(j + 1, head - 1));
-      // shortcut: read as JSON after quoting bare keys by pattern: a value containing `, key:` is misread and single-quoted strings drop the block; parse JS properly if answers need it
-      var list = h && (/^\w+$/.test(h[1]) ? vars[h[1]] : parseJSON(h[1].replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":')));
-      var body = text.slice(head, close);
-      out += text.slice(i, j);
-      if (Array.isArray(list)) {
-        out += list.map(function (el, n) {
-          var scope = Object.assign({}, vars);
-          scope[h[2]] = el;
-          if (h[3]) scope[h[3]] = n;
-          return fillExpressions(body, scope, /[\s\S]/); // inside the block every {…} is template
-        }).join("\n\n");
-      }
-      i = close + "{/each}".length;
-    }
-    text = out + text.slice(i);
-    text = text.replace(/\{[#:\/]\w[^{}]*\}/g, ""); // other block syntax ({#if}, {:else}, {/if}, a stray {/each})
-    return fillExpressions(text, vars, known);
-  }
-
-  // --- Charts and maps, drawn from the data in the answer -----------------------
-  function num(v) { var n = Number(v); return isFinite(n) ? n : null; }
-  function fmt(n) { return String(Math.round(n * 100) / 100); }
-
-  function chartTable(c, series) {
-    return '<div class="jr-table-wrap"><table><thead><tr><th>' + esc(String(c.xKey)) + "</th>" +
-      series.map(function (s) { return "<th>" + esc(String(s.label || s.dataKey)) + "</th>"; }).join("") + "</tr></thead><tbody>" +
-      c.data.map(function (d) {
-        return "<tr><td>" + esc(String(d[c.xKey])) + "</td>" + series.map(function (s) { return "<td>" + esc(String(d[s.dataKey] == null ? "" : d[s.dataKey])) + "</td>"; }).join("") + "</tr>";
-      }).join("") + "</tbody></table></div>";
-  }
-
-  /** A <Chart content={{…}}/>: a simple line or bar chart; other kinds as a table of the data. */
-  function chartHTML(src) {
-    var c = parseJSON(src);
-    if (!c || !Array.isArray(c.data) || !c.data.length || !c.xKey || !Array.isArray(c.series) || !c.series.length) return "";
-    var series = c.series.slice(0, 4), meta = c.meta || {};
-    var head = (meta.title ? '<div class="jr-chart-title">' + esc(String(meta.title)) + "</div>" : "") +
-      (meta.description ? '<div class="jr-chart-desc">' + esc(String(meta.description)) + "</div>" : "");
-    if (c.chartType !== "line" && c.chartType !== "bar" && c.chartType !== "area") return '<div class="jr-chart">' + head + chartTable(c, series) + "</div>";
-    var vals = [];
-    c.data.forEach(function (d) { series.forEach(function (s) { var v = num(d[s.dataKey]); if (v !== null) vals.push(v); }); });
-    if (!vals.length) return "";
-    var lo = num(c.yAxisMin), hi = num(c.yAxisMax);
-    if (lo === null) lo = Math.min(0, Math.min.apply(null, vals));
-    if (hi === null) hi = Math.max.apply(null, vals) * 1.1;
-    if (hi <= lo) hi = lo + 1;
-    var W = 320, H = 170, L = 34, R = 8, T = 8, B = 22, n = c.data.length, step = (W - L - R) / n;
-    var x = function (k) { return L + step * (k + 0.5); };
-    var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
-    var svg = "";
-    for (var t = 0; t <= 4; t++) {
-      var tv = lo + (hi - lo) * t / 4;
-      svg += '<line class="jr-chart-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(tv) + '" y2="' + y(tv) + '"/>' +
-        '<text class="jr-chart-axis" x="' + (L - 4) + '" y="' + (y(tv) + 3) + '" text-anchor="end">' + esc(fmt(tv)) + "</text>";
-    }
-    var every = Math.ceil(n / 8); // at most 8 labels under the chart
-    c.data.forEach(function (d, k) {
-      if (k % every === 0) svg += '<text class="jr-chart-axis" x="' + x(k) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(String(d[c.xKey])) + "</text>";
-    });
-    series.forEach(function (s, si) {
-      var pts = [];
-      c.data.forEach(function (d, k) {
-        var v = num(d[s.dataKey]);
-        if (v === null) return;
-        if (c.chartType === "bar") {
-          var bw = step * 0.7 / series.length, bx = x(k) - step * 0.35 + bw * si, top = y(Math.max(v, lo)), base = y(Math.max(lo, Math.min(0, hi)));
-          svg += '<rect class="jr-chart-bar jr-chart-s' + si + '" x="' + bx + '" y="' + Math.min(top, base) + '" width="' + bw + '" height="' + Math.abs(base - top) + '"/>';
-        } else pts.push(x(k) + "," + y(v));
-      });
-      if (pts.length) svg += '<polyline class="jr-chart-line jr-chart-s' + si + '" points="' + pts.join(" ") + '"/>' +
-        pts.map(function (p) { var q = p.split(","); return '<circle class="jr-chart-dot jr-chart-s' + si + '" cx="' + q[0] + '" cy="' + q[1] + '" r="2.5"/>'; }).join("");
-    });
-    var legend = series.length > 1 ? '<div class="jr-chart-legend">' + series.map(function (s, si) {
-      return '<span class="jr-chart-key jr-chart-s' + si + '">' + esc(String(s.label || s.dataKey)) + "</span>";
-    }).join("") + "</div>" : "";
-    return '<div class="jr-chart">' + head + '<svg viewBox="0 0 ' + W + " " + H + '" role="img">' + svg + "</svg>" + legend + "</div>";
-  }
-
-  /** A <MapWidgetV2 points={[…]}/>: the places as a list, each with a link to a map. */
-  function mapHTML(a) {
-    var pts = parseJSON(a.points);
-    if (!Array.isArray(pts) || !pts.length) return "";
-    return '<div class="jr-map">' + (typeof a.title === "string" ? '<div class="jr-chart-title">' + esc(a.title) + "</div>" : "") + "<ul>" +
-      pts.filter(function (p) { return p && p.name; }).map(function (p) {
-        var name = String(p.name), addr = p.address ? String(p.address) : "";
-        var url = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(addr ? name + ", " + addr : name);
-        return "<li>" + (p.icon ? esc(String(p.icon)) + " " : "") + "<strong>" + esc(name) + "</strong>" +
-          (addr ? '<span class="jr-map-addr">' + esc(addr) + "</span>" : "") +
-          ' <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Map ↗</a></li>';
-      }).join("") + "</ul></div>";
-  }
-
-  function dilOpen(tag, a) {
-    if (tag === "icon") return DIL_ICONS[a.name] ? '<span class="jr-dil-icon" aria-hidden="true">' + esc(DIL_ICONS[a.name]) + "</span>" : "";
-    if (tag === "divider") return "<hr>";
-    if (tag === "spacer") return '<div class="jr-dil-spacer"></div>';
-    if (tag === "Chart") return typeof a.content === "string" ? chartHTML(a.content) : "";
-    if (tag === "MapWidgetV2") return typeof a.points === "string" ? mapHTML(a) : "";
-    if (tag === "Entity") return typeof a.value === "string" ? esc(a.value) : "";
-    if (tag === "Link") {
-      var title = esc(String(typeof a.title === "string" ? a.title : a.url || ""));
-      return typeof a.url === "string" && /^https?:\/\//.test(a.url) ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + title + "</a>" : title;
-    }
-    if (tag === "Cite" || tag === "AsyncImage") return ""; // a source marker / an image search with no address
-    if (tag === "checkbox") return '<div class="jr-dil-check"><input type="checkbox" class="jr-task" disabled' + (a.checked === true || a.checked === "true" ? " checked" : "") + ">";
-    if (tag === "badge") return '<span class="jr-dil-badge">'; // one grey look: the style guide has no badge colours
-    if (tag === "text") {
-      var tc = (a.size === "xs" || a.size === "sm" ? "jr-dil-small" : "") + (a.color === "secondary" ? " jr-dil-muted" : "");
-      return a.weight === "bold" || a.weight === "semibold" ? "<strong>" : '<span class="' + tc.trim() + '">';
-    }
-    var cls = ["jr-dil", "jr-dil-" + tag];
-    if (tag === "grid") cls.push("jr-dil-cols-" + Math.min(4, Math.max(1, parseInt(a.columns, 10) || 2)));
-    if (a.justify === "between") cls.push("jr-dil-between");
-    if (a.border) cls.push("jr-dil-border");
-    if (a.background) cls.push("jr-dil-bg");
-    if (a.align === "center") cls.push("jr-dil-center");
-    if (a.direction === "row") cls.push("jr-dil-row");
-    // Its own size (width="12%", height="12px": a relative-size bar), applied by styles.css through attr()
-    var size = (/^\d+(\.\d+)?(%|px)$/.test(a.width) ? ' data-w="' + a.width + '"' : "") +
-      (/^\d+(\.\d+)?(%|px)$/.test(a.height) ? ' data-h="' + a.height + '"' : "");
-    return '<div class="' + cls.join(" ") + '"' + size + ">";
-  }
-  function dilClose(tag, attrs) {
-    if (tag === "badge") return "</span>";
-    if (tag === "text") return attrs && (attrs.weight === "bold" || attrs.weight === "semibold") ? "</strong>" : "</span>";
-    return "</div>";
-  }
-
-  /** Swap the component tags (not those in code) for placeholders; returns { md, parts }. */
-  function componentize(md) {
-    var comps = JR.site.answerComponents || { block: [], inline: [] };
-    var parts = [], open = [];
-    function part(html, block) {
-      parts.push(html);
-      var ph = "\u0002" + (parts.length - 1) + "\u0003";
-      return block ? "\n\n" + ph + "\n\n" : ph;
-    }
-    // While streaming, the text can end inside a tag ("…<box border radius=\"x"): hide it until it is complete
-    var names = comps.block.concat(comps.inline).join("|");
-    if (names) md = md.replace(new RegExp("<\\/?(?:" + names + ")(?=[\\s/]|$)[^<>]*$"), "");
-    // Inside a component ChatGPT shows every line as its own line (markdown would join them);
-    // a line that starts a list item or a table row is left alone
-    function lines(text, depth) { return depth ? text.replace(/([^\n])\n(?!\s*(?:[-*+]\s|\d+[.)]\s|\|))/g, "$1\n\n") : text; }
-    function swap(m) {
-      var tag = m[3], slash = m[2];
-      if (m[1]) return { html: m[0], end: m.index + m[0].length }; // inline code
-      var block = comps.block.indexOf(tag) !== -1;
-      if (!block && comps.inline.indexOf(tag) === -1) return null;
-      var end = m.index + m[0].length;
-      if (slash) {
-        var close = /^\s*>/.exec(m.input.slice(end));
-        if (!close) return null;
-        end += close[0].length;
-        var top = open.length ? open[open.length - 1] : null;
-        if (!top || top.tag !== tag) return { html: "", end: end }; // a closing tag with no matching opening one
-        open.pop();
-        return { html: part(dilClose(tag, top.attrs), block), end: end };
-      }
-      var t = readTag(m.input, end);
-      if (!t) return null; // malformed: stays text
-      // A self-closing <box/> or <checkbox/> is closed at once
-      var html = dilOpen(tag, t.attrs) + (t.self && !SELF[tag] ? dilClose(tag, t.attrs) : "");
-      if (!t.self && !SELF[tag]) open.push({ tag: tag, attrs: t.attrs });
-      return { html: part(html, block), end: t.end };
-    }
-    var code = new RegExp("<" + (comps.code || "CodeBlock") + "\\b([^>]*)>([\\s\\S]*?)(?:</" + (comps.code || "CodeBlock") + ">|$)", "g");
-    var chunks = md.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m); // fenced code stays as it is
-    for (var c = 0; c < chunks.length; c += 2) {
-      // Inline code is set aside first: a `{#if}` or `<CodeBlock>` written in it is just code (review)
-      var inlineCode = [];
-      var text = chunks[c].replace(/(`+)[\s\S]*?\1/g, function (all) { inlineCode.push(all); return "\u0004" + (inlineCode.length - 1) + "\u0005"; });
-      // Code blocks next, verbatim (their text must not be read as markdown or template)
-      text = templates(text.replace(code, function (all, attrSrc, body) {
-        var lang = ((readTag(attrSrc + ">", 0) || { attrs: {} }).attrs.language || "") + "";
-        body = body.replace(/\u0004(\d+)\u0005/g, function (_, k) { return inlineCode[+k]; });
-        return part('<pre><code' + (/^[\w+#.-]+$/.test(lang) ? ' class="language-' + lang + '"' : "") + ">" + esc(body.replace(/^\s*\n|\s+$/g, "").replace(/^ /, "")) + "</code></pre>", true);
-      })).replace(/\u0004(\d+)\u0005/g, function (_, k) { return inlineCode[+k]; });
-      var out = "", last = 0, m, r;
-      TAG_RE.lastIndex = 0;
-      while ((m = TAG_RE.exec(text))) {
-        var depth = open.length; // the text before this tag is inside what was open before it
-        if (!(r = swap(m))) continue;
-        out += lines(text.slice(last, m.index), depth) + r.html;
-        last = TAG_RE.lastIndex = r.end;
-      }
-      chunks[c] = out + lines(text.slice(last), open.length);
-    }
-    return { md: chunks.join(""), parts: parts };
-  }
-
-  JR.renderMarkdown = function (md) {
-    // Debug (URL contains #jr-raw): the source text, readable by DOM-only test tools in #jr-rawlog[data-json]
-    if (md && location.hash.indexOf("jr-raw") !== -1) {
-      var raw = document.getElementById("jr-rawlog");
-      if (!raw) { raw = document.createElement("div"); raw.id = "jr-rawlog"; raw.hidden = true; document.body.appendChild(raw); }
-      raw.setAttribute("data-json", JSON.stringify(JSON.parse(raw.getAttribute("data-json") || "[]").concat([md]).slice(-5)));
-    }
-    var c = componentize((md || "").replace(/\r/g, ""));
-    if (!c.parts.length) return renderMarkdownText(c.md);
-    return renderMarkdownText(c.md)
-      .replace(/<p>\s*((?:\u0002\d+\u0003\s*)+)<\/p>/g, "$1") // a component alone is not a paragraph
-      .replace(/\u0002(\d+)\u0003/g, function (_, i) { return c.parts[+i]; });
-  };
-
-  function renderMarkdownText(md) {
-    var lines = (md || "").replace(/\r/g, "").split("\n");
-    var out = [];
-    var para = [];
-    var lists = []; // stack of { type, indent }
-
-    function flushPara() {
-      if (para.length) { out.push("<p>" + inline(para.join(" ")) + "</p>"); para = []; }
-    }
-    function closeLists(toIndent) {
-      while (lists.length && lists[lists.length - 1].indent >= toIndent) out.push("</li></" + lists.pop().type + ">");
-    }
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var fence = /^\s*```(\S*)/.exec(line);
-      if (fence) {
-        flushPara(); closeLists(0);
-        var code = [];
-        for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
-        out.push("<pre><code" + (fence[1] ? ' class="language-' + esc(fence[1]) + '"' : "") + ">" + esc(code.join("\n")) + "</code></pre>");
-        continue;
-      }
-      if (!line.trim()) { flushPara(); continue; }
-      var h = /^(#{1,6})\s+(.*)$/.exec(line);
-      if (h) { flushPara(); closeLists(0); out.push("<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">"); continue; }
-      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushPara(); closeLists(0); out.push("<hr>"); continue; }
-      if (/^\s*>/.test(line)) {
-        flushPara(); closeLists(0);
-        var quote = [];
-        for (; i < lines.length && /^\s*>/.test(lines[i]); i++) quote.push(lines[i].replace(/^\s*>\s?/, ""));
-        i--;
-        out.push("<blockquote>" + JR.renderMarkdown(quote.join("\n")) + "</blockquote>");
-        continue;
-      }
-      if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
-        flushPara(); closeLists(0);
-        var cells = function (l) { return l.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return inline(c.trim()); }); };
-        var head = cells(line);
-        var rows = [];
-        for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(cells(lines[i]));
-        i--;
-        out.push('<div class="jr-table-wrap"><table><thead><tr><th>' + head.join("</th><th>") + "</th></tr></thead><tbody>" +
-          rows.map(function (r) { return "<tr><td>" + r.join("</td><td>") + "</td></tr>"; }).join("") + "</tbody></table></div>");
-        continue;
-      }
-      var li = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-      if (li) {
-        flushPara();
-        var indent = li[1].length;
-        var type = /\d/.test(li[2]) ? "ol" : "ul";
-        var top = lists[lists.length - 1];
-        if (!top || indent > top.indent) {
-          out.push("<" + type + "><li>");
-          lists.push({ type: type, indent: indent });
-        } else {
-          closeLists(indent + 1);
-          top = lists[lists.length - 1];
-          if (top && top.indent === indent && top.type === type) out.push("</li><li>");
-          else { if (top && top.indent === indent) out.push("</li></" + lists.pop().type + ">"); out.push("<" + type + "><li>"); lists.push({ type: type, indent: indent }); }
-        }
-        var task = /^\[([ xX])\]\s+(.*)$/.exec(li[3]); // - [ ] / - [x] task list item
-        out.push(task ? '<input type="checkbox" class="jr-task" disabled' + (task[1] === " " ? "" : " checked") + "> " + inline(task[2]) : inline(li[3]));
-        continue;
-      }
-      if (lists.length && /^\s+\S/.test(line)) { out.push(" " + inline(line.trim())); continue; } // list item continuation
-      closeLists(0);
-      para.push(line.trim());
-    }
-    flushPara(); closeLists(0);
-    return out.join("");
   };
 
   // ---------------------------------------------------------------------------
