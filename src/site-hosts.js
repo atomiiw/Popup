@@ -36,10 +36,13 @@ var JR_HOST = (function () {
     },
     claude: {
       prefix: "popup:claude:conv:",
-      conv: new RegExp("/chat/" + UUID, "i"),
-      hide: function (k) { // both rows of the Q&A
-        return '[data-testid=transcript-row]:has([data-cds=UserMessage][data-turn-key="' + q(k) + '"]), ' +
-               '[data-testid=transcript-row]:has([data-cds=AssistantMessage][data-turn-key="' + q(k) + '-hub-reply"])';
+      // a chat (/chat/<uuid>) or a Claude Code session on the web (/code/session_<id>, user 2026-11-19)
+      conv: new RegExp("/(?:chat|code)/(" + UUID.slice(1, -1) + "|session_[A-Za-z0-9]+)", "i"),
+      hide: function (k) { // both rows of the Q&A: the answer row and the question row right before it
+        var row = "[data-testid=transcript-row]", a = '[data-cds=AssistantMessage][data-turn-key="' + q(k) + '-hub-reply"]';
+        var code = '[data-cds=AssistantMessage][data-turn-key="' + q(k) + '"]'; // Claude Code: the answer's own id is the key
+        return row + ':has([data-cds=UserMessage][data-turn-key="' + q(k) + '"]), ' + row + ":has(" + a + "), " +
+               row + ":has(" + code + "), " + row + ":has(+ " + row + " " + code + ")";
       },
       // Never display:none: rocksteady skips 0×0 rows and keeps their old height → blank screens while scrolling (C2)
       decl: "height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important;",

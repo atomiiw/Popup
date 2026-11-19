@@ -72,6 +72,9 @@
     if (!l) return;
     // the page dropped it (virtual list), the site redrew it, or a page copy stopped being good: find it again
     if (!l.turn.isConnected || (l.fromPage && !usable(l.turn))) return find(l);
+    // the answer went on in a new row of its own (Claude Code: the reply after a tool step, same key): follow that one
+    var later = l.fromPage && JR.site.findTurnByKey(l.key);
+    if (later && later !== l.turn) return follow(l, later, l.key, true);
     // a frame original's generated styles apply only inside a marked copy — every copy it goes to (a rebuilt popup's too)
     if (l.turn.ownerDocument !== document) { if (JR.siteOriginalScope) JR.siteOriginalScope(l.copyEl); }
     else if (l.copyEl.hasAttribute("data-jr-frame")) { // now a page original: the frame's generated (ͼ) rules mean other things here

@@ -27,9 +27,10 @@
     user: "[data-cds=UserMessage]",
     answer: "[data-cds=AssistantMessage]",
     answerBody: "[data-cds=Prose]",              // the reply text (not [data-cds=TurnStatus], the "thinking / searched" line)
-    composer: "[data-testid=chat-input]",
-    sendButton: "[data-testid=chat-input-send]",
-    stopButton: "[data-testid=chat-input-stop]",
+    composer: "[data-testid=chat-input], [data-testid=code-prompt-input]", // a chat; Claude Code on the web
+    sendButton: "[data-testid=chat-input-send], [data-testid=code-prompt-send]", // (Claude Code's: only once text is in)
+    stopButton: "[data-testid=chat-input-stop], [data-testid=code-prompt-stop]",
+    composerCard: "[data-cds=ChatComposer]", // Claude Code's box (its send button isn't there while it is empty)
     attachButton: "[data-testid=chat-input-attach]",
     codeBlock: "pre",
     codeSource: "code",
@@ -56,9 +57,16 @@
   function cardsRoot(composer) { var b = S.composerBox(composer); return b && b.parentElement; } // also holds the file tiles
   function q(k) { return String(k).replace(/["\\]/g, ""); }
   function isAnswerRow(row) { return !!(row && row.querySelector(C.answer)); }
+  // A chat's answer is keyed "<question key>-hub-reply"; Claude Code's by its own id, the key itself — and one that used a
+  // tool spans rows with that same key: the tool step's row, then the reply's (live 2026-11-19)
+  function rowsOf(r, attr) {
+    return Array.prototype.slice.call(r.querySelectorAll(C.answer + "[" + KEY + '="' + q(attr) + '"]')).map(function (a) { return a.closest(C.row); });
+  }
+  /** The Q&A's answer row: its last one (the reply after any tool steps). */
   function answerRowOf(r, key) {
-    var a = r.querySelector(C.answer + "[" + KEY + '="' + q(key) + REPLY + '"]');
-    return a ? a.closest(C.row) : null;
+    var rows = rowsOf(r, key + REPLY);
+    if (!rows.length) rows = rowsOf(r, key);
+    return rows.length ? rows[rows.length - 1] : null;
   }
 
   function textWithBreaks(el) {
@@ -104,19 +112,17 @@
       var k = a && a.getAttribute(KEY);
       return k ? k.replace(/-hub-reply$/, "") : null;
     },
-    /** Both rows of the Q&A (rocksteady keeps them as siblings, each with its own key). */
-    turnSelector: function (key) {
-      if (!key) return null;
-      return C.row + ":has(" + C.user + "[" + KEY + '="' + q(key) + '"]), ' +
-             C.row + ":has(" + C.answer + "[" + KEY + '="' + q(key) + REPLY + '"])';
-    },
+    /** Both rows of the Q&A (rocksteady keeps them as siblings, each with its own key) — the hiding rule's. */
+    turnSelector: function (key) { return key ? JR_HOST.all.claude.hide(key) : null; },
     findTurnByKey: function (key) { return key ? answerRowOf(root(), key) : null; },
     /** The conversation, from the data claude.ai's page loads: its turn keys in order (current branch; rocksteady mounts
      *  only rows near the view, so the rows alone can't order or reach the others) and each turn's question and answer
      *  as text (Markdown), for answers not on the page: { order: [key], turns: { key: { question, answer } } }. */
     fetchConversation: function (conv) {
       var org = (document.cookie.match(/(?:^|; )lastActiveOrg=([^;]+)/) || [])[1];
-      if (!org || !conv) return Promise.resolve(null);
+      // shortcut: a Claude Code session has no chat_conversations data (its own source not found yet) — its answers
+      // come from the page (or the render frame) only; upgrade once its data source is known
+      if (!org || !conv || /^session_/.test(conv)) return Promise.resolve(null);
       return fetch("/api/organizations/" + org + "/chat_conversations/" + conv + "?tree=True&rendering_mode=messages", { credentials: "include" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
@@ -153,8 +159,11 @@
       return (el && el.closest && el.closest(C.answer)) || null;
     },
     hasAssistant: function (turn) { return isAnswerRow(turn); },
+    /** The reply text of the answer, in all its rows (Claude Code: around its tool steps). */
     assistantBodies: function (turn) {
-      return turn ? Array.prototype.slice.call(turn.querySelectorAll(C.answer + " " + C.answerBody)) : [];
+      var a = turn && turn.querySelector(C.answer), k = a && a.getAttribute(KEY);
+      var rows = k && turn.parentElement ? rowsOf(turn.parentElement, k) : [turn];
+      return rows.filter(Boolean).reduce(function (all, r) { return all.concat(Array.prototype.slice.call(r.querySelectorAll(C.answer + " " + C.answerBody))); }, []);
     },
     hasUndrawnWidget: function () { return false; },
     renderFailed: function () { return false; },
@@ -174,7 +183,8 @@
     assistantText: function (turn) { return S.assistantBodies(turn).map(function (b) { return b.textContent || ""; }).join("\n"); },
     /** The question: the human row right before the answer row (null if the window unmounted it). */
     userText: function (turn) {
-      var row = turn && turn.previousElementSibling;
+      var row = turn && turn.previousElementSibling, k = S.turnKey(turn);
+      while (row && row.matches && row.matches(C.row) && isAnswerRow(row) && S.turnKey(row) === k) row = row.previousElementSibling; // (its tool steps)
       var u = row && row.matches && row.matches(C.row) ? row.querySelector(C.user) : null;
       return u ? textWithBreaks(u) : null;
     },
@@ -197,7 +207,7 @@
       for (var el = composer && composer.parentElement, n = 0; el && n < 10; el = el.parentElement, n++) {
         if (el.querySelector(C.sendButton + ", " + C.stopButton)) return el;
       }
-      return composer ? composer.parentElement : null;
+      return (composer && composer.closest(C.composerCard)) || (composer ? composer.parentElement : null);
     },
     sendButton: function (composer) {
       var box = S.composerBox(composer);
@@ -272,14 +282,14 @@
     hiddenMathSelector: ".katex-mathml",
 
     // --- Pages ---
-    /** /chat/<uuid> */
+    /** /chat/<uuid>, or a Claude Code session on the web: /code/session_<id> (site-hosts.js) */
     conversationId: function (url) {
-      var m = /\/chat\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.pathname);
+      var m = JR_HOST.all.claude.conv.exec(url || location.pathname);
       return m ? m[1] : null;
     },
     isChatPage: function (path) { return !!S.conversationId(path); },
     /** The conversation's page (the render frame loads it; ChatGPT's is "/c/<id>"). */
-    chatUrl: function (conv) { return "/chat/" + conv; },
+    chatUrl: function (conv) { return (/^session_/.test(conv) ? "/code/" : "/chat/") + conv; },
 
     /** For JR.SEL.turn (closest/matches on any node). */
     turnSelectorAll: C.row,

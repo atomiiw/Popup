@@ -57,6 +57,46 @@ check("conversationId", S.conversationId("/chat/938ecde8-1932-4480-8c7b-2b48e553
 check("chatUrl: the page the render frame loads", S.chatUrl("abc") === "/chat/abc");
 check("popupHost: the transcript column", S.popupHost(row(5)) === document.querySelector("[data-testid=transcript-list]"));
 
+// --- Claude Code on the web (user 2026-11-19; probed on a /code/session_… page): the same rows, its answer keyed by its
+// own message id; the box is code-prompt-input, its send button there only once text is in ---
+(function () {
+  var sizer = row(7).parentElement, ck = "msg_011ChD3P9erZwFSjX59nLfwp";
+  var hu = document.createElement("div"); hu.setAttribute("data-testid", "transcript-row"); hu.setAttribute("data-index", "8"); hu.setAttribute("data-perf-row", "human");
+  hu.innerHTML = '<div data-cds="UserMessage" data-turn-key="6b1942db-f44b-4896-a7c5-363104a509ea"><p>Regarding this part of your response: code</p></div>';
+  var an = document.createElement("div"); an.setAttribute("data-testid", "transcript-row"); an.setAttribute("data-index", "9"); an.setAttribute("data-perf-row", "assistant");
+  an.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="' + ck + '" data-is-streaming="false"><div data-cds="Prose"><p>Hi! What can I help you with?</p></div></div>';
+  sizer.appendChild(hu); sizer.appendChild(an);
+  var got = Array.prototype.map.call(document.querySelectorAll(S.turnSelector(ck)), function (r) { return r.getAttribute("data-index"); }).join();
+  check("Claude Code: the answer's own id is the key, found by it", S.turnKey(an) === ck && S.findTurnByKey(ck) === an, S.turnKey(an));
+  check("Claude Code: hiding takes the answer row and its question row, nothing else", got === "8,9", got);
+  check("Claude Code: the question before the answer", S.userText(an) === "Regarding this part of your response: code", JSON.stringify(S.userText(an)));
+  check("Claude Code: a chat key still hides only its own rows", Array.prototype.map.call(document.querySelectorAll(S.turnSelector(K1)), function (r) { return r.getAttribute("data-index"); }).join() === "4,5");
+  check("Claude Code: the session page is a chat page; the frame loads it; its storage key is its own",
+    S.conversationId("/code/session_018GupgX2nkdyL2no85cCRrv") === "session_018GupgX2nkdyL2no85cCRrv" && S.isChatPage("/code/session_018GupgX2nkdyL2no85cCRrv") &&
+    S.chatUrl("session_018GupgX2nkdyL2no85cCRrv") === "/code/session_018GupgX2nkdyL2no85cCRrv" && S.conversationId("/code") === null &&
+    JR_HOST.all.claude.conv.exec("https://claude.ai/code/session_018GupgX2nkdyL2no85cCRrv")[1] === "session_018GupgX2nkdyL2no85cCRrv"); // (this page is file:, not claude.ai: the claude rule itself)
+  // an answer that used a tool (live 2026-11-19): the tool step's row, then the reply's, the same key
+  var tk = "msg_011ChD4AtoBf2UVz5BQugYc9";
+  var hu2 = hu.cloneNode(true); hu2.setAttribute("data-index", "10"); hu2.querySelector("[data-cds=UserMessage]").setAttribute("data-turn-key", "e560d656-afe9-4827-9b9f-89d233b50fb6");
+  var step = document.createElement("div"); step.setAttribute("data-testid", "transcript-row"); step.setAttribute("data-index", "11");
+  step.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="' + tk + '" data-is-streaming="false"><div data-cds="TurnStatus">Listed files in current directory</div></div>';
+  var reply = document.createElement("div"); reply.setAttribute("data-testid", "transcript-row"); reply.setAttribute("data-index", "12");
+  reply.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="' + tk + '"><div data-cds="Prose"><p>当前目录是空的。</p></div></div>';
+  sizer.appendChild(hu2); sizer.appendChild(step); sizer.appendChild(reply);
+  var got2 = Array.prototype.map.call(document.querySelectorAll(S.turnSelector(tk)), function (r) { return r.getAttribute("data-index"); }).join();
+  check("Claude Code, a tool used: the reply row is the answer, its text from either row, its question, all three rows hidden",
+    S.findTurnByKey(tk) === reply && S.assistantText(step) === "当前目录是空的。" && S.assistantText(reply) === "当前目录是空的。" &&
+    S.userText(reply) === "Regarding this part of your response: code" && got2 === "10,11,12", [S.findTurnByKey(tk) && S.findTurnByKey(tk).getAttribute("data-index"), S.assistantText(step), S.userText(reply), got2].join(" | "));
+  hu2.remove(); step.remove(); reply.remove();
+  var dock = document.getElementById("dock"), saved = dock.innerHTML;
+  dock.innerHTML = '<div data-cds="ChatComposer"><div><div data-cds="ChatComposerEditor"><div contenteditable="true" role="textbox" data-cds="Editor" data-testid="code-prompt-input" class="tiptap ProseMirror"><p>abc</p></div></div></div><button type="button" aria-label="Add">+</button></div>';
+  var box = S.composer(), card = dock.querySelector("[data-cds=ChatComposer]");
+  var ok1 = box === dock.querySelector("[data-testid=code-prompt-input]") && S.composerText(box) === "abc" && S.sendButton(box) === null && S.composerBox(box) === card;
+  card.insertAdjacentHTML("beforeend", '<button type="button" data-testid="code-prompt-send" aria-label="Send">↑</button>');
+  check("Claude Code: its box; its send button once there", ok1 && S.sendButton(box) === card.querySelector("[data-testid=code-prompt-send]"), ok1);
+  dock.innerHTML = saved; hu.remove(); an.remove();
+})();
+
 // --- The flash's root cause (claude.ai's rocksteady skips a row whose border box is 0×0) ---
 // rocksteady: if (box.blockSize === 0 && box.inlineSize === 0) { skip: keep the old height } (docs/CLAUDEAI.md §5)
 function rocksteadySkips(box) { return box.blockSize === 0 && box.inlineSize === 0; }
