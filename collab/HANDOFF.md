@@ -83,6 +83,7 @@ Only git travels. Local-only on the old Mac (gitignored or outside the repo): `c
 7. Test conversations in the user's ChatGPT account: 「Popup 格式测试」 (format and attachment tests), 「学习建议与代码示例」, 「介绍 HTTP2 多路复用」. Sending any message still needs the user's OK and a budget.
 
 ## Working setup (for agents)
+- Removing the unpacked Popup from chrome://extensions deletes all its stored highlights (Chrome drops an extension's data with it; loading the folder again gives the same ID but empty data — happened 2026-11-19). To try a store zip, disable the unpacked one (or use another Chrome profile), never remove it.
 - On the old Mac the user was not an admin (no sudo, no Computer Use permission for Codex); assume the same until told otherwise. Commits: `git -c user.name="Atom Wang" -c user.email="maidouatomwang@gmail.com" commit …` (no global git identity was set).
 - Loading: user loads `~/Documents/Popup` unpacked in `chrome://extensions` and clicks ↻ after every change (agents cannot open chrome:// pages). Bump `version_name` on each change so the running version can be checked in `#jr-diagnostics`.
 - Live testing: a Codex session "operator" drives the user's Chrome through the ChatGPT-for-Chrome extension (DOM read/click/type only; no page JS, no fetch). Protocol: `collab/PROTOCOL.md`, tools in `tools/`. The message board `collab/BOARD.md` and screenshots/JSON in `collab/evidence/` are local-only (gitignored: they contain the user's conversation content).
