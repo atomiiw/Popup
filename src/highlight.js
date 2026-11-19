@@ -446,7 +446,6 @@
     return {
       quoteId: hlKey,
       spans: wrappers,
-      responseHTML: hl.responseHTML,
       text: hl.text,
       nth: hl.nth || 0,
       sentence: hl.sentence || null,
@@ -457,7 +456,7 @@
       parentItemId: hl.parentItemId || null,
       sourceTurnKey: hl.sourceTurnKey || null,
       wholeResponse: !!hl.wholeResponse,
-      items: hl.items || [{ id: hl.id, question: hl.question || null, responseHTML: hl.responseHTML, turnKeys: hl.turnKeys || [] }],
+      items: hl.items || [{ id: hl.id, question: hl.question || null, status: hl.status, turnKeys: hl.turnKeys || [] }],
       activeItemIndex: hl.activeItemIndex != null ? hl.activeItemIndex : 0,
     };
   }
@@ -528,13 +527,12 @@
   /** Level-1 highlights of this conversation not restored yet (turn not mounted). */
   JR.pendingL1Quotes = function () { return pendingL1.slice(); };
 
-  /** Fill an item's content from JR.qa (cache or mounted turn). Returns true if filled. */
+  /** A finished item's question, read back from JR.qa (it isn't stored once answered). True if it was filled. */
   var fillFromQA = JR.fillFromQA = function (item) {
-    if (item.responseHTML !== "__LOADING__") return false;
+    if (item.status !== "done" || item.question != null) return false;
     var c = JR.qa.get(item.turnKeys);
-    if (!c) return false;
-    item.responseHTML = c.responseHTML;
-    if (c.question) item.question = c.question;
+    if (!c || c.question == null) return false;
+    item.question = c.question;
     if (c.sentence) item.sentence = c.sentence;
     return true;
   };
@@ -543,7 +541,6 @@
     var it = q.items[q.activeItemIndex] || q.items[q.items.length - 1];
     if (!it) return;
     q.question = it.question;
-    q.responseHTML = it.responseHTML;
     if (it.sentence) q.sentence = it.sentence;
   }
 
@@ -556,10 +553,10 @@
         q = map[r.quoteId] = {
           quoteId: r.quoteId, text: r.text, nth: r.nth || 0, parentId: r.parentId,
           parentItemId: r.parentItemId, sourceTurnKey: r.sourceTurnKey, wholeResponse: r.wholeResponse,
-          items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null, responseHTML: null,
+          items: [], activeItemIndex: -1, sentence: null, blockTypes: null, question: null,
         };
       }
-      var item = { id: r.id, question: r.question || null, responseHTML: r.responseHTML, turnKeys: r.turnKeys, createdAt: r.createdAt, attachments: r.attachments || 0 };
+      var item = { id: r.id, question: r.question || null, status: r.status, turnKeys: r.turnKeys, createdAt: r.createdAt, attachments: r.attachments || 0 };
       fillFromQA(item);
       q.items.push(item);
       if (r.active) q.activeItemIndex = q.items.length - 1;
@@ -742,7 +739,7 @@
     var unlinked = false;
     records.forEach(function (r) {
       if (!(r.turnKeys || []).length) { unlinked = true; return; }
-      if (r.responseHTML === "__LOADING__") loadingKeys = loadingKeys.concat(r.turnKeys);
+      if (r.status === "done") loadingKeys = loadingKeys.concat(r.turnKeys);
     });
     var missing = loadingKeys.filter(function (k) { return !JR.qa.get([k]); });
     if (missing.length) {
@@ -766,15 +763,15 @@
   }
 
   /**
-   * Content of hidden Q&A turns became available (turn mounted): fill entries
-   * that were showing "loading", and refresh the open popup if it is one of them.
+   * Hidden Q&A turns were read back (turn mounted, or the site's data): fill the questions of finished items, and
+   * refresh the open popup if it is one of them (its question shows). Its answer comes from its original meanwhile.
    */
   JR.onQAContentLoaded = function (turnKeys) {
     var refresh = null;
     st.completedHighlights.forEach(function (entry, qid) {
       var touched = false;
       (entry.items || []).forEach(function (it) {
-        if (it.responseHTML !== "__LOADING__") return;
+        if (it.status !== "done") return;
         if (!(it.turnKeys || []).some(function (k) { return turnKeys.indexOf(k) !== -1; })) return;
         if (fillFromQA(it)) touched = true;
       });
@@ -827,21 +824,19 @@
       cands.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
       var rec = cands[0];
       claimed.add(rec.id);
-      updateHighlightFields(rec.id, { turnKeys: [turnKey], responseHTML: "__LOADING__" });
+      updateHighlightFields(rec.id, { turnKeys: [turnKey], status: "done" });
 
       JR.qa.ensure([turnKey]); // read the answer (DOM cache or conversation data)
       var mem = findInMemory(rec.id);
       if (!mem) return; // not loaded in this session; the stored key is enough
       mem.item.turnKeys = [turnKey];
-      if (mem.item.responseHTML === "__TIMEOUT__" || JR.isPlaceholderHTML(mem.item.responseHTML)) {
-        mem.item.responseHTML = "__LOADING__";
-        fillFromQA(mem.item);
-        syncActive(mem.entry);
-        var qid = mem.entry.quoteId;
-        if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid &&
-            !st.activePopup.querySelector(".jr-popup-question--editing")) {
-          JR.rebuildPopupAfterEdit(st.activePopup, qid);
-        }
+      mem.item.status = "done"; // (it had no Q&A: pending, failed, or "Loading…" for one saved before the redesign)
+      fillFromQA(mem.item);
+      syncActive(mem.entry);
+      var qid = mem.entry.quoteId;
+      if (st.activePopup && st.activePopup.isConnected && st.activeHighlightId === qid &&
+          !st.activePopup.querySelector(".jr-popup-question--editing")) {
+        JR.rebuildPopupAfterEdit(st.activePopup, qid);
       }
     });
   };

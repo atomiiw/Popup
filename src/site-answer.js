@@ -27,6 +27,8 @@
   /** Popup's own element that stays where it is in a copy (data-jr-keep: the Reply button), skipped by the patch. */
   function kept(n) { return n && n.nodeType === 1 && n.hasAttribute("data-jr-keep"); }
   function skipKept(n) { while (kept(n)) n = n.nextSibling; return n; }
+  /** The first of Popup's own elements at the end (Reply): new nodes go before it, not after. */
+  function tailKept(p) { var t = null; for (var n = p.lastChild; kept(n); n = n.previousSibling) t = n; return t; }
 
   /** Make dstParent's children match srcNodes (an array), reusing matching nodes. */
   function syncChildren(srcNodes, dstParent) {
@@ -43,7 +45,7 @@
         }
         d = d.nextSibling;
       } else {
-        dstParent.insertBefore(s.cloneNode(true), d);
+        dstParent.insertBefore(s.cloneNode(true), d || tailKept(dstParent)); // (live dev.145: Reply above the answer)
       }
     }
     while (d) {
@@ -169,9 +171,9 @@
     follow: function (copyEl, keys, onChange) {
       keys = [].concat(keys || []).filter(Boolean);
       var l0 = live;
-      if (l0 && l0.turn && l0.turn.isConnected && l0.keys.join() === keys.join()) { // the same Q&A (its popup rebuilt):
-        l0.copyEl = copyEl; l0.onChange = onChange; // the original found already goes on, not found again (slow)
-        return patch();
+      if (l0 && l0.keys.join() === keys.join()) { // the same Q&A (its popup rebuilt — its question read back, say):
+        l0.copyEl = copyEl; l0.onChange = onChange; // the original found (or being found) goes on, not found again (slow)
+        return l0.turn ? patch() : undefined;
       }
       JR.siteAnswer.stop();
       var l = live = { copyEl: copyEl, keys: keys, key: null, turn: null, observer: null,
@@ -200,6 +202,12 @@
         list = siteChildren(cur);
       }
       return cur;
+    },
+    /** For JR.diagnose: what the live copy follows and how its search stands. */
+    state: function () {
+      var l = live;
+      return l && { keys: l.keys, key: l.key, turn: !!l.turn, connected: !!(l.turn && l.turn.isConnected),
+        fromPage: l.fromPage, finding: l.finding, tries: l.tries, asked: l.asked.length };
     },
     /** The copy element live now, or null. */
     current: function () { return live ? live.copyEl : null; },

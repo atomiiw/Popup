@@ -574,6 +574,8 @@
         fileUrlStatus: JR.qa ? JR.qa.fileUrlStatus || null : null, // last /backend-api/files/download answer (Step 2c)
         pendingRestore: JR.pendingRestoreCount ? JR.pendingRestoreCount() : 0,
         popupLost: !!(JR.state.activePopup && !JR.state.activePopup.isConnected), // open, but gone from the page
+        live: JR.siteAnswer ? JR.siteAnswer.state() : null, // the copy following its original (site-answer.js)
+        render: JR.siteRenderState ? JR.siteRenderState() : null, // the render frame's queue (site-render.js)
         lostOnScreen: Array.from(JR.state.completedHighlights.values()).filter(function (e) { // R24: turn mounted, spans gone
           return e.sourceTurnKey && !e.parentId && !e.wholeResponse && !(e.spans.length && e.spans[0].isConnected) && JR.site.findTurnByKey(e.sourceTurnKey);
         }).length,

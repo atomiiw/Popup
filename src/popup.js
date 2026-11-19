@@ -10,12 +10,6 @@
 
   // --- Private helpers (not on JR.*) ---
 
-  /** The popup is active and still shows this "Loading…" (not flipped / switched away while the answer was read):
-   *  only then may it take the one live follow (review: a late one took it from the popup on screen, its buttons died). */
-  function stillWaiting(popup, loadingEl) {
-    return st.activePopup === popup && !!loadingEl && loadingEl.isConnected;
-  }
-
   /**
    * Delegated click handler for links and images inside a response div.
    * Handles <a> tags (including those with dead React handlers), <button>
@@ -33,9 +27,9 @@
       // clicked at the same place in the original (design B); its result comes back through the copy ---
       var siteBtn = e.target.closest("button, [role=button]");
       // (not an image's button: Popup's lightbox below — the site's viewer would open in the unseen frame, review; a
-      // citation's favicon is no image of the answer)
+      // citation's favicon is no image of the answer; one not loaded yet: its declared width, else an image — review)
       var pic = siteBtn && siteBtn.querySelector("img");
-      if (siteBtn && responseDiv.contains(siteBtn) && !siteBtn._jrReplyAnchor && !(pic && pic.getBoundingClientRect().width >= 48)) {
+      if (siteBtn && responseDiv.contains(siteBtn) && !siteBtn._jrReplyAnchor && !(pic && (pic.getBoundingClientRect().width || pic.width || 48) >= 48)) {
         var orig = JR.siteAnswer && JR.siteAnswer.counterpart(siteBtn);
         // its original is still being found (a parent active again after its child closed — live B6: the click went
         // nowhere): it goes there once it is, for up to 4 s (the site's Copy needs the click's activation: 5 s)
@@ -563,7 +557,6 @@
       var pendingEntry = {
         quoteId: sendHlId,
         spans: wrappers.slice(),
-        responseHTML: "__PENDING__",
         text: text,
         nth: nth,
         sentence: sentence,
@@ -573,7 +566,7 @@
         parentId: parentId || null,
         parentItemId: sendParentItemId,
         sourceTurnKey: sourceTurnKey,
-        items: [{ id: sendItemId, question: question, responseHTML: "__PENDING__", turnKeys: [] }],
+        items: [{ id: sendItemId, question: question, status: "pending", turnKeys: [] }],
         activeItemIndex: 0,
         wholeResponse: !!wholeResponse,
       };
@@ -590,7 +583,7 @@
         nth: nth,
         sentence: sentence,
         blockTypes: blockTypes,
-        responseHTML: "__PENDING__",
+        status: "pending",
         question: question,
         url: location.href,
         site: JR.site.name,
@@ -838,7 +831,6 @@
       entry.activeItemIndex = newIdx;
       var v = entry.items[newIdx];
       entry.question = v.question;
-      entry.responseHTML = v.responseHTML;
       setActiveItem(hlId, v.id);
 
       // Update question text and its attachments
@@ -847,22 +839,7 @@
       var qRow = container.querySelector(".jr-popup-question");
       if (qRow) JR.showSentAttachments(qRow, v);
 
-      // Replace response and loading — each version has its own state
-      var oldResp = popup.querySelector(".jr-popup-response");
-      var oldH = oldResp ? oldResp.offsetHeight : 0;
-      if (oldResp) oldResp.remove();
-      var oldLoading = popup.querySelector(".jr-popup-loading");
-      if (oldLoading) oldLoading.remove();
-
-      if (v.responseHTML && !JR.isPlaceholderHTML(v.responseHTML)) {
-        appendResponseWithReply(popup, hlId, entry, entry.contentContainer, v.id); // (follows its original)
-      } else {
-        // Waiting for that version's answer (after a reload): keep the answer's height, the popup doesn't jump
-        var wait = popup.appendChild(JR.createLoadingDiv());
-        if (oldH) wait.style.setProperty("--jr-hold-h", oldH + "px");
-        // After a reload an older version's answer is read (or held for the site's drawing) only when shown, as on open
-        if (v.responseHTML === "__LOADING__") JR.qa.ensure(v.turnKeys).then(function () { if (stillWaiting(popup, wait)) JR.qa.upgrade(v.turnKeys); });
-      }
+      showAnswer(popup, hlId, entry, v, entry.contentContainer); // each version has its own state
 
       updateNav();
 
@@ -901,7 +878,7 @@
       if (activeParentItemId && chEntry.parentItemId !== activeParentItemId) return;
       if (chEntry.wholeResponse) return; // reply-to-all: opened via reply button, not text-matched
       JR.restoreHighlightInElement(responseDiv, {
-        quoteId: chQuoteId, text: chEntry.text, nth: chEntry.nth, responseHTML: chEntry.responseHTML,
+        quoteId: chQuoteId, text: chEntry.text, nth: chEntry.nth,
         sentence: chEntry.sentence, blockTypes: chEntry.blockTypes, question: chEntry.question,
         parentId: chEntry.parentId, parentItemId: chEntry.parentItemId,
         items: chEntry.items, activeItemIndex: chEntry.activeItemIndex,
@@ -921,7 +898,6 @@
             st.completedHighlights.set(childKey, {
               quoteId: childKey,
               spans: [],
-              responseHTML: child.responseHTML,
               text: child.text,
               sentence: child.sentence,
               blockTypes: null,
@@ -1035,17 +1011,16 @@
       if (idx == null || idx < 0 || idx >= entry.items.length) idx = entry.items.length - 1;
       entry.activeItemIndex = idx;
       var item = entry.items[idx];
-      // Convert stale __PENDING__ to __TIMEOUT__ (no watch running after reload/reopen)
-      if (item.responseHTML === "__PENDING__" && !st.responseWatchActive) {
-        item.responseHTML = "__TIMEOUT__";
-        updateHighlightFields(item.id, { responseHTML: "__TIMEOUT__" });
+      // A stale pending one failed (no watch running after reload/reopen)
+      if (item.status === "pending" && !st.responseWatchActive) {
+        item.status = "failed";
+        updateHighlightFields(item.id, { status: "failed" });
       }
       // No Q&A known for it (none in the chat links to it): nothing can ever load it — "failed" with Retry, not
       // "Loading…" for good (live 2026-11-18, an old item). In memory only: if its Q&A turns up, adoption links it.
       // (not while the conversation data is still read: adoption may link it in a moment — review: a Retry then sent it twice)
-      if (item.responseHTML === "__LOADING__" && !(item.turnKeys || []).length && JR.qa.apiStatus !== "loading" && JR.qa.apiStatus !== "unused") item.responseHTML = "__TIMEOUT__";
+      if (item.status === "done" && !(item.turnKeys || []).length && JR.qa.apiStatus !== "loading" && JR.qa.apiStatus !== "unused") item.status = "failed";
       entry.question = item.question;
-      entry.responseHTML = item.responseHTML;
     }
 
     // Show the question with inline edit toggle
@@ -1253,10 +1228,6 @@
       JR.showSentAttachments(questionDiv, entry.items && entry.items[entry.activeItemIndex]);
     }
 
-    // Remove any stale loading div before adding response
-    var staleLoading = popup.querySelector(".jr-popup-loading");
-    if (staleLoading) staleLoading.remove();
-
     // Trash button (inside showCompletedResponse so rebuildPopupAfterEdit re-creates it)
     var deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -1270,40 +1241,54 @@
     deleteBtn.addEventListener("mousedown", function (e) {
       e.stopPropagation();
     });
-    popup.appendChild(deleteBtn);
+    // (before an answer area a rebuild kept: that one isn't moved — moving resets its scroll)
+    popup.insertBefore(deleteBtn, popup.querySelector(":scope > .jr-popup-response, :scope > .jr-popup-loading"));
 
-    if (entry.responseHTML && !JR.isPlaceholderHTML(entry.responseHTML)) {
-      var activeItem = (entry.items && entry.items.length > 0)
-        ? entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0]
-        : null;
-      appendResponseWithReply(popup, id, entry, contentContainer, activeItem ? activeItem.id : null); // (follows its original)
-    } else if (JR.isPlaceholderHTML(entry.responseHTML)) {
-      popup.appendChild(JR.createLoadingDiv());
-      // Answer not in the DOM: read it from ChatGPT's conversation data; the
-      // popup refreshes itself when it arrives (JR.onQAContentLoaded).
-      var loadingItem = entry.items && entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0];
-      if (entry.responseHTML === "__LOADING__" && loadingItem) {
-        var waitEl = popup.querySelector(".jr-popup-loading");
-        JR.qa.ensure(loadingItem.turnKeys).then(function () { if (stillWaiting(popup, waitEl)) JR.qa.upgrade(loadingItem.turnKeys); });
-      }
-    }
+    var activeItem = entry.items && entry.items[entry.activeItemIndex != null ? entry.activeItemIndex : 0];
+    if (activeItem) showAnswer(popup, id, entry, activeItem, contentContainer);
   }
 
   /**
-   * Create a response div with chained highlights and a Reply button.
-   * Shared by showCompletedResponse and switchVersion.
+   * A popup's answer area for one version (GLOSSARY.md: answer state) — the one way every path shows it (open, version
+   * switch, the rebuild after a send or a question read back): pending "Loading…", failed its reason and Retry, done
+   * the site answer. One already showing that Q&A stays as it is (the streaming copy at the end of a send, a rebuild):
+   * not redrawn, nothing jumps. Another one goes, its height kept by "Loading…" until the new copy is in.
    */
-  function appendResponseWithReply(popup, hlId, entry, contentContainer, activeItemId) {
+  function showAnswer(popup, hlId, entry, item, contentContainer) {
+    var keys = (item.turnKeys || []).join(), keep = null, oldH = 0;
+    if (item.status === "done" && keys) {
+      popup.querySelectorAll(":scope > .jr-popup-response").forEach(function (r) { if (r._jrKeys === keys) keep = r; });
+    }
+    popup.querySelectorAll(":scope > .jr-popup-response, :scope > .jr-popup-loading:not(.jr-popup-stale)").forEach(function (el) {
+      if (keep && (el === keep || el === keep._jrWait)) return;
+      oldH += el.offsetHeight;
+      el.remove();
+    });
+    var wait = null;
+    if (item.status === "pending") wait = popup.appendChild(JR.createLoadingDiv());
+    else {
+      appendResponseWithReply(popup, hlId, entry, contentContainer, item.id, keep); // (follows its original)
+      if (!keep && item.status === "done") wait = popup.querySelector(":scope > .jr-popup-loading");
+    }
+    if (wait && oldH) wait.style.setProperty("--jr-hold-h", oldH + "px");
+    // A finished one's question isn't stored: read back from the site's data, the popup shows it once it arrives
+    // (JR.onQAContentLoaded); its answer comes from its original meanwhile
+    if (item.status === "done" && item.question == null) JR.qa.ensure(item.turnKeys);
+  }
+
+  /**
+   * The answer area of a finished or failed version, with Popup's own layer (chained highlights, Reply) — into an
+   * area already showing it (reuse: the streaming copy), else a new one. Only through showAnswer.
+   */
+  function appendResponseWithReply(popup, hlId, entry, contentContainer, activeItemId, reuse) {
     var activeItem = null;
     if (entry.items) {
       for (var ai = 0; ai < entry.items.length; ai++) {
         if (entry.items[ai].id === activeItemId) { activeItem = entry.items[ai]; break; }
       }
     }
-    var html = activeItem ? activeItem.responseHTML : entry.responseHTML;
-
-    // __TIMEOUT__ version — show timeout UI with retry instead of response
-    if (html === "__TIMEOUT__") {
+    // A failed version: its reason and Retry instead of the answer
+    if (activeItem && activeItem.status === "failed") {
       var timeoutDiv = document.createElement("div");
       timeoutDiv.className = "jr-popup-loading";
       var msg = document.createElement("div");
@@ -1333,9 +1318,8 @@
           question: retryQuestion, text: text, sentence: sentence,
           wholeResponse: !!entry.wholeResponse, mode: st.responseMode,
         });
-        // Reset the item back to __PENDING__ so captureResponse overwrites it in-place
-        if (activeItem) activeItem.responseHTML = "__PENDING__";
-        entry.responseHTML = "__PENDING__";
+        // Back to pending, so captureResponse finishes it in place
+        activeItem.status = "pending";
         // Enter generating state
         popup.classList.add("jr-popup--generating");
         timeoutDiv.remove();
@@ -1366,10 +1350,16 @@
       return timeoutDiv;
     }
 
-    var responseDiv = document.createElement("div");
-    responseDiv.className = "jr-popup-response";
-    if (html) responseDiv.innerHTML = html;
-    popup.appendChild(responseDiv);
+    // A new one is empty until it follows its original (GLOSSARY.md: site answer, no drawing of Popup's): "Loading…"
+    // meanwhile, in its place — the first patch shows it (at once for an original on the page)
+    var responseDiv = reuse;
+    if (!responseDiv) {
+      responseDiv = document.createElement("div");
+      responseDiv.className = "jr-popup-response jr-popup-response--waiting";
+      responseDiv._jrWait = popup.appendChild(JR.createLoadingDiv());
+      popup.appendChild(responseDiv);
+    }
+    if (activeItem) responseDiv._jrKeys = (activeItem.turnKeys || []).join(); // (showAnswer keeps it for this Q&A)
 
     wireResponseClicks(responseDiv);
     processResponseLinks(responseDiv);
@@ -1380,6 +1370,7 @@
     if (activeItem && activeItem.turnKeys && activeItem.turnKeys.length && JR.siteAnswer) {
       responseDiv._jrSiteFollow = function () {
         JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function () {
+          if (responseDiv._jrWait) { responseDiv._jrWait.remove(); responseDiv._jrWait = null; responseDiv.classList.remove("jr-popup-response--waiting"); }
           processResponseLinks(responseDiv);
           processResponseImages(responseDiv);
           restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);
@@ -1459,6 +1450,8 @@
       ev.stopPropagation();
     });
     replyBtn.setAttribute("data-jr-keep", ""); // stays when the copy follows its original (site-answer.js)
+    var oldReply = responseDiv.querySelector(":scope > .jr-reply-whole-btn"); // (a kept area: this one's, for this version)
+    if (oldReply) oldReply.remove();
     responseDiv.appendChild(replyBtn);
 
     return responseDiv;
@@ -1693,11 +1686,12 @@
       if (versionNav) versionNav.remove();
     }
 
-    // Remove response and loading divs from popup (outside upper)
+    // Popup's own parts outside the upper card go; the answer area is showAnswer's (it stays when it shows this Q&A)
     var children = Array.from(popup.children);
     for (var i = 0; i < children.length; i++) {
       var cl = children[i].classList;
-      if (!cl.contains("jr-popup-upper") && !cl.contains("jr-popup-arrow")) {
+      if (!cl.contains("jr-popup-upper") && !cl.contains("jr-popup-arrow") &&
+          !cl.contains("jr-popup-response") && !(cl.contains("jr-popup-loading") && !cl.contains("jr-popup-stale"))) {
         children[i].remove();
       }
     }

@@ -190,3 +190,10 @@ No messages, nothing deleted.
 - dev.109:
   - ChatGPT: Run copies nothing (PASS). Copy turns the icon green with ✓ and pastes the code (PASS). The wrap toggle switches its state, but the lines were too short to show wrapping (not verified).
   - claude: Copy ✓ green (PASS). With no highlight in view, ∨ goes to 12/37 below and ∧ to 11/37 above (PASS, dev.108). Trash on the outer popup with 3 levels open: the inner two close and the confirm appears on the outer popup (PASS, dev.106; cancelled).
+
+## 2026-11-19 afternoon — architecture candidates 1 + 2, P0 items, 1.2.13 (dev.144–152)
+- Quick check (not the full suite): DeepSeek / claude.ai on dev.145, ChatGPT on dev.146 — old popup after a reload, version switch, child closed then parent Copy, one send each, reload after it: PASS (Reply was above the answer → fixed dev.146). Parent Copy after a child closed: 0.45 / 3.7 / 8 s PASS.
+- P0-4 Copy tick, P0-5 claude streaming: recorded, not bugs. P0-3 not reproduced (6 tries). P0-2: 4 + 2 jumps to a 4th level in view; nav fix (Reply before its parent's answer) PASS ×2 on dev.152.
+- P0-1: 4 recorded ChatGPT sends — 2 mid-chat clean, 2 inside a 2698 px answer flashed ~50 ms (tools/turn-frames.js); open.
+- Once (dev.148): an old popup stayed "Loading…" with no render frame; not reproduced; tools/diag-state.js reads the state next time.
+- **The full suite was not run on 1.2.13** (next session, docs/TODO-2026H2.md).

@@ -263,9 +263,9 @@
           var v = el.style.getPropertyValue("--container-height");
           if (v === before[i] || !el._jrExtra || !(parseFloat(v) >= 0)) return; // (DeepSeek writes "<n>px" to both)
           var real = Math.max(0, parseFloat(v) - el._jrExtra) + "px";
-          el.style.setProperty("--container-height", real);
-          var g = el.querySelector(":scope > .ds-scroll-area__gutters");
-          if (g) g.style.setProperty("--container-height", real);
+          [el, el.querySelector(":scope > .ds-scroll-area__gutters")].forEach(function (x) { // (no equal-value write)
+            if (x && x.style.getPropertyValue("--container-height") !== real) x.style.setProperty("--container-height", real);
+          });
         });
       }
     };

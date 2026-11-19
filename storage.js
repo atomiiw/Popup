@@ -17,9 +17,9 @@
 // Each item = one version of a highlight; items sharing a quoteId are versions
 // of the same highlight (only one active). parentId = parent's quoteId.
 //
-// The in-memory entries (JR.state.completedHighlights) still carry question /
-// responseHTML for the current page session; those are filled from ChatGPT's DOM
-// via JR.qa and are never written here.
+// The in-memory entries (JR.state.completedHighlights) also carry a finished
+// item's question for the current page session (read back from the site via
+// JR.qa, never written here). No answer content anywhere: a popup shows the site's own.
 
 const LEGACY_KEY = "jumpreturn_highlights";
 const LEGACY_DELETED_KEY = "jumpreturn_deleted_turns";
@@ -87,11 +87,16 @@ try {
 
 // --- Field mapping between in-memory items and stored records -----------------
 
-function statusFromHTML(responseHTML, fallback) {
+/** Legacy v1 records (migration only): their status was coded in the stored HTML. */
+function statusFromHTML(responseHTML) {
   if (responseHTML === "__TIMEOUT__") return "timeout";
   if (responseHTML === "__PENDING__") return "pending";
-  if (responseHTML) return "done";
-  return fallback || "done";
+  return "done";
+}
+
+/** An answer state (GLOSSARY.md: pending / failed / done) as stored ("timeout" for failed, as since v2). */
+function storedStatus(status) {
+  return status === "failed" ? "timeout" : status === "pending" ? "pending" : "done";
 }
 
 /** Stored record → shape the rest of the code expects (content filled later by JR.qa). */
@@ -113,10 +118,10 @@ function toPublic(rec) {
     sentence: null,
     blockTypes: null,
     // A pending item whose turn is already known was interrupted by a reload:
-    // its answer exists in ChatGPT, so it loads like a finished one.
-    responseHTML: rec.status === "timeout" ? "__TIMEOUT__"
-      : rec.status === "pending" && !(rec.turnKeys || []).length ? "__PENDING__"
-      : "__LOADING__",
+    // its answer exists in the chat, so it loads like a finished one.
+    status: rec.status === "timeout" ? "failed"
+      : rec.status === "pending" && !(rec.turnKeys || []).length ? "pending"
+      : "done",
   };
 }
 
@@ -204,10 +209,10 @@ async function saveHighlight(opts) {
     parentItemId: opts.parentItemId || null,
     sourceTurnKey: opts.sourceTurnKey || null,
     turnKeys: (opts.turnKeys || []).filter(Boolean),
-    status: statusFromHTML(opts.responseHTML),
+    status: storedStatus(opts.status),
     // The question is kept only until the answer exists (needed to show and
     // resend a pending/failed question); finished items keep keys only.
-    question: statusFromHTML(opts.responseHTML) === "done" ? undefined : (opts.question || undefined),
+    question: storedStatus(opts.status) === "done" ? undefined : (opts.question || undefined),
     active: opts.active !== false,
     wholeResponse: !!opts.wholeResponse,
     attachments: opts.attachments || undefined, // how many files the question carried (not the files)
@@ -228,7 +233,7 @@ async function saveHighlight(opts) {
 }
 
 /**
- * Update fields on an item. Accepts: responseHTML (only its status is kept),
+ * Update fields on an item. Accepts: status (pending / failed / done),
  * turnKeys, sourceTurnKey, active, parentItemId. Optional third arg: url.
  */
 function updateHighlightFields(id, fields, url) {
@@ -237,7 +242,7 @@ function updateHighlightFields(id, fields, url) {
   return modifyDoc(convKeyForUrl(url), function (doc) {
     var rec = doc.items.find(function (it) { return it.id === id; });
     if (!rec) return;
-    if ("responseHTML" in fields) rec.status = statusFromHTML(fields.responseHTML, rec.status);
+    if ("status" in fields) rec.status = storedStatus(fields.status);
     if ("question" in fields && rec.status !== "done") rec.question = fields.question || undefined;
     if (rec.status === "done") delete rec.question;
     if (fields.turnKeys) rec.turnKeys = fields.turnKeys.filter(Boolean);

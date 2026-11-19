@@ -484,7 +484,7 @@
     var w = opts.waitOpts;
     JR.prepareSend(w);
 
-    // Offline check: skip injection entirely, save __TIMEOUT__ immediately
+    // Offline check: skip injection entirely, save "failed" at once
     if (!navigator.onLine) {
       if (opts.attached) { removeComposerAttachments(JR.site.composer(), opts.attached.sent); endAttaching(); }
       report(false, "offline", "the browser is offline");
@@ -504,7 +504,7 @@
   }
 
   /**
-   * Immediately save __TIMEOUT__ for a message that was never sent (e.g. offline).
+   * Mark "failed" at once for a message that was never sent (e.g. offline).
    * Mirrors saveTimeoutVersion logic but without needing a waitForResponse context.
    */
   function immediateTimeout(w) {
@@ -517,13 +517,12 @@
 
     if (w.editOpts) {
       var newItemId = crypto.randomUUID();
-      memEntry.items.push({ id: newItemId, question: w.question, responseHTML: "__TIMEOUT__", turnKeys: [],
+      memEntry.items.push({ id: newItemId, question: w.question, status: "failed", turnKeys: [],
         _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
       memEntry.activeItemIndex = memEntry.items.length - 1;
       memEntry.question = w.question;
-      memEntry.responseHTML = "__TIMEOUT__";
       saveHighlight({
-        id: newItemId, quoteId: hlId, text: memEntry.text, responseHTML: "__TIMEOUT__",
+        id: newItemId, quoteId: hlId, text: memEntry.text, status: "failed",
         url: location.href, parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
         sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: [], active: true,
         wholeResponse: !!memEntry.wholeResponse, attachments: (memEntry._editFiles || []).length,
@@ -531,12 +530,11 @@
     } else {
       var itemIdx = memEntry.activeItemIndex || 0;
       if (memEntry.items && memEntry.items[itemIdx]) {
-        memEntry.items[itemIdx].responseHTML = "__TIMEOUT__";
+        memEntry.items[itemIdx].status = "failed";
       }
-      memEntry.responseHTML = "__TIMEOUT__";
       var updateId = w.preRegisteredItemId || (memEntry.items && memEntry.items[itemIdx] ? memEntry.items[itemIdx].id : null);
       if (updateId) {
-        updateHighlightFields(updateId, { responseHTML: "__TIMEOUT__" });
+        updateHighlightFields(updateId, { status: "failed" });
       }
     }
 
@@ -768,7 +766,7 @@
     }
 
     /**
-     * Save __TIMEOUT__ as a concrete version and rebuild the popup.
+     * Save "failed" as a concrete version and rebuild the popup.
      * Works for both new highlights (preRegisteredHlId) and edits (editOpts).
      */
     function saveTimeoutVersion() {
@@ -788,32 +786,30 @@
       memEntry._jrFailReason = failureText(); // shown by this popup only, not by others
 
       if (editOpts) {
-        // Edit: create a new version item with __TIMEOUT__
+        // Edit: create a new version item that failed
         var newItemId = crypto.randomUUID();
-        memEntry.items.push({ id: newItemId, question: question, responseHTML: "__TIMEOUT__", turnKeys: hideKeys,
+        memEntry.items.push({ id: newItemId, question: question, status: "failed", turnKeys: hideKeys,
           _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
         memEntry.activeItemIndex = memEntry.items.length - 1;
         memEntry.question = question;
-        memEntry.responseHTML = "__TIMEOUT__";
         saveHighlight({
-          id: newItemId, quoteId: hlId, text: text, responseHTML: "__TIMEOUT__", question: question,
+          id: newItemId, quoteId: hlId, text: text, status: "failed", question: question,
           url: convUrl, parentId: parentId || null,
           parentItemId: (memEntry && memEntry.parentItemId) || parentItemId || null,
           sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: hideKeys, active: true,
           wholeResponse: !!memEntry.wholeResponse, attachments: (memEntry._editFiles || []).length,
         });
       } else {
-        // New highlight (pre-registered or detached): update the pending item to __TIMEOUT__
+        // New highlight (pre-registered or detached): update the pending item to failed
         var itemIdx = memEntry.activeItemIndex || 0;
         if (memEntry.items && memEntry.items.length > itemIdx) {
-          memEntry.items[itemIdx].responseHTML = "__TIMEOUT__";
+          memEntry.items[itemIdx].status = "failed";
           memEntry.items[itemIdx].turnKeys = hideKeys;
         }
-        memEntry.responseHTML = "__TIMEOUT__";
         var updateId = preRegisteredItemId
           || (memEntry.items && memEntry.items[itemIdx] ? memEntry.items[itemIdx].id : null);
         if (updateId) {
-          updateHighlightFields(updateId, { responseHTML: "__TIMEOUT__", turnKeys: hideKeys, question: question }, convUrl);
+          updateHighlightFields(updateId, { status: "failed", turnKeys: hideKeys, question: question }, convUrl);
         }
       }
 
@@ -890,7 +886,7 @@
         responseDiv = document.createElement("div");
         responseDiv.className = "jr-popup-response";
       }
-      followedKeys = qaKeys.join();
+      followedKeys = responseDiv._jrKeys = qaKeys.join(); // (the popup keeps this area when the answer is done: showAnswer)
       JR.siteAnswer.follow(responseDiv, qaKeys.slice(), function () {
         if (JR.perf) JR.perf.count("streamSync");
         // ChatGPT mounts an empty answer placeholder first: keep "Loading…" until text arrives
@@ -939,7 +935,6 @@
         var detachEntry = {
           quoteId: detachedHlId,
           spans: detachedSpans.slice(),
-          responseHTML: null,
           text: text,
           sentence: sentence,
           blockTypes: blockTypes,
@@ -964,24 +959,18 @@
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
 
       var turn = liveResponseTurn();
-      var responseHTML = null;
-      if (domAnswerUsable()) {
-        responseHTML = JR.site.assistantHTML(turn);
-      } else if (mirrorDiv && mirrorDiv.textContent.trim()) {
-        responseHTML = mirrorDiv.innerHTML; // the hidden turn is gone: what the popup mirrored is ChatGPT's rendering (R36f)
-      } else if (turn && !net.text.trim()) {
-        // Empty answer (user stopped, error): save as __TIMEOUT__
+      // the answer's text, for ordering highlights in it only (the popup shows the site answer from its original)
+      var answerText = domAnswerUsable() ? JR.site.assistantText(turn).trim()
+        : mirrorDiv ? mirrorDiv.textContent.trim() : ""; // (the hidden turn is gone: what the popup showed of it, R36f)
+      if (!answerText && turn && !net.text.trim()) {
+        // Empty answer (user stopped, error): failed
         finishWithTimeout();
         return;
-      } else {
-        // Finished while scrolled out of the DOM and no network copy: keep the
-        // keys; the content is read back when the turn mounts again (JR.qa).
-        responseHTML = "__LOADING__";
       }
-      // (else — the turn not in the DOM, ChatGPT's "couldn't load", a chart it draws only on screen — "Loading…" until
-      // the site answer comes from its original elsewhere: the render frame; user 2026-11-18, no backup)
-      if (responseHTML !== "__LOADING__") qaKeys.forEach(function (k) {
-        JR.qa.put(k, { question: question, text: text, sentence: sentence, responseHTML: responseHTML, isPopup: true });
+      // Done. Not in the DOM, ChatGPT's "couldn't load", a chart it draws only on screen: "Loading…" until the site
+      // answer comes from its original elsewhere (the render frame, DeepSeek's kept item; user 2026-11-18, no backup).
+      if (answerText) qaKeys.forEach(function (k) {
+        JR.qa.put(k, { question: question, text: text, sentence: sentence, answerText: answerText, isPopup: true });
       });
       cleanup();
 
@@ -995,11 +984,10 @@
         var memEntry = st.completedHighlights.get(hlId);
         var newItemId = crypto.randomUUID();
         if (memEntry) {
-          memEntry.items.push({ id: newItemId, question: question, responseHTML: responseHTML, turnKeys: qaKeys.slice(),
+          memEntry.items.push({ id: newItemId, question: question, status: "done", turnKeys: qaKeys.slice(),
             _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
           memEntry.activeItemIndex = memEntry.items.length - 1;
           memEntry.question = question;
-          memEntry.responseHTML = responseHTML;
         }
 
         // Persist new item (deactivates old items with same quoteId; old items keep their own turn keys)
@@ -1007,7 +995,7 @@
           id: newItemId,
           quoteId: hlId,
           text: text,
-          responseHTML: responseHTML,
+          status: "done",
           url: convUrl,
           parentId: parentId || null,
           parentItemId: resolveParentItemId(memEntry, parentId) || parentItemId || null,
@@ -1046,27 +1034,26 @@
       var itemId2 = null;
 
       function fillItem(e, itemId) {
-        e.responseHTML = responseHTML;
         e.question = e.question || question || null;
         if (!e.sourceTurnKey) e.sourceTurnKey = sourceTurnKey;
         var found = false;
         if (e.items && itemId) {
           for (var di = 0; di < e.items.length; di++) {
             if (e.items[di].id === itemId) {
-              e.items[di].responseHTML = responseHTML;
+              e.items[di].status = "done";
               e.items[di].turnKeys = qaKeys.slice();
               found = true;
               break;
             }
           }
         }
-        if (!found && e.items && e.items.length > 0 && (e.items[0].responseHTML === "__PENDING__" || !itemId)) {
-          e.items[0].responseHTML = responseHTML;
+        if (!found && e.items && e.items.length > 0 && (e.items[0].status === "pending" || !itemId)) {
+          e.items[0].status = "done";
           e.items[0].turnKeys = qaKeys.slice();
           found = true;
         }
         if (!found && (!e.items || e.items.length === 0)) {
-          e.items = [{ id: crypto.randomUUID(), question: question || null, responseHTML: responseHTML, turnKeys: qaKeys.slice() }];
+          e.items = [{ id: crypto.randomUUID(), question: question || null, status: "done", turnKeys: qaKeys.slice() }];
           e.activeItemIndex = 0;
         }
       }
@@ -1104,7 +1091,6 @@
           st.completedHighlights.set(hlId2, {
             quoteId: hlId2,
             spans: spans.slice(),
-            responseHTML: responseHTML,
             text: text,
             sentence: sentence,
             blockTypes: blockTypes,
@@ -1113,7 +1099,7 @@
             parentId: parentId || null,
             parentItemId: parentItemId || null,
             sourceTurnKey: sourceTurnKey,
-            items: [{ id: itemId2, question: question || null, responseHTML: responseHTML, turnKeys: qaKeys.slice() }],
+            items: [{ id: itemId2, question: question || null, status: "done", turnKeys: qaKeys.slice() }],
             activeItemIndex: 0,
           });
         }
@@ -1133,7 +1119,7 @@
       if (preRegisteredItemId || (detached && preRegisteredHlId)) {
         // Update the existing pending storage record
         updateHighlightFields(persistItemId, {
-          responseHTML: responseHTML,
+          status: "done",
           turnKeys: qaKeys,
           sourceTurnKey: (entry && entry.sourceTurnKey) || sourceTurnKey,
         }, convUrl);
@@ -1142,7 +1128,7 @@
           id: persistItemId,
           quoteId: hlId2,
           text: text,
-          responseHTML: responseHTML,
+          status: "done",
           url: convUrl,
           parentId: parentId || null,
           parentItemId: parentItemId || null,

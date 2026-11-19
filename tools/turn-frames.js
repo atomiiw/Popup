@@ -1,0 +1,11 @@
+// turn-frames.js — P0-1 (testing only, read-only; tools/chrome_js.py --url <conv> @tools/turn-frames.js on chatgpt.com).
+// Arms on a send from a popup (Enter or its send button); per frame for 2.5 s: lock (L) / tail hidden (T), scrollTop,
+// clientHeight, scrollHeight and every mounted turn "key:top+height" (top from the scroller's top). Read back:
+// python3 tools/chrome_js.py --url <conv> 'document.documentElement.getAttribute("data-jr-tr3")'
+(function(){var root=document.documentElement;if(root.hasAttribute("data-jr-tr3"))return "already";root.setAttribute("data-jr-tr3","[]");var recs=[];
+function sc(){return document.querySelector("[data-app-action-timeline-scroll]");}
+function rowOf(t0){var s=sc();if(!s)return "noscroller";var top=s.getBoundingClientRect().top;var turns=[].map.call(s.querySelectorAll("[data-turn-key]"),function(x){var r=x.getBoundingClientRect();return x.getAttribute("data-turn-key").slice(0,4)+":"+Math.round(r.top-top)+"+"+Math.round(r.height);});var lk=root.hasAttribute("data-jr-scroll-lock")?"L":"-";var th=root.classList.contains("jr-tail-hidden")?"T":"-";var kids=[].slice.call((s.querySelector("[data-turn-key]")||s).parentElement.children,0,3).map(function(c){return Math.round(c.getBoundingClientRect().height)}).join("/");return Math.round(performance.now()-t0)+" "+lk+th+" k"+kids+" st"+Math.round(s.scrollTop)+" ch"+s.clientHeight+" sh"+s.scrollHeight+" n"+turns.length+" | "+turns.join(" ");}
+function arm(){var rec={t0:performance.now(),rows:[]};recs.push(rec);var last="";rec.rows.push("PRE "+rowOf(rec.t0));(function f(){var t=performance.now()-rec.t0;if(t>2500){root.setAttribute("data-jr-tr3",JSON.stringify(recs.slice(-2)));return;}var row=rowOf(rec.t0);var sig=row.replace(/^\d+ /,"");if(sig!==last){rec.rows.push(row);last=sig;root.setAttribute("data-jr-tr3",JSON.stringify(recs.slice(-2)));}requestAnimationFrame(f);})();}
+document.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey&&e.target.closest&&e.target.closest(".jr-popup"))arm();},true);
+document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest(".jr-popup button");if(b&&/send|submit/i.test((b.className||"")+(b.getAttribute("aria-label")||"")))arm();},true);
+return "tr2 on: "+rowOf(performance.now()).slice(0,300);})()

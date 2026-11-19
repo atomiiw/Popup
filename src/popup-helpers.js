@@ -1134,7 +1134,6 @@
     r.setEndBefore(span);
     return r.toString().length;
   }
-  function htmlText(html) { var d = document.createElement("div"); d.innerHTML = html || ""; return d.textContent; }
   var LATER = 1e12; // place unknown: after the known ones, by creation time
 
   /** Ids to step through, in that order (null until the stored items are read). */
@@ -1168,8 +1167,7 @@
       if (c.wholeResponse) return 2 * LATER + (c.createdAt || 0); // a Reply: after the answer's highlights
       var d = domPos(st.completedHighlights.get(c.quoteId));
       if (d >= 0) return d;
-      var got = JR.qa.peek ? JR.qa.peek(parent.turnKeys || []) : null;
-      var t = got && (got.responseHTML ? htmlText(got.responseHTML) : got.answerText); // (held: its text from the data)
+      var t = JR.qa.text(parent.turnKeys || []);
       var i = t ? nthIndex(t, c.text, c.nth) : -1;
       return i >= 0 ? i : LATER + (c.createdAt || 0);
     }
@@ -1451,7 +1449,6 @@
     if (i < 0 || e.activeItemIndex === i) return false;
     e.activeItemIndex = i;
     e.question = e.items[i].question;
-    e.responseHTML = e.items[i].responseHTML;
     setActiveItem(rec.quoteId, rec.id);
     return true;
   }
@@ -1478,6 +1475,10 @@
         var target = st.activePopup && (child.wholeResponse ? st.activePopup.querySelector(".jr-reply-whole-btn")
           : st.activePopup.querySelector('[data-jr-highlight-id="' + child.quoteId + '"]'));
         if (!target || !st.completedHighlights.has(child.quoteId)) return wait("level " + (k + 1) + " highlight", openChild);
+        // a Reply once this one's answer is in, as a highlight (which is in it) is: its button is there before — opened
+        // on, this one stayed on "Loading…" as a parent (only the active popup follows; live P0-2, dev.151) — 5 s at most
+        var waiting = child.wholeResponse && st.activePopup.querySelector(":scope > .jr-popup-response--waiting");
+        if (waiting && waited < 5000) return wait("level " + (k + 1) + " answer", openChild);
         showVersion(child);
         waited = 0;
         openAt(target, function () { target.click(); }); // as the user would: Reply, or the highlight inside the popup

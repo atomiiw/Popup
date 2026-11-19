@@ -1,0 +1,130 @@
+--- src/chat.js	2026-11-19 14:08:46
++++ src/chat.js	2026-11-19 15:00:02
+@@ -212,11 +212,14 @@
+ 
+   // --- Chat injection ---
+ 
++  /** Text without any whitespace: a ProseMirror box's textContent has no line breaks between its paragraphs. */
++  function bare(t) { return (t || "").replace(/\s+/g, ""); }
++
+   /** Insert text into ChatGPT's composer. Returns true if the text is verifiably there. */
+   function insertIntoComposer(composer, message) {
+-    var probe = message.replace(/\s+/g, " ").slice(0, 30);
++    var probe = bare(message).slice(0, 30);
+     function landed() {
+-      return JR.site.composerText(composer).replace(/\s+/g, " ").indexOf(probe) !== -1;
++      return bare(JR.site.composerText(composer)).indexOf(probe) !== -1;
+     }
+ 
+     if (composer.tagName === "TEXTAREA") {
+@@ -247,6 +250,21 @@
+     return landed();
+   }
+ 
++  // The user's own half-typed message in the site's box (TODO 4e): set aside for a Popup send — only the question goes
++  // — and put back once the site has cleared the box. "" when there is none.
++  var lastDraft = "";
++  function readDraft(composer) {
++    var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
++    return t.trim() ? t.replace(/\n+$/, "") : "";
++  }
++  function putDraftBack(composer, draft) {
++    if (!composer || !draft || bare(JR.site.composerText(composer)) === bare(draft)) return;
++    if (bare(JR.site.composerText(composer))) clearComposer(composer, []);
++    composer.focus({ preventScroll: true });
++    insertIntoComposer(composer, draft);
++    composer.blur();
++  }
++
+   /** Record the outcome of a send step (shown by JR.diagnose and the timeout UI). */
+   function report(ok, stage, detail) {
+     st.lastSendReport = { ok: ok, stage: stage, detail: detail || null, when: new Date().toISOString() };
+@@ -289,15 +307,24 @@
+     }
+ 
+     chatInput.focus({ preventScroll: true });
++    var draft = lastDraft = readDraft(chatInput);
++    if (draft) clearComposer(chatInput, []), chatInput.focus({ preventScroll: true });
++    if (draft && bare(JR.site.composerText(chatInput))) { // never sent along with the question
++      putDraftBack(chatInput, draft);
++      unhideComposer();
++      onDone(report(false, "draft", "the text already in the input box could not be set aside"));
++      return;
++    }
+     var inserted = insertIntoComposer(chatInput, message);
+     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+     if (!inserted) {
++      putDraftBack(chatInput, draft);
+       unhideComposer();
+       onDone(report(false, "insert", "the text did not appear in ChatGPT's input box"));
+       return;
+     }
+ 
+-    var probe = message.replace(/\s+/g, " ").slice(0, 30);
++    var probe = bare(message).slice(0, 30);
+     function afterSubmit(how) {
+       chatInput.blur();
+       if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+@@ -306,8 +333,9 @@
+       (function removeHideWhenEmpty() {
+         var left = JR.site.composerText(chatInput);
+         if (left.trim().length === 0 || tries > 20) {
++          var stuck = bare(left).indexOf(probe) !== -1;
++          if (!stuck) putDraftBack(chatInput, draft); // (still hidden: it comes back as it was)
+           unhideComposer();
+-          var stuck = left.replace(/\s+/g, " ").indexOf(probe) !== -1;
+           onDone(stuck ? report(false, "submit", "the message stayed in the input after " + how)
+                        : report(true, "sent", how));
+           return;
+@@ -1227,6 +1255,7 @@
+         var probe = norm60(message).slice(0, 30);
+         if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
+           clearComposer(composer, files);
++          putDraftBack(composer, lastDraft); // (the user's own text came back to the box with it)
+           // With files, a resend would go out as text only: fail instead (Retry resends the files).
+           if (rejected.count >= 1 || (files && files.length)) {
+             st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };
+--- tools/dom-test.html	2026-11-19 14:20:57
++++ tools/dom-test.html	2026-11-19 15:01:52
+@@ -1534,6 +1534,41 @@
+   }, 100);
+ }, 24750); })); // (its own time: one popup is live at a time)
+ 
++// TODO 4e (user, 2026-11-19): a half-typed message in the site's box is never sent with a Popup question, and is back
++// in the box after the send — an editable box (ChatGPT, claude.ai) and a textarea (DeepSeek)
++asyncChecks.push(new Promise(function (done) { setTimeout(function () {
++  var bare = function (t) { return (t || "").replace(/\s+/g, ""); };
++  var realRaf = window.requestAnimationFrame; // (no frames here at this point: the send would wait for good)
++  window.requestAnimationFrame = function (cb) { return setTimeout(cb, 16); };
++  var msg = "Regarding this part of your response: a Popup question that is long enough";
++  function run(html, read, clear, next) {
++    var form = document.createElement("form");
++    form.innerHTML = html + '<button type="button" data-testid="send-button">send</button>';
++    document.body.appendChild(form);
++    var box = form.firstChild, sent = null;
++    form.querySelector("button").addEventListener("click", function () { sent = read(box); clear(box); });
++    var realComposer = JR.site.composer; // (the site's box: here this one — the page has other editable boxes)
++    JR.site.composer = function () { return box; };
++    JR.injectAndSend(msg, function (r) {
++      setTimeout(function () { var after = read(box); form.remove(); JR.site.composer = realComposer; next(r, sent, after); }, 20);
++    });
++  }
++  run('<div contenteditable="true" class="ProseMirror" data-composer-markdown=""><p>my draft</p><p>line two</p></div>',
++    function (b) { return b.innerText; }, function (b) { b.innerHTML = ""; },
++    function (r1, sent1, after1) {
++      run('<textarea name="prompt">ds draft\nsecond</textarea>',
++        function (b) { return b.value; }, function (b) { b.value = ""; },
++        function (r2, sent2, after2) {
++          check("draft in the box: only the Popup question is sent, the draft is back after (editable box)",
++            r1.ok && bare(sent1) === bare(msg) && bare(after1) === "mydraftlinetwo" && /my draft\s*\n\s*line two/.test(after1), JSON.stringify([r1, sent1, after1]));
++          check("draft in the box: only the Popup question is sent, the draft is back after (textarea)",
++            r2.ok && bare(sent2) === bare(msg) && after2 === "ds draft\nsecond", JSON.stringify([r2, sent2, after2]));
++          window.requestAnimationFrame = realRaf;
++          done();
++        });
++    });
++}, 24900); })); // (its own time: it needs the keyboard focus)
++
+ // candidate 1: a finished popup whose original is on the page shows its copy at once — no "Loading…" in between
+ (function () {
+   var t = document.createElement("div"); t.setAttribute("data-turn-key", "now-1"); t.hidden = true;

@@ -193,7 +193,8 @@
    * The original of the turn with this key in the frame (site-answer.js, design A): the frame's turn, held there —
    * the frame isn't scrolled for anything else — until JR.siteOriginalRelease(key). Null if it isn't found.
    */
-  var holding = null, wanted = null, reloadedFor = null; // { key, release }; the key asked for and not released yet
+  var holding = null, wanted = null, reloadedFor = new Set(); // { key, release }; the key asked for and not released yet;
+  // the keys a fresh frame was loaded for once (a Set: two answers asked in turn would reload it for each again)
   JR.siteOriginal = function (key) {
     // held already: the site redrew it in the frame (live 2026-11-18: the re-ask then waited behind its own hold) — the
     // frame's turn now, at once
@@ -215,8 +216,8 @@
           .then(function (ready) { return ready ? findTurn(key) : null; })
           .then(function (turn) {
             // an answer newer than the frame (sent after it loaded): a fresh frame has it — once
-            if (turn || wanted !== key || (JR.qa.turnOrderCache || []).indexOf(key) >= 0 || reloadedFor === key) return turn;
-            reloadedFor = key;
+            if (turn || wanted !== key || (JR.qa.turnOrderCache || []).indexOf(key) >= 0 || reloadedFor.has(key)) return turn;
+            reloadedFor.add(key);
             // sent after the order and the frame were loaded: both again (review: else the search looks only at the end)
             JR.qa.resetApi();
             dropFrame(); frameFor(conv);
@@ -243,6 +244,10 @@
     var h = holding;
     holding = null;
     h.release();
+  };
+  /** For JR.diagnose: the frame and its queue. */
+  JR.siteRenderState = function () {
+    return { frame: !!(frame && frame.isConnected), busy: busy, jobs: jobs.length, holding: holding && holding.key, wanted: wanted };
   };
   /** A copy of a frame original: scoped to this frame load's generated styles (JR.scopeFrameRules). */
   JR.siteOriginalScope = function (copyEl) {

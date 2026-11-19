@@ -149,47 +149,44 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Session content cache: turnKey → { question, text, sentence, responseHTML }
+  // Session cache: turnKey → { question, text, sentence, isPopup, answerText } — the Q&A as read back from the site
+  // (the question a finished item no longer stores; the answer as text, for ordering highlights only). Never a drawing:
+  // a popup shows the site answer from its original (site-answer.js).
   // ---------------------------------------------------------------------------
 
   var cache = new Map();
 
-  /** Read a mounted Q&A turn's content from the DOM. Returns null if it isn't usable yet. */
+  /** A mounted Q&A turn as read from the DOM, or null while it has no answer yet. */
   function harvest(turn) {
-    // ChatGPT's own render failure text is not the answer — never cache it.
-    if (JR.site.renderFailed(turn)) return null;
-    // claude.ai: a hidden row's code is never coloured (off screen) — take the answer from the render frame instead
-    if (JR.site.harvestable && !JR.site.harvestable(turn)) return null;
-    var userMsg = JR.site.userText(turn);
-    var parsed = JR.parsePopupMessage(userMsg);
-    var html = JR.site.assistantHTML(turn);
+    if (JR.site.renderFailed(turn)) return null; // ChatGPT's own render failure text is not the answer
+    var parsed = JR.parsePopupMessage(JR.site.userText(turn));
     var text = JR.site.assistantText(turn).trim();
-    if (!parsed && !text) return null;
+    if (!text) return null;
     return {
       question: parsed ? parsed.question : null,
       text: parsed ? parsed.text : null,
       sentence: parsed ? parsed.sentence : null,
-      responseHTML: text ? html : null,
+      answerText: text,
       isPopup: !!parsed,
     };
   }
-
-  /** "__PENDING__" (answer in progress) and "__LOADING__" (answer not read back yet) render as a loading state. */
-  JR.isPlaceholderHTML = function (h) {
-    return h === "__PENDING__" || h === "__LOADING__";
-  };
 
   JR.qa = {
     cacheSize: function () { return cache.size; },
     clear: function () { cache.clear(); },
 
-    /** The cached content of an item, also while its answer is held for the site's drawing (for ordering only). */
-    peek: function (turnKeys) {
-      for (var i = 0; i < (turnKeys || []).length; i++) { var c = cache.get(turnKeys[i]); if (c && (c.responseHTML || c.answerText)) return c; }
-      return JR.qa.get(turnKeys);
+    /** The answer's text, for ordering highlights in it: as drawn on the page when its turn is mounted, else as read
+     *  from the site's data (Markdown). Null if neither is at hand. */
+    text: function (turnKeys) {
+      for (var i = 0; i < (turnKeys || []).length; i++) {
+        var t = JR.site.findTurnByKey(turnKeys[i]), h = t && harvest(t);
+        if (h) return h.answerText;
+      }
+      var c = JR.qa.get(turnKeys);
+      return c ? c.answerText || null : null;
     },
 
-    /** The question an item asked, as read back — also while its answer is held for the site's drawing. */
+    /** The question an item asked, as read back. */
     question: function (turnKeys) {
       for (var i = 0; i < (turnKeys || []).length; i++) {
         var c = cache.get(turnKeys[i]);
@@ -199,26 +196,23 @@
       return g ? g.question : null;
     },
 
-    /** Content for a Q&A item (by its turn keys), or null if not available right now. */
+    /** The Q&A with these turn keys as read back (cache, else its mounted turn), or null. */
     get: function (turnKeys) {
       for (var i = 0; i < (turnKeys || []).length; i++) {
         var k = turnKeys[i];
         var c = cache.get(k);
-        if (c && c.responseHTML && !c.held) return c;
-        var turn = JR.site.findTurnByKey(k); // mounted: the site's own drawing, also instead of a held one
-        if (turn) {
-          var h = harvest(turn);
-          // its question row may not be mounted (claude.ai's window can cut a pair): keep the question read from the data
-          if (h && c && h.question == null) { h.question = c.question; h.text = c.text; h.sentence = c.sentence; h.isPopup = c.isPopup; }
-          if (h && h.responseHTML && !JR.site.isGenerating()) cache.set(k, h);
-          if (h && h.responseHTML) return h;
+        if (c) return c;
+        var turn = JR.site.findTurnByKey(k);
+        var h = turn && harvest(turn);
+        if (h) {
+          if (!JR.site.isGenerating()) cache.set(k, h);
+          return h;
         }
-        if (c && c.held) return null; // shown only once the site's own drawing is in (JR.qa.upgrade)
       }
       return null;
     },
 
-    /** Store content captured at the end of streaming. */
+    /** Store a Q&A read at the end of streaming. */
     put: function (turnKey, content) {
       if (turnKey && content) cache.set(turnKey, content);
     },
@@ -333,8 +327,7 @@
     });
   };
 
-  /** A Q&A read from the site's data: its question, and its answer as text only (ordering highlights in it) — the
-   *  popup waits ("held") for the site answer itself, from its original (design A, Q6: no drawing of Popup's). */
+  /** A Q&A read from the site's data: its question, and its answer as text only (ordering highlights in it). */
   function putParsed(k, questionText, answerText) {
     var parsed = JR.parsePopupMessage(questionText || "");
     cache.set(k, {
@@ -342,7 +335,6 @@
       text: parsed ? parsed.text : null,
       sentence: parsed ? parsed.sentence : null,
       answerText: answerText,
-      held: true,
       isPopup: !!parsed,
     });
   }
@@ -360,7 +352,6 @@
   }
 
   // DeepSeek (docs/DEEPSEEK.md §6–7): the key is the answer's message id, its question is the parent message.
-  // Held: the popup shows DeepSeek's own drawing, followed from its list (JR.siteOriginal there, design A).
   function dsText(m) {
     if (typeof m.content === "string" && m.content) return m.content;
     return (m.fragments || []).map(function (f) { return typeof f.content === "string" ? f.content : ""; }).join("");
@@ -402,8 +393,7 @@
     });
   }
 
-  // claude.ai (sites/claude.js fetchConversation): held until claude.ai's own drawing comes from the render frame
-  // (live 2026-11-18: answers only the frame could give loaded forever)
+  // claude.ai (sites/claude.js fetchConversation)
   function readClaude(want) {
     return siteData().then(function (d) {
       return want.filter(function (k) {
@@ -428,30 +418,6 @@
     }
     if (JR.site.name === "claude") return siteData().then(function (d) { var t = d && d.turns[turnKey]; return t ? t.answer : null; });
     return Promise.resolve(null);
-  };
-
-  /**
-   * A Q&A the active popup waits for ("Loading…") gets the site answer (design A, GLOSSARY.md): followed from its
-   * original (site-answer.js) until the first copy, which is handed to the popups showing it (JR.onQAContentLoaded);
-   * the rebuilt popup then follows the original itself. No original:
-   * "Loading…" stays (user, 2026-11-18: no backup). In memory only.
-   */
-  JR.qa.upgrade = function (turnKeys) {
-    var keys = (turnKeys || []).filter(Boolean);
-    if (!keys.length || !JR.siteAnswer) return;
-    // already the site answer (a page copy: the popup showing it follows its original itself)
-    if (keys.some(function (k) { var c = cache.get(k); return c && c.responseHTML && !c.held; })) return;
-    var scratch = document.createElement("div");
-    JR.siteAnswer.follow(scratch, keys, function (el, turn) {
-      var html = el.innerHTML, q = null;
-      keys.forEach(function (k) { var c = cache.get(k); if (c && c.question != null) q = c; });
-      if (!q) { var parsed = JR.parsePopupMessage(JR.site.userText(turn) || ""); q = { question: parsed ? parsed.question : null, text: parsed ? parsed.text : null, sentence: parsed ? parsed.sentence : null, isPopup: !!parsed }; }
-      keys.forEach(function (k) {
-        cache.set(k, { question: q.question, text: q.text, sentence: q.sentence, isPopup: q.isPopup, responseHTML: html, held: false });
-      });
-      if (JR.onQAContentLoaded) JR.onQAContentLoaded(keys); // one rebuild of the popup showing it
-      if (JR.siteAnswer.current() === scratch) JR.siteAnswer.stop(); // no popup took it over: let the original go
-    });
   };
 
   /**
@@ -527,9 +493,9 @@
       var key = JR.site.turnKey(turns[i]);
       if (!key) continue;
       if (st.hiddenTurnKeys.has(key)) {
-        if ((!cache.has(key) || cache.get(key).held) && !(st.watchingTurnKey === key)) { // held: its drawing wasn't shown yet
+        if (!cache.has(key) && !(st.watchingTurnKey === key)) {
           var h = harvest(turns[i]);
-          if (h && h.responseHTML) { cache.set(key, h); newlyLoaded.push(key); }
+          if (h) { cache.set(key, h); newlyLoaded.push(key); }
         }
       } else if (!st.responseWatchActive && st.restoreReady) {
         // Self-healing: a Popup question we have no record of (data saved before
@@ -540,7 +506,7 @@
           JR.hideTurnKeys([key]);
           addDeletedTurns(location.href, [key]);
           var hv = harvest(turns[i]);
-          if (hv && hv.responseHTML) { cache.set(key, hv); newlyLoaded.push(key); }
+          if (hv) { cache.set(key, hv); newlyLoaded.push(key); }
           if (JR.adoptPopupTurn) JR.adoptPopupTurn(key, parsed);
         }
       }

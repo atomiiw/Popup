@@ -461,7 +461,7 @@ document.body.appendChild(rb);
 var rbUpper = rb.querySelector(".jr-popup-upper"), rbQ = document.createElement("div");
 rbQ.className = "jr-popup-question"; rbUpper.appendChild(rbQ);
 JR.placeStripAbove(JR.attachmentStrip([png]), rbQ); // the strip doSend put above the sent question
-JR.state.completedHighlights.set("rb-hl", { question: "q", responseHTML: "<p>a</p>", spans: [], items: [{ id: "rb-1", question: "q", responseHTML: "<p>a</p>", turnKeys: [], _files: [png] }], activeItemIndex: 0 });
+JR.state.completedHighlights.set("rb-hl", { question: "q", spans: [], items: [{ id: "rb-1", question: "q", status: "done", turnKeys: [], _files: [png] }], activeItemIndex: 0 });
 // storage.js needs chrome.storage: minimal stand-ins for what a rebuild reads and writes
 if (typeof getChildHighlights === "undefined") window.getChildHighlights = function () { return Promise.resolve([]); };
 if (typeof updateHighlightFields === "undefined") window.updateHighlightFields = function () { return Promise.resolve(); };
@@ -604,7 +604,7 @@ JR.state.attaching = false;
   var nk = document.createElement("div"); nk.className = "jr-popup";
   nk.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   document.body.appendChild(nk);
-  JR.state.completedHighlights.set("nk-hl", { question: null, responseHTML: "__LOADING__", spans: [], items: [{ id: "nk-1", question: null, responseHTML: "__LOADING__", turnKeys: [] }], activeItemIndex: 0 });
+  JR.state.completedHighlights.set("nk-hl", { question: null, spans: [], items: [{ id: "nk-1", question: null, status: "done", turnKeys: [] }], activeItemIndex: 0 });
   try { JR.rebuildPopupAfterEdit(nk, "nk-hl"); } catch (e) { out.push("NOTE nk rebuild threw: " + e.message); }
   var nkMsg = nk.querySelector(".jr-popup-loading");
   check("an item with no Q&A shows as failed, not Loading… for good", !!nkMsg && /Couldn/.test(nkMsg.textContent), nkMsg && nkMsg.textContent);
@@ -1168,18 +1168,6 @@ asyncChecks.push(new Promise(function (done) {
   pop.remove();
 })();
 
-// review #2: only answers a popup waits for get the site answer — never one already in the site's own drawing
-// (design A: its popup follows the original itself)
-asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var realFollow = JR.siteAnswer.follow, calls = [];
-  JR.siteAnswer.follow = function (el, keys) { calls.push(keys.join()); };
-  JR.qa.put("rv2-mirror", { responseHTML: "<div data-markdown-text-style='assistant-message'>a</div>" });
-  JR.qa.upgrade(["rv2-mirror"]); JR.qa.upgrade(["rv2-wait"]);
-  check("review #2: the site's own drawing isn't followed again; a waiting answer is", calls.join() === "rv2-wait", calls.join());
-  JR.siteAnswer.follow = realFollow;
-  done();
-}, 100); }));
-
 // 2026-11-17 (claude.ai CL-reload): after a reload a Reply / nested question comes from storage; all its versions must come back
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var real = window.getChildHighlights;
@@ -1189,7 +1177,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var p = document.createElement("div"); p.className = "jr-popup";
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   document.body.appendChild(p);
-  JR.state.completedHighlights.set("rv-hl", { question: "q", responseHTML: "<p>a</p>", spans: [], items: [{ id: "rv-1", question: "q", responseHTML: "<p>a</p>", turnKeys: [] }], activeItemIndex: 0 });
+  JR.state.completedHighlights.set("rv-hl", { question: "q", spans: [], items: [{ id: "rv-1", question: "q", status: "done", turnKeys: [] }], activeItemIndex: 0 });
   try { JR.rebuildPopupAfterEdit(p, "rv-hl"); } catch (e) { out.push("NOTE rv rebuild threw: " + e.message); }
   setTimeout(function () {
     var c = JR.state.completedHighlights.get("rv-q");
@@ -1288,9 +1276,9 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 
 // 2026-11-18 (user): navigation steps through popups in their place on the page, nested ones right after their parent
 (function () {
-  var realOrder = JR.qa.turnOrderCache, realPeek = JR.qa.peek, realText = JR.qa.answerText;
+  var realOrder = JR.qa.turnOrderCache, realQText = JR.qa.text, realText = JR.qa.answerText;
   JR.qa.turnOrderCache = ["t0", "t1"];
-  JR.qa.peek = function (keys) { return keys[0] === "ka" ? { responseHTML: "<p>yy then xx</p>" } : null; };
+  JR.qa.text = function (keys) { return keys[0] === "ka" ? "yy then xx" : null; };
   JR.qa.answerText = function () { return Promise.resolve(null); };
   var recs = [
     { id: "a1", quoteId: "A", text: "alpha", sourceTurnKey: "t1", turnKeys: ["ka"], active: true, createdAt: 3 },
@@ -1303,7 +1291,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var order = JR.navOrderOf(recs);
   check("navigation order: by turn, nested after their parent by place in its answer, Reply last", order.join(",") === "B,A,D,C,E,R", order.join(","));
   check("navigation chain: a nested one opens from the chat down", order.chain("E").map(function (r) { return r.id; }).join(">") === "a1>c1>e1", order.chain("E").map(function (r) { return r.id; }).join(">"));
-  JR.qa.turnOrderCache = realOrder; JR.qa.peek = realPeek; JR.qa.answerText = realText;
+  JR.qa.turnOrderCache = realOrder; JR.qa.text = realQText; JR.qa.answerText = realText;
 })();
 
 // R36a / 2026-11-17: ChatGPT wraps the turn list in a display:contents div; popups must go in the list (a box), not the wrapper
@@ -1351,9 +1339,9 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.site.fetchConversation = function () { fetches++; return Promise.resolve({ order: ["cl1", "cl2"], turns: { cl2: { question: q, answer: "**Because**" } } }); };
   JR.qa.resetApi();
   Promise.all([JR.qa.ensure(["cl2"]), JR.qa.turnOrder()]).then(function (r) {
-    var c = JR.qa.peek(["cl2"]);
-    check("claude.ai: answer read from its data as text only (design A), question parsed, held for its own drawing",
-      r[0].join() === "cl2" && c && c.answerText === "**Because**" && !c.responseHTML && c.question === "Why?" && JR.qa.get(["cl2"]) === null,
+    var c = JR.qa.get(["cl2"]);
+    check("claude.ai: answer read from its data as text only (design A), question parsed",
+      r[0].join() === "cl2" && c && c.answerText === "**Because**" && c.question === "Why?" && JR.qa.text(["cl2"]) === "**Because**",
       JSON.stringify([r[0], c && c.question, c && c.answerText]));
     check("claude.ai: turn order from the same fetch", r[1].join() === "cl1,cl2" && JR.qa.turnOrderCache.join() === "cl1,cl2" && fetches === 1, r[1].join() + " fetches=" + fetches);
   }).finally(function () { JR.site = real; JR.qa.resetApi(); done(); });
@@ -1431,8 +1419,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 50);
 }, 1300); }));
 
-// user 2026-11-18 ("no backup, go all in"): a held answer shows only in the site answer — no fallback to Popup's
-// drawing; when no original is found it is looked for again (design A: from its original, site-answer.js)
+// user 2026-11-18 ("no backup, go all in") + architecture candidate 1 (2026-11-19): a finished popup shows only the
+// site answer — "Loading…" until its original is found (looked for again when none is), never a drawing of Popup's
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, calls = 0;
   var far = document.createElement("div"); far.hidden = true;
@@ -1443,18 +1431,125 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     return calls === 1 ? Promise.resolve(null) : new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 6000); });
   };
   JR.siteOriginalRelease = function () {};
-  JR.qa.put("held-1", { question: "Q", responseHTML: "<p>POPUP</p>", held: true, isPopup: true });
-  JR.qa.upgrade(["held-1"]);
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("held-hl", { question: "Q", spans: [], items: [{ id: "held-i", question: "Q", status: "done", turnKeys: ["held-1"] }], activeItemIndex: 0 });
+  try { JR.rebuildPopupAfterEdit(p, "held-hl"); } catch (e) { out.push("NOTE held rebuild threw: " + e.message); }
+  function shows() {
+    var r = p.querySelector(".jr-popup-response"), w = p.querySelector(":scope > .jr-popup-loading");
+    return (w ? "loading" : "") + (r && !r.classList.contains("jr-popup-response--waiting") ? "copy:" + r.textContent.replace("Reply", "").trim() : "");
+  }
   setTimeout(function () {
-    var early = JR.qa.get(["held-1"]);
+    var early = shows();
     setTimeout(function () {
-      var late = JR.qa.get(["held-1"]);
-      JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove();
-      check("held answer: still loading after 6 s (no fallback), then the site answer from its original", early === null && late && /SITE/.test(late.responseHTML) && late.question === "Q" && calls === 2, JSON.stringify([early && early.responseHTML, late && late.responseHTML, calls]));
+      var late = shows();
+      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+      JR.state.completedHighlights.delete("held-hl");
+      check("finished popup: Loading… after 6 s (no fallback), then the site answer from its original", early === "loading" && late === "copy:SITE" && calls === 2, JSON.stringify([early, late, calls]));
       done();
     }, 3000);
   }, 6000);
 }, 1500); }));
+
+// candidate 1: a popup rebuilt while its original is still being found (its question read back after a reload) takes
+// over that search — not a second one from the start (the frame: slow)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, calls = 0, released = 0;
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="tk-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>TAKEN</p></div></div></div>';
+  document.body.appendChild(far);
+  JR.siteOriginal = function () { calls++; return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 300); }); };
+  JR.siteOriginalRelease = function () { released++; };
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("tk-hl", { question: "Q", spans: [], items: [{ id: "tk-i", question: "Q", status: "done", turnKeys: ["tk-1"] }], activeItemIndex: 0 });
+  JR.rebuildPopupAfterEdit(p, "tk-hl");
+  setTimeout(function () { JR.rebuildPopupAfterEdit(p, "tk-hl"); }, 100);
+  setTimeout(function () {
+    var r = p.querySelector(".jr-popup-response");
+    var ok = calls === 1 && released === 0 && r && /TAKEN/.test(r.textContent) && !p.querySelector(":scope > .jr-popup-loading");
+    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+    JR.state.completedHighlights.delete("tk-hl");
+    check("rebuilt while its original is being found: the same search goes on, its copy shows", ok, JSON.stringify([calls, released, r && r.textContent]));
+    done();
+  }, 600);
+}, 24100); })); // (its own time: one popup is live at a time — the other tests' follows would take it)
+
+// candidate 2 (2026-11-19): one way to show an answer — a rebuild (the end of a send, a question read back, a parent
+// under its child) keeps the answer area that shows this Q&A: the same element, not redrawn; Reply added once
+(function () {
+  var realFollow = JR.siteAnswer.follow, follows = [];
+  JR.siteAnswer.follow = function (el, keys) { follows.push(keys.join()); };
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div><div class="jr-popup-response"><p>STREAMED</p></div>';
+  document.body.appendChild(p);
+  var area = p.querySelector(".jr-popup-response"); area._jrKeys = "keep-1"; area.scrollTop = 0;
+  JR.state.completedHighlights.set("keep-hl", { question: "Q", spans: [], items: [{ id: "keep-i", question: "Q", status: "done", turnKeys: ["keep-1"] }], activeItemIndex: 0 });
+  JR.rebuildPopupAfterEdit(p, "keep-hl");
+  var r1 = p.querySelector(".jr-popup-response");
+  var ok1 = r1 === area && /STREAMED/.test(area.textContent) && !p.querySelector(":scope > .jr-popup-loading") && area.querySelectorAll(".jr-reply-whole-btn").length === 1 && follows.join() === "keep-1";
+  JR.state.popupStack.push({ popup: p }); // now under an open child: rebuilt, it keeps its copy (it follows again once active)
+  JR.rebuildPopupAfterEdit(p, "keep-hl");
+  JR.state.popupStack.pop();
+  var r2 = p.querySelector(".jr-popup-response");
+  var ok2 = r2 === area && /STREAMED/.test(area.textContent) && area.querySelectorAll(".jr-reply-whole-btn").length === 1 && follows.length === 1;
+  // another version: that area goes, "Loading…" holds its height until the new copy is in
+  JR.state.completedHighlights.get("keep-hl").items[0].turnKeys = ["other-1"];
+  JR.rebuildPopupAfterEdit(p, "keep-hl");
+  var w = p.querySelector(":scope > .jr-popup-loading"), r3 = p.querySelector(".jr-popup-response");
+  var ok3 = !area.isConnected && w && r3 && r3.classList.contains("jr-popup-response--waiting");
+  JR.siteAnswer.follow = realFollow; p.remove(); JR.state.completedHighlights.delete("keep-hl");
+  check("one way to show an answer: the end of a send keeps the streamed area (same element), Reply once", ok1, p.innerHTML.slice(0, 160) + " " + follows.join());
+  check("one way to show an answer: a parent rebuilt under its child keeps its copy (no Loading…)", ok2, p.innerHTML.slice(0, 160));
+  check("one way to show an answer: another Q&A replaces it, Loading… until its copy", ok3, p.innerHTML.slice(0, 160));
+})();
+
+// live dev.145 (ChatGPT): the copy starts empty with Reply in it (an original found later, in the frame) — the answer
+// goes before Reply, also as it grows
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease };
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="rp-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>one</p></div></div></div>';
+  document.body.appendChild(far);
+  JR.siteOriginal = function () { return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 30); }); };
+  JR.siteOriginalRelease = function () {};
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("rp-hl", { question: "Q", spans: [], items: [{ id: "rp-i", question: "Q", status: "done", turnKeys: ["rp-1"] }], activeItemIndex: 0 });
+  JR.rebuildPopupAfterEdit(p, "rp-hl");
+  var r = p.querySelector(".jr-popup-response");
+  function replyLast() { return r.lastElementChild && r.lastElementChild.classList.contains("jr-reply-whole-btn"); }
+  setTimeout(function () {
+    var first = replyLast() && /one/.test(r.textContent);
+    far.querySelector(".markdown").insertAdjacentHTML("afterend", '<div class="markdown"><p>two</p></div>');
+    setTimeout(function () {
+      check("Reply stays after the answer (a copy that starts empty, and as it grows)", first && replyLast(), r.innerHTML.slice(0, 200));
+      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+      JR.state.completedHighlights.delete("rp-hl");
+      done();
+    }, 20);
+  }, 100);
+}, 24750); })); // (its own time: one popup is live at a time)
+
+// candidate 1: a finished popup whose original is on the page shows its copy at once — no "Loading…" in between
+(function () {
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "now-1"); t.hidden = true;
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>ON PAGE</p></div></div>';
+  document.body.appendChild(t);
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("now-hl", { question: "Q", spans: [], items: [{ id: "now-i", question: "Q", status: "done", turnKeys: ["now-1"] }], activeItemIndex: 0 });
+  try { JR.rebuildPopupAfterEdit(p, "now-hl"); } catch (e) { out.push("NOTE now rebuild threw: " + e.message); }
+  var r = p.querySelector(".jr-popup-response");
+  check("finished popup, original on the page: its copy at once, no Loading… in between",
+    !p.querySelector(":scope > .jr-popup-loading") && r && !r.classList.contains("jr-popup-response--waiting") && /ON PAGE/.test(r.textContent),
+    p.innerHTML.slice(0, 200));
+  JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("now-hl");
+})();
 
 // Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes
 // there (new text, a new block, a button's result) shows in the copy; Popup's own layer (onChange) is put back after
@@ -1637,21 +1732,25 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "si-1");
   orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><button class="pic"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="200" height="100"></button>' +
-    '<button class="cite"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="16" height="16">src</button></div></div>';
+    '<button class="cite"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="16" height="16">src</button>' +
+    '<button class="pic2"><img src="not-loaded-yet.png"></button></div></div>';
   document.body.appendChild(orig);
   var cited = 0, pics = 0;
   orig.querySelector(".cite").addEventListener("click", function () { cited++; });
   orig.querySelector(".pic").addEventListener("click", function () { pics++; });
+  orig.querySelector(".pic2").addEventListener("click", function () { pics++; });
   var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
   JR.wireResponseClicks(copy);
   JR.siteAnswer.follow(copy, ["si-1"], null);
   copy.querySelector(".pic").click();
   copy.querySelector(".cite").click();
+  copy.querySelector(".pic2").click(); // (review: an image not loaded yet has no width — still an image, not the site's)
   setTimeout(function () {
     var box = document.querySelector(".jr-lightbox");
     check("site controls in a popup: an image opens Popup's lightbox, a citation's favicon button goes to the site",
       !!box && pics === 0 && cited === 1, JSON.stringify([!!box, pics, cited]));
-    if (box) document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); // (its own close: its key listener goes too)
+    for (var n = 0; n < 3 && document.querySelector(".jr-lightbox"); n++) // (each its own close: its key listener goes too)
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     JR.siteAnswer.stop(); orig.remove(); copy.remove();
     done();
   }, 50);

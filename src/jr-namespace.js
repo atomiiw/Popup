@@ -22,7 +22,7 @@
       cancelResponseWatch: null,
       responseWatchActive: false,       // true while waitForResponse is polling (including detached)
       activeSourceHighlights: [],       // wrapper <span> elements in the AI response
-      completedHighlights: new Map(),   // quoteId → { quoteId, spans, text, sentence, items: [{id, question, responseHTML, ...}], activeItemIndex, ... }
+      completedHighlights: new Map(),   // quoteId → { quoteId, spans, text, sentence, items: [{id, question, status, turnKeys, ...}], activeItemIndex, ... }
       activeHighlightId: null,          // current popup's highlight id (for chaining)
       popupStack: [],                   // saved parent popup states for nested chains
       lastKnownUrl: location.href,

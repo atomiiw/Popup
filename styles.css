@@ -409,6 +409,9 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
   flex-shrink: 0;
 }
 
+/* An answer area until the first copy of its original is in: "Loading…" shows in its place (popup.js) */
+.jr-popup-response--waiting { display: none !important; }
+
 /* Retry button inside timeout loading div */
 .jr-retry-btn {
   display: flex;
