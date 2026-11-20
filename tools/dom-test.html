@@ -1954,6 +1954,17 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("now-hl");
 })();
 
+// audit 11-20: a thinking model's stream ends with "resuming" (no "done"): it is no open stream any more — counted
+// open, ChatGPT looked busy for good and every later Popup question waited in the queue
+(function () {
+  var before = JR.state.netActive;
+  ["start", "resuming", "start", "done"].forEach(function (k) {
+    document.dispatchEvent(new CustomEvent("jr-net", { detail: JSON.stringify({ kind: k }) }));
+  });
+  check("a stream that ended with resuming, then its follow-up: no open stream left", JR.state.netActive === before, JR.state.netActive);
+  JR.state.netActive = before;
+})();
+
 // peer audit A1: a popup reopened while its send waits in the queue (the main answer still writing) stays pending —
 // it was marked failed with Retry while the message still went out later (Retry sent it twice)
 (function () {

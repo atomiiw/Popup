@@ -44,7 +44,9 @@
     var kind;
     try { kind = JSON.parse(e.detail).kind; } catch (err) { return; }
     if (kind === "start") st.netActive++;
-    else if (kind === "done") st.netActive = Math.max(0, st.netActive - 1);
+    // (resuming: that stream ended too — the answer goes on elsewhere; counted open, ChatGPT stayed "generating" for
+    // good and every later Popup question waited in the queue on Loading… — audit 11-20, from 736ef16)
+    else if (kind === "done" || kind === "resuming") st.netActive = Math.max(0, st.netActive - 1);
   });
 
   /** A file's name as ChatGPT may show it: the same, or with "(n)" / " (n)" before the extension. */
