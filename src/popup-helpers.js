@@ -1147,20 +1147,11 @@
   /** No turn order to aim with (Claude Code: no conversation read): up from here to the top, then down from here to
    *  the end, a screen at a time, until its turn is mounted (live round 5: ∧ at the bottom opened nothing). */
   function sweepTo(scroller, key, done) {
-    var from = scroller.scrollTop, dir = -1, tries = 0, atTop = 0, gen = navGen;
+    var from = scroller.scrollTop, dir = -1, tries = 0, gen = navGen;
     (function step() {
       if (gen !== navGen) return; // another jump, or the popups closed: stop scrolling (up to 20 s otherwise — audit)
       if (JR.site.findTurnByKey(key)) { done(true); return; }
       if (++tries > 200) { done(false); return; }
-      // at the top: earlier turns may come a page at a time (ChatGPT's new front end, its order not read yet) — a scroll
-      // there until none come (~3 s), then down from where it started
-      if (dir < 0 && scroller.scrollTop <= 0 && JR.site.name === "chatgpt" && atTop < 12) {
-        var h = scroller.scrollHeight;
-        atTop++;
-        scroller.scrollTop = 40;
-        setTimeout(function () { scroller.scrollTop = 0; setTimeout(function () { if (scroller.scrollHeight !== h) atTop = 0; step(); }, 250); }, 50);
-        return;
-      }
       if (dir < 0 && scroller.scrollTop <= 0) { dir = 1; scroller.scrollTop = from; }
       else if (dir > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) { done(false); return; }
       if (JR.site.unpin) JR.site.unpin();
