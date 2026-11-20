@@ -94,6 +94,10 @@
   function syncInto(copyEl, turn) {
     var bodies = JR.site.assistantBodies(turn);
     if (!bodies.length) return false;
+    // the site redrawing its answer (ChatGPT, as an answer is done): a moment with nothing in it — the copy stays as it
+    // is until it has something again (drawn record 11-20: one frame of an empty popup at the end of every answer)
+    var empty = !bodies.some(function (b) { return b.textContent.trim() || b.querySelector("img, svg, canvas, video, iframe"); });
+    if (empty && copyEl.textContent.replace(/Reply/g, "").trim()) return false;
     syncChildren(bodies, copyEl);
     if (JR.site.markCopy) Array.prototype.forEach.call(copyEl.children, JR.site.markCopy);
     return true;
