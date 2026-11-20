@@ -575,6 +575,14 @@
       turnStatesSeen: Object.keys(turnStatesSeen),
       simulatedBreaks: Object.keys(broken),
       state: {
+        // the open popup's version and what a "Loading…" there waits for (a send's watch, the queue, its original)
+        open: (function () {
+          var st = JR.state, e = st.activeHighlightId && st.completedHighlights.get(st.activeHighlightId);
+          var it = e && e.items && e.items[e.activeItemIndex || 0];
+          return { id: st.activeHighlightId ? String(st.activeHighlightId).slice(0, 8) : null, status: it ? it.status : null,
+            keys: it ? (it.turnKeys || []).map(function (k) { return String(k).slice(0, 8); }) : null,
+            watch: !!st.responseWatchActive, attaching: !!st.attaching, queued: st.messageQueue.length };
+        })(),
         highlights: JR.state.completedHighlights.size,
         hiddenTurns: JR.state.hiddenTurnKeys ? JR.state.hiddenTurnKeys.size : 0,
         cachedQA: JR.qa ? JR.qa.cacheSize() : 0,
