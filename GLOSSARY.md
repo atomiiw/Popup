@@ -17,5 +17,13 @@ What a popup shows of a site answer, kept in step with its original.
 _Avoid_: mirror, clone, popup HTML
 
 **Answer state**:
-Where a popup question's answer stands: pending (sent, the site is still answering), failed (no answer; can be asked again) or done (the site has it). "Loading" is not a state: it is how a done answer looks until its original is found.
+Where a popup question's answer stands, as stored: pending (sent, the site is still answering), failed (no answer; can be asked again) or done (the site has it).
 _Avoid_: response HTML, placeholder
+
+**Availability**:
+Where a version's answer stands for the popup right now, finer than its answer state and never stored: sending, streaming, locating (its original is being looked for), shown, failed (no answer: Retry asks again) or unreachable (the site has the answer but it can't be shown here: Try again looks again, nothing is resent). Every availability but shown, failed and unreachable names what it waits for and until when; "Loading" is how sending, streaming and locating look, never a wait with nothing behind it.
+_Avoid_: loading state, spinner
+
+**Locator**:
+What finds a version's original, in the places its site keeps one (the page; the hidden copy of the chat; the item DeepSeek keeps drawn), and says why when it can't.
+_Avoid_: finder, resolver
