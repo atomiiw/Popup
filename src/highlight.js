@@ -793,7 +793,9 @@
       if (never.length) addDeletedTurns(url, never);
       if (!made.length) return;
       saveHighlights(made).then(function () {
-        if (gen === restoreGen && location.href === url) JR.restoreHighlights();
+        // (extension reloaded under an open tab: nothing is stored, reads give [] — restoring again rebuilt again,
+        // forever, on one cached conversation: the tab hung — peer audit 11-20)
+        if (isContextValid() && gen === restoreGen && location.href === url) JR.restoreHighlights();
       });
     });
   }

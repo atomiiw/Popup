@@ -2357,6 +2357,7 @@ asyncChecks.push(new Promise(function (done) {
     var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlights, chat: JR.site.isChatPage,
       conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, adopt: JR.adoptPopupTurn, del: window.addDeletedTurns };
     var hiddenNow = [];
+    real.ok = window.isContextValid; window.isContextValid = function () { return true; };
     window.addDeletedTurns = function (u, keys) { hiddenNow = hiddenNow.concat(keys); return Promise.resolve(); };
     window.getHighlightsByUrl = function () { return Promise.resolve(store.slice()); };
     window.getHiddenTurnKeys = function () { return Promise.resolve(["p2", "p6"].concat(hiddenNow)); };
@@ -2382,13 +2383,41 @@ asyncChecks.push(new Promise(function (done) {
       check("rebuild: the ones never placed (reply-to-all, quote not found) stored hidden, drawn hidden next time (audit)",
         hiddenNow.join() === "p4,p5", hiddenNow.join());
       check("rebuild: all of them in one write (perf audit: ~100 whole-document writes)", writes === 1, writes);
-      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save], ["addDeletedTurns", real.del]].forEach(function (g) {
+      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save], ["addDeletedTurns", real.del], ["isContextValid", real.ok]].forEach(function (g) {
         if (g[1]) window[g[0]] = g[1]; else delete window[g[0]];
       });
       JR.site.isChatPage = real.chat; JR.qa.conversation = real.conv; JR.qa.popupTurnsFromApi = real.api; JR.qa.ensure = real.ensure; JR.adoptPopupTurn = real.adopt;
       done();
     }, 400);
   }, 24950);
+}));
+
+// peer audit 11-20: the extension reloaded under an open tab (its context gone: reads give [], nothing is stored) —
+// a rebuild doesn't restore again (it rebuilt again, forever, on the one cached conversation: the tab hung)
+asyncChecks.push(new Promise(function (done) {
+  setTimeout(function () {
+    var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlights, chat: JR.site.isChatPage,
+      conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, del: window.addDeletedTurns, ok: window.isContextValid };
+    var conv = { order: ["d1", "dp"], turns: { d1: { question: "q", answer: "a dead tab" },
+      dp: { question: JR.buildMessage({ question: "why?", text: "dead tab" }), answer: "x" } } }, reads = 0;
+    window.isContextValid = function () { return false; };
+    window.getHighlightsByUrl = function () { return Promise.resolve([]); };
+    window.getHiddenTurnKeys = function () { return Promise.resolve([]); };
+    window.saveHighlights = function () { return Promise.resolve([]); };
+    window.addDeletedTurns = function () { return Promise.resolve(); };
+    JR.site.isChatPage = function () { return true; };
+    JR.qa.conversation = function () { reads++; return Promise.resolve(conv); };
+    JR.qa.popupTurnsFromApi = function () { return Promise.resolve([]); };
+    JR.qa.ensure = function () { return Promise.resolve([]); };
+    JR.restoreHighlights();
+    setTimeout(function () {
+      check("rebuild, extension context gone: one restore, not restore after restore (the tab hung)", reads === 1, reads);
+      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save], ["addDeletedTurns", real.del],
+       ["isContextValid", real.ok]].forEach(function (g) { if (g[1]) window[g[0]] = g[1]; else delete window[g[0]]; });
+      JR.site.isChatPage = real.chat; JR.qa.conversation = real.conv; JR.qa.popupTurnsFromApi = real.api; JR.qa.ensure = real.ensure;
+      done();
+    }, 300);
+  }, 25600);
 }));
 
 // TODO 4e (files, 2026-11-20): the user's own files in the site's box are set aside for a Popup send, handed back after

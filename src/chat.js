@@ -567,11 +567,25 @@
 
   function sendQueued(opts) {
     // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
-    if (!opts.attached && JR.site.composerHasAttachments(JR.site.composer()) && !JR.setAsideUserFiles()) {
-      JR.prepareSend(opts.waitOpts);
-      report(false, "files", "the user's own files in " + JR.site.label + "'s box can't be set aside");
-      immediateTimeout(opts.waitOpts);
-      JR.drainQueue();
+    if (!opts.attached && !opts.aside && JR.site.composerHasAttachments(JR.site.composer())) {
+      if (!JR.setAsideUserFiles()) {
+        JR.prepareSend(opts.waitOpts);
+        report(false, "files", "the user's own files in " + JR.site.label + "'s box can't be set aside");
+        immediateTimeout(opts.waitOpts);
+        JR.drainQueue();
+        return;
+      }
+      // the site takes a moment to drop them (live R1, ChatGPT: sent at once, the message stuck in the box)
+      opts.aside = true;
+      st.attaching = true;
+      var t0 = Date.now(), from = location.href;
+      (function gone() {
+        if (JR.site.composerHasAttachments(JR.site.composer()) && Date.now() - t0 < 3000) { setTimeout(gone, 50); return; }
+        setTimeout(function () {
+          st.attaching = false;
+          if (location.href === from) sendQueued(opts); // (another chat opened meanwhile: never sent there)
+        }, 150);
+      })();
       return;
     }
     // Files first: the answer watch's timers (refusal check, quick timeout) start
