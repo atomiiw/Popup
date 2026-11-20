@@ -208,30 +208,27 @@ var roDone = Promise.resolve().then(function () {
 // ...and when: the first time hidden items are known for a measured list (and when they change), then the window again
 function allCheck() {
   return new Promise(function (done) {
+    var N = window.JRDeepSeekNet;
     var list = document.createElement("div"); list.className = "ds-virtual-list ds-virtual-list--printable"; list.style.height = "100px";
     list.innerHTML = '<div class="ds-virtual-list-visible-items"><div data-virtual-list-item-key="1">a</div></div>';
     document.body.appendChild(list);
     var calls = [];
-    var ro = new ResizeObserver(function () { calls.push(list.scrollTop === 0 && list.offsetHeight > 100000 ? "all" : "window"); });
-    ro.observe(list);
-    // (an observer's first report comes with a frame: headless Chrome draws one when it can — wait for it, up to 2 s)
-    (function first(n) { if (calls.length || n <= 0) go(); else setTimeout(function () { first(n - 1); }, 50); })(40);
-    function go() {
-      var before = calls.length;
-      var rules = document.createElement("style"); rules.id = "jr-hide-turns";
-      rules.textContent = '[data-virtual-list-item-key="7"] { height: 0 }';
-      document.head.appendChild(rules);
+    N.track(list, function () { calls.push(list.scrollTop === 0 && list.offsetHeight > 100000 ? "all" : "window"); });
+    var rules = document.createElement("style"); rules.id = "jr-hide-turns";
+    rules.textContent = '[data-virtual-list-item-key="7"] { height: 0 }';
+    document.head.appendChild(rules);
+    N.again();
+    setTimeout(function () {
+      var after = calls.slice();
+      rules.textContent += " "; // the same keys again: no second whole-list pass
+      N.again();
       setTimeout(function () {
-        var after = calls.slice(before);
-        rules.textContent += ' '; // the same keys again: no second whole-list pass
-        setTimeout(function () {
-          var later = calls.slice(before + after.length);
-          check("list window: hidden items known → the whole list once, then the window again; the same keys → not again",
-            after[0] === "all" && after.indexOf("window") > 0 && later.indexOf("all") === -1, JSON.stringify([after, later]));
-          ro.disconnect(); list.remove(); rules.remove(); done();
-        }, 300);
-      }, 400);
-    }
+        var later = calls.slice(after.length);
+        check("list window: hidden items known → the whole list once, then the window again; the same keys → not again",
+          after[0] === "all" && after.indexOf("window") > 0 && later.indexOf("all") === -1, JSON.stringify([after, later]));
+        list.remove(); rules.remove(); done();
+      }, 300);
+    }, 400);
   });
 }
 // design A (2026-11-18): an original is kept drawn in DeepSeek's list while it is live, let go on release

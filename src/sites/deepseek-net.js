@@ -327,5 +327,8 @@
 
   // Offline tests (tools/dom-test-deepseek.html) reach the parser through this.
   window.JRDeepSeekNet = { Answer: Answer, SSE: SSE, isPopupQuestion: isPopupQuestion, citeLinks: citeLinks,
-    measuring: typeof withTall === "function" ? withTall : null }; // (withTall: the list's reads inside DeepSeek's measuring)
+    measuring: typeof withTall === "function" ? withTall : null, // (withTall: the list's reads inside DeepSeek's measuring)
+    // (tests: a list measured by cb, as DeepSeek's observer reports it — without a frame — and the re-measure)
+    track: typeof again === "function" ? function (el, cb) { measured.push({ el: el, cb: cb, obs: null }); } : null,
+    again: typeof again === "function" ? again : null };
 })();

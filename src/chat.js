@@ -696,6 +696,28 @@
     }
     // a site scroll scroll-guard.js let through (it kept the reader's place): the place to fall back to from now on
     var html = document.documentElement, siteScroll = html.getAttribute("data-jr-site-scroll");
+    // The open popups go with the anchor (live 2026-11-20, ChatGPT's new front end: the turns above it were laid out
+    // anew, the hold kept the anchor in place by scrolling, so the list — and the popups placed in it — moved on screen:
+    // a popup stood 464 px off its highlight for ~5 s, until its highlight was wrapped again). They keep where they were
+    // to the anchor; placed again by anyone else (its highlight back): from there. An "above" popup by its bottom.
+    var glued = new Map();
+    function glue(anchor) {
+      var pops = st.popupStack.map(function (e) { return e.popup; });
+      if (st.activePopup) pops.push(st.activePopup);
+      pops.forEach(function (p) {
+        if (!p || !p.isConnected || !p.parentElement) return;
+        var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null;
+        var base = above ? p._jrBottomAnchor : parseFloat(p.style.top) || 0;
+        var y = anchor.getBoundingClientRect().top - p.parentElement.getBoundingClientRect().top; // the anchor in its list
+        var g = glued.get(p);
+        if (!g || g.set !== base) { glued.set(p, { base: base, y: y, set: base }); return; }
+        var d = y - g.y;
+        if (Math.abs(d) < 0.5 || Math.abs(base - (g.base + d)) < 0.5) return;
+        g.set = g.base + d;
+        if (above) { p._jrBottomAnchor = g.set; p.style.top = (g.set - p.offsetHeight) + "px"; }
+        else p.style.top = g.set + "px";
+      });
+    }
     var savedTop = container.scrollTop;
     var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     var userScrolling = false;
@@ -749,6 +771,7 @@
 
       var anchor = liveAnchor();
       observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
+      if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
       if (userScrolling) {
