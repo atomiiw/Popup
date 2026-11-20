@@ -111,18 +111,25 @@
     if (!count) { userFiles = []; return true; } // (none in the box: the ones noted were taken out)
     var cards = cardsFor(composer, userFiles.slice().reverse(), []); // (the newest copy of a name first)
     if (cards.size !== count) return false;
+    // the box keeps its height while they're out: shorter, it gave the chat more room and the reader at the bottom
+    // saw the chat move down ~196 px and back (live round 5, claude.ai)
+    var box = attachBox(composer);
+    if (box) { box.style.setProperty("--jr-hold-h", box.offsetHeight + "px"); box.setAttribute("data-jr-hold", ""); }
     var moved = [];
     cards.forEach(function (c, f) { if (c.remove) { c.remove.click(); moved.push(f); } });
-    if (moved.length !== count) { if (moved.length) JR.attachToComposer(moved, function () {}); return false; }
+    if (moved.length !== count) { if (moved.length) JR.attachToComposer(moved, releaseHold); else releaseHold(); return false; }
     asideFiles = (asideFiles || []).concat(moved.reverse());
     return true;
   };
-  /** After a Popup send (done or not): the files set aside go back into the box. */
+  function releaseHold() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-jr-hold]"), function (b) { b.removeAttribute("data-jr-hold"); });
+  }
+  /** After a Popup send (done or not): the files set aside go back into the box (its height held until they're in). */
   function handBackFiles() {
-    if (!asideFiles || !asideFiles.length) return;
+    if (!asideFiles || !asideFiles.length) { releaseHold(); return; }
     var files = asideFiles;
     asideFiles = null;
-    JR.attachToComposer(files, function () {});
+    JR.attachToComposer(files, releaseHold);
   }
 
   /** Show ChatGPT's composer again after Popup handed it files. */
@@ -349,7 +356,8 @@
     hideStyle.id = "jr-hide-style";
     hideStyle.textContent =
       "[data-jr-injecting], [data-jr-injecting] * { color: transparent !important; caret-color: transparent !important; }" +
-      "\n:has(> [data-jr-injecting]) { max-height: " + composerH + "px !important; overflow: hidden !important; }";
+      // (min too: the draft set aside, a box of several lines got shorter and the chat moved — live round 5, claude.ai)
+      "\n:has(> [data-jr-injecting]) { max-height: " + composerH + "px !important; min-height: " + composerH + "px !important; overflow: hidden !important; }";
     document.head.appendChild(hideStyle);
     function unhideComposer() {
       hideStyle.remove();

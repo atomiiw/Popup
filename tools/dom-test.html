@@ -2348,12 +2348,14 @@ asyncChecks.push(new Promise(function (done) {
     userPaste(["fa.png", "fb.png"]);
     var f1 = boxWith(["fa.png", "fb.png"]);
     var aside = JR.setAsideUserFiles();
-    var left = f1.querySelectorAll(".card").length;
+    var left = f1.querySelectorAll(".card").length, held = !!f1.querySelector("[data-jr-hold]") || f1.hasAttribute("data-jr-hold");
     JR.injectAndSend("Regarding this part of your response: a question long enough to probe", function (r) {
       setTimeout(function () {
         var draftBack = f1.firstChild.innerText.replace(/\s+/g, "");
         check("files and text in the box: set aside for the Popup send, both back after it (files in their order)",
           aside && left === 0 && r.ok && handed.join("|") === "fa.png,fb.png" && draftBack === "halftyped", [aside, left, JSON.stringify(r), handed.join("|"), draftBack].join(" "));
+        check("files set aside: the box keeps its height while they're out, not after they're back (live: the chat moved ~196 px)",
+          held && !document.querySelector("[data-jr-hold]"), held + " " + !!document.querySelector("[data-jr-hold]"));
         f1.remove();
         var f2 = boxWith(["fa.png", "stranger.png"]);
         var aside2 = JR.setAsideUserFiles();

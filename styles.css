@@ -1085,6 +1085,8 @@ html.jr-tail-hidden [data-testid="chat-extra-space"] {
 
 /* ChatGPT's composer while Popup hands it files: hidden so the cards never flash */
 [data-jr-attaching] { opacity: 0 !important; }
+/* the site's box while the user's files are set aside for a Popup send (TODO 4e): its height kept, the chat doesn't move */
+[data-jr-hold] { min-height: var(--jr-hold-h) !important; }
 
 /* ==========================================================================
    ChatGPT rich-answer components in a popup answer (R13, qa-content.js):
