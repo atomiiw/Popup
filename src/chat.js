@@ -737,6 +737,21 @@
    * of the anchor (ChatGPT's own scroll calls are blocked by scroll-guard.js).
    * Returns an unlock function.
    */
+  /**
+   * Where each open popup is to the reader's anchor now — at Return, before the popup grows (its question goes up,
+   * Loading shows) — for the hold of the send to start from (live 11-20, ChatGPT: the popup grew 50 px inside the
+   * list, ChatGPT re-laid it and the popup's place moved 52 px; the hold, starting a moment later, kept it there ~0.4 s).
+   */
+  JR.noteGluePlaces = function () {
+    var a = JR.viewAnchor(), k = a ? JR.getTurnKey(a) : null;
+    a = (k && JR.site.findTurnByKey(k)) || a;
+    if (!a) return;
+    var ay = a.getBoundingClientRect().top;
+    st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []).forEach(function (p) {
+      if (p && p.isConnected) p._jrGlueAt = { t: Date.now(), off: p.getBoundingClientRect().top - ay };
+    });
+  };
+
   JR.lockScroll = function (container, anchorEl) {
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
@@ -786,6 +801,12 @@
         // before its top followed, it was held 50 px low, over its highlight, for the whole send)
         var off = (above ? r.top - top + p._jrBottomAnchor : r.top) - ay;
         var g = glued.get(p);
+        // its place at Return (JR.noteGluePlaces), if just taken: not one the popup's own growth since moved
+        if (!g && !above && !resizing && !userScrolling && p._jrGlueAt && Date.now() - p._jrGlueAt.t < 2000) {
+          g = { off: p._jrGlueAt.off };
+          glued.set(p, g);
+        }
+        p._jrGlueAt = null;
         // (the user scrolling — the chat or inside a parent popup, where a nested one follows its highlight — or
         // dragging an edge places it: taken as it is)
         if (!g || resizing || userScrolling) { glued.set(p, { off: off }); return; }
