@@ -83,6 +83,10 @@
       var down = target >= 0 && at.length && last.i < target;
       if (!down && sc.scrollTop <= 0) {
         if (++atTop > 20) return Promise.resolve(null); // ~5 s at the top and nothing earlier came
+        // (at 0 already, setting 0 again is no scroll: ChatGPT's new front end loads earlier turns on a scroll at the
+        // top — live round 5: the frame sat there ~20 s; a step down and back is one)
+        sc.scrollTop = 40;
+        return wait(50).then(function () { sc.scrollTop = 0; return wait(200); }).then(function () { return step(n - 1); });
       } else atTop = 0;
       if (sc.scrollHeight > height * 1.1) { height = sc.scrollHeight; below = 0; above = Infinity; } // earlier turns came (not: measured heights settling)
       if (target >= 0 && at.length) { if (down) below = Math.max(below, sc.scrollTop); else if (at[0].i > target) above = Math.min(above, sc.scrollTop); }
@@ -117,6 +121,7 @@
     var last = -1, same = 0;
     return (function step(n) {
       if (jobs.length) return Promise.resolve(); // a popup is waiting for an answer: it goes first (findTurn loads what it needs)
+      if (sc.scrollTop <= 0) sc.scrollTop = 40; // (a scroll at the top each time, not none: see findTurn)
       sc.scrollTop = 0;
       if (sc.scrollHeight === last) same++; else { same = 0; last = sc.scrollHeight; }
       if (same >= 8 || n <= 0) return Promise.resolve();
