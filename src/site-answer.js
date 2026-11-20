@@ -183,9 +183,6 @@
         onChange: onChange, fromPage: false, tries: 0, finding: false, asked: [] };
       find(l);
     },
-    /** Patch a copy to match a turn's answer / these nodes, once (the stream mirror in chat.js, until it follows). */
-    syncInto: syncInto,
-    syncNodes: syncChildren,
     /**
      * The element of the live original at el's place in its copy (design B, user 2026-11-18): a click there is the
      * site's own — Run, Copy, word wrap, Download, a citation, whatever it adds later — and what it changes comes
