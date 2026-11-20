@@ -1127,6 +1127,31 @@ asyncChecks.push(new Promise(function (done) {
   sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
 })();
 
+// live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
+// not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='list' style='position:relative'><div class='sp' style='height:3000px'></div>" +
+    "<div class='a' data-turn-key='grow-a' style='height:50px'>x</div><div style='height:2000px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 2950;
+  var a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  a.remove(); sc.querySelector(".sp").style.height = "5000px"; // unmounted; 2000 px of earlier turns came above
+  sc.scrollTop = 300;                                            // the site's own place
+  run(3);
+  var at = sc.scrollTop;
+  unlock(); sc.remove();
+  check("a send's hold: the list came back taller above, the reader's turn not mounted — to its place + what came above",
+    Math.abs(at - 4950) <= 60, at); // (an estimate: there its turn mounts and its drift takes over)
+})();
+
 // ...and when the anchor's turn is unmounted and comes back elsewhere in a list the site laid out anew (live N1d): the
 // popups' places are taken at the start of the send, not at the anchor's first sight later (it went 2658 px off)
 (function () {

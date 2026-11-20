@@ -894,6 +894,10 @@
       });
     }
     var savedTop = container.scrollTop;
+    // the list as the send began: if the reader's turn isn't mounted after the site re-laid it bigger (earlier turns
+    // loaded above), its place is where it was plus what came above (live Beta 11-20: the list collapsed, came back
+    // 14 000 px taller, the hold went to the site's own place — an article far above)
+    var startTop = container.scrollTop, startH = container.scrollHeight, lastH = startH;
     var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
@@ -978,6 +982,10 @@
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
           }
+        } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight > startH) {
+          lastH = container.scrollHeight; // (once per height: there it mounts, and the anchor's own drift takes over)
+          var est = startTop + (container.scrollHeight - startH);
+          if (Math.abs(container.scrollTop - est) > container.clientHeight) { container.scrollTop = est; savedTop = est; }
         } else if (container.scrollTop !== savedTop) {
           container.scrollTop = savedTop;
         }
