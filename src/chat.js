@@ -890,7 +890,9 @@
         var fresh = JR.site.scrollContainer();
         if (!fresh) return;
         removeListeners(container);
+        container.classList.remove("jr-holding");
         container = fresh;
+        container.classList.add("jr-holding");
         savedTop = container.scrollTop;
         addListeners(container);
       }
@@ -917,6 +919,7 @@
             // savedTop stays where the user was: ChatGPT re-creates every turn after a send, and a correction made
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
+            glue(anchor); // (the popups moved with the list just scrolled: back to their places, in the same pass)
           }
         } else if (container.scrollTop !== savedTop) {
           container.scrollTop = savedTop;
@@ -926,11 +929,16 @@
     function frame() { correct(); rafId = requestAnimationFrame(frame); }
     rafId = requestAnimationFrame(frame);
     JR.holdNow = correct; // (injectAndSend: right after the site's send)
+    // The browser's own scroll anchoring off while the hold keeps the place (live 11-20, ChatGPT: a turn above
+    // shrank 52 px as the send began; the browser moved the scroll after every look of the hold — the list and the
+    // popup in it 52 px down, drawn for ~0.4 s). The hold does the same for the reader's turn, and puts the popups back.
+    container.classList.add("jr-holding"); // (styles.css: overflow-anchor none)
 
     addListeners(container);
 
     return function unlock() {
       if (JR.holdNow === correct) JR.holdNow = null;
+      container.classList.remove("jr-holding");
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();
