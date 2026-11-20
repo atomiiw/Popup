@@ -2472,6 +2472,12 @@ asyncChecks.push(new Promise(function (done) {
         check("files in the box: one Popup doesn't hold → refused, nothing moved",
           !aside2 && f2.querySelectorAll(".card").length === 2, aside2 + " " + f2.querySelectorAll(".card").length);
         f2.remove();
+        userPaste(["image.png"]); // (ChatGPT's new front end names a pasted image.png by the time: live R1 11-20)
+        var f3 = boxWith(["image(20261120-164031).png"]);
+        var aside3 = JR.setAsideUserFiles(true);
+        check("a pasted image.png that ChatGPT named image(20261120-164031).png: still the user's file (set aside, not refused)",
+          aside3, aside3);
+        f3.remove();
         JR.site.composer = real.comp; JR.site.composerButtons = real.btns; JR.site.composerHasAttachments = real.has; JR.attachToComposer = real.attach;
         if (real.count) JR.site.composerCardCount = real.count; else delete JR.site.composerCardCount;
         window.requestAnimationFrame = realRaf;

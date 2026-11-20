@@ -51,8 +51,9 @@
   function nameMatcher(fileName) {
     var m = /^(.*?)(\.[^.]*)?$/.exec(fileName);
     var esc = function (s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); };
-    // A whole word of the label ("Remove <name>", "<name>"): chart.png never matches piechart.png
-    return new RegExp("(?:^|\\s)(" + esc(m[1]) + "(?: ?\\(\\d+\\))?" + esc(m[2]) + ")(?=\\s|$)");
+    // A whole word of the label ("Remove <name>", "<name>"): chart.png never matches piechart.png. ChatGPT's own suffix:
+    // "image (2).png", and a pasted image.png named "image(20261120-164031).png" (new front end, live R1 11-20)
+    return new RegExp("(?:^|\\s)(" + esc(m[1]) + "(?: ?\\([\\d-]+\\))?" + esc(m[2]) + ")(?=\\s|$)");
   }
 
   /**
@@ -575,7 +576,7 @@
         JR.drainQueue();
         return;
       }
-      // the site takes a moment to drop them (live R1, ChatGPT: sent at once, the message stuck in the box)
+      // the site takes a moment to drop them: the send waits until their cards are gone (its send button may wait too)
       opts.aside = true;
       st.attaching = true;
       var t0 = Date.now(), from = location.href;
