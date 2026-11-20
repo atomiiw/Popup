@@ -246,8 +246,15 @@ async function saveHighlight(opts) {
 async function saveHighlights(list) {
   if (!list.length) return [];
   var recs = list.map(recordFor);
-  await modifyDoc(convKeyForUrl(list[0].url), function (doc) { recs.forEach(function (rec) { addRecord(doc, rec); }); });
-  return recs;
+  // (rebuilt from the conversation: one another tab of the chat stored meanwhile isn't stored twice — audit 11-20)
+  var saved = await modifyDoc(convKeyForUrl(list[0].url), function (doc) {
+    var have = new Set();
+    doc.items.forEach(function (it) { (it.turnKeys || []).forEach(function (k) { have.add(k); }); });
+    var fresh = recs.filter(function (rec) { return !(rec.turnKeys || []).some(function (k) { return have.has(k); }); });
+    fresh.forEach(function (rec) { addRecord(doc, rec); });
+    return fresh;
+  });
+  return saved || [];
 }
 
 /**

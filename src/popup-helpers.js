@@ -1138,8 +1138,9 @@
   /** No turn order to aim with (Claude Code: no conversation read): up from here to the top, then down from here to
    *  the end, a screen at a time, until its turn is mounted (live round 5: ∧ at the bottom opened nothing). */
   function sweepTo(scroller, key, done) {
-    var from = scroller.scrollTop, dir = -1, tries = 0;
+    var from = scroller.scrollTop, dir = -1, tries = 0, gen = navGen;
     (function step() {
+      if (gen !== navGen) return; // another jump, or the popups closed: stop scrolling (up to 20 s otherwise — audit)
       if (JR.site.findTurnByKey(key)) { done(true); return; }
       if (++tries > 200) { done(false); return; }
       if (dir < 0 && scroller.scrollTop <= 0) { dir = 1; scroller.scrollTop = from; }
@@ -1401,7 +1402,7 @@
       };
       (scrollParent === window ? window : scrollParent)
         .addEventListener("scroll", scrollHandler, { passive: true });
-      // a place inside the chat's right edge (Claude Code): checked each second (live round 5: drawn on the page's
+      // a place inside the chat's right edge (Claude Code): checked 4 times a second (shown that soon once the chat has rows) (live round 5: drawn on the page's
       // skeleton, before the chat had its place, the arrows sat in the right panel until the next update; the chat
       // element itself is replaced then, an observer on it saw nothing)
       var side = JR.site.navRight ? setInterval(function () {

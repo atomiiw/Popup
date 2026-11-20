@@ -756,32 +756,41 @@
       records.forEach(function (rec) { (rec.turnKeys || []).forEach(function (k) { byKey[k] = rec; }); });
       var unlinkedTexts = records.filter(function (rec) { return !(rec.turnKeys || []).length; }).map(function (rec) { return rec.text; });
       var made = [], plainAnswer = {}; // turn key → its answer's plain text (once each: was per pair of turns)
+      // ones Popup can never place: stored as hidden, so they're hidden before they're drawn (DeepSeek, claude.ai hide
+      // by stored keys only: each load showed them, then the self-heal pass took them out — a jump; audit 11-20)
+      var never = [];
+      function answerOf(jk) { return jk in plainAnswer ? plainAnswer[jk] : (plainAnswer[jk] = plain((conv.turns[jk] || {}).answer)); }
       conv.order.forEach(function (k, i) {
         var p = JR.parsePopupMessage((conv.turns[k] || {}).question || "");
-        if (!p || byKey[k] || hidden.has(k) || p.wholeResponse || !p.text) return;
+        if (!p || byKey[k] || hidden.has(k)) return;
         if (unlinkedTexts.indexOf(p.text) !== -1) return; // an item without its turn yet: JR.adoptPopupTurn links it
-        var quote = plain(p.text);
-        if (!quote) return;
-        for (var j = i - 1; j >= 0; j--) {
-          var jk = conv.order[j], src = conv.turns[jk] || {};
-          var answer = jk in plainAnswer ? plainAnswer[jk] : (plainAnswer[jk] = plain(src.answer));
-          var at = answer.indexOf(quote);
-          if (at === -1) continue;
-          var parent = JR.isPopupMessage(src.question || "") ? byKey[conv.order[j]] : null;
-          if (JR.isPopupMessage(src.question || "") && !parent) return; // in a popup Popup can't place: leave it
-          // which occurrence: the one inside its sentence, if the sentence is found
-          var sAt = p.sentence ? answer.indexOf(plain(p.sentence)) : -1;
-          if (sAt !== -1 && answer.indexOf(quote, sAt) !== -1) at = answer.indexOf(quote, sAt);
-          var nth = 0;
-          for (var x = answer.indexOf(quote); x !== -1 && x < at; x = answer.indexOf(quote, x + 1)) nth++;
-          var rec = { id: crypto.randomUUID(), quoteId: crypto.randomUUID(), text: p.text, nth: nth, sentence: p.sentence,
-            status: "done", url: url, parentId: parent ? parent.quoteId : null, parentItemId: parent ? parent.id : null,
-            sourceTurnKey: parent ? null : conv.order[j], turnKeys: [k], wholeResponse: false };
-          byKey[k] = rec;
-          made.push(rec);
-          return;
+        var quote = !p.wholeResponse && plain(p.text);
+        if (!quote) { never.push(k); return; }
+        // the nearest earlier answer with its sentence (the quote alone may be in an older answer too), else its quote
+        var sentence = p.sentence ? plain(p.sentence) : "", j = -1;
+        for (var pass = sentence ? 0 : 1; pass < 2 && j < 0; pass++) {
+          for (var c = i - 1; c >= 0; c--) {
+            var a = answerOf(conv.order[c]);
+            if (pass ? a.indexOf(quote) !== -1 : a.indexOf(sentence) !== -1 && a.indexOf(quote, a.indexOf(sentence)) !== -1) { j = c; break; }
+          }
         }
+        if (j < 0) { never.push(k); return; }
+        var jk = conv.order[j], src = conv.turns[jk] || {}, answer = answerOf(jk);
+        var at = answer.indexOf(quote);
+        var parent = JR.isPopupMessage(src.question || "") ? byKey[jk] : null;
+        if (JR.isPopupMessage(src.question || "") && !parent) { never.push(k); return; } // in a popup Popup can't place
+        // which occurrence: the one inside its sentence, if the sentence is found
+        var sAt = sentence ? answer.indexOf(sentence) : -1;
+        if (sAt !== -1 && answer.indexOf(quote, sAt) !== -1) at = answer.indexOf(quote, sAt);
+        var nth = 0;
+        for (var x = answer.indexOf(quote); x !== -1 && x < at; x = answer.indexOf(quote, x + 1)) nth++;
+        var rec = { id: crypto.randomUUID(), quoteId: crypto.randomUUID(), text: p.text, nth: nth, sentence: p.sentence,
+          status: "done", url: url, parentId: parent ? parent.quoteId : null, parentItemId: parent ? parent.id : null,
+          sourceTurnKey: parent ? null : conv.order[j], turnKeys: [k], wholeResponse: false };
+        byKey[k] = rec;
+        made.push(rec);
       });
+      if (never.length) addDeletedTurns(url, never);
       if (!made.length) return;
       saveHighlights(made).then(function () {
         if (gen === restoreGen && location.href === url) JR.restoreHighlights();

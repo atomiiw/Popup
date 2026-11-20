@@ -1900,8 +1900,13 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
             r1.ok && bare(sent1) === bare(msg) && bare(after1) === "mydraftlinetwo" && /my draft\s*\n\s*line two/.test(after1), JSON.stringify([r1, sent1, after1]));
           check("draft in the box: only the Popup question is sent, the draft is back after (textarea)",
             r2.ok && bare(sent2) === bare(msg) && after2 === "ds draft\nsecond", JSON.stringify([r2, sent2, after2]));
-          window.requestAnimationFrame = realRaf;
-          done();
+          run('<textarea name="prompt">kept draft</textarea>', function (b) { return b.value; }, function () {},
+            function (r3, sent3, after3) {
+              check("draft in the box, the send stuck (the site kept the text): the draft is back, not Popup's message (audit)",
+                !r3.ok && after3 === "kept draft", JSON.stringify([r3, after3]));
+              window.requestAnimationFrame = realRaf;
+              done();
+            });
         });
     });
 }, 24900); })); // (its own time: it needs the keyboard focus)
@@ -2333,7 +2338,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 asyncChecks.push(new Promise(function (done) {
   setTimeout(function () {
     function msg(text, sentence, q) { return JR.buildMessage({ question: q || "why?", text: text, sentence: sentence }); }
-    var conv = { order: ["m1", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "m2", "p8"], turns: {
+    var conv = { order: ["m1", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "m2", "p8", "m3", "p9"], turns: {
       m1: { question: "tell me", answer: "The **cell** wall is strong. Photosynthesis makes sugar." },
       p1: { question: msg("cell wall", "The cell wall is strong."), answer: "A rigid layer around the cell." },
       p2: { question: msg("makes sugar"), answer: "deleted one" },
@@ -2344,13 +2349,17 @@ asyncChecks.push(new Promise(function (done) {
       p7: { question: msg("strong"), answer: "an item waits for it" },
       m2: { question: "more", answer: "a cat sat. the cat ran." },
       p8: { question: msg("cat", "the cat ran."), answer: "second cat" },
+      m3: { question: "again", answer: "Another wall here." },
+      p9: { question: msg("wall", "The cell wall is strong."), answer: "older one" },
     } };
     var store = [{ id: "s6", quoteId: "q6", text: "Photosynthesis", status: "done", turnKeys: ["p6"], sourceTurnKey: "m1" },
                  { id: "s7", quoteId: "q7", text: "strong", status: "pending", turnKeys: [] }], saved = [];
     var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlights, chat: JR.site.isChatPage,
-      conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, adopt: JR.adoptPopupTurn };
+      conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, adopt: JR.adoptPopupTurn, del: window.addDeletedTurns };
+    var hiddenNow = [];
+    window.addDeletedTurns = function (u, keys) { hiddenNow = hiddenNow.concat(keys); return Promise.resolve(); };
     window.getHighlightsByUrl = function () { return Promise.resolve(store.slice()); };
-    window.getHiddenTurnKeys = function () { return Promise.resolve(["p2", "p6"]); };
+    window.getHiddenTurnKeys = function () { return Promise.resolve(["p2", "p6"].concat(hiddenNow)); };
     var writes = 0;
     window.saveHighlights = function (list) { writes++; list.forEach(function (r) { saved.push(r); store.push(r); }); return Promise.resolve(list); };
     JR.site.isChatPage = function () { return true; };
@@ -2367,9 +2376,13 @@ asyncChecks.push(new Promise(function (done) {
         by.p3 && by.p1 && by.p3.parentId === by.p1.quoteId && by.p3.parentItemId === by.p1.id && !by.p3.sourceTurnKey, JSON.stringify(by.p3));
       check("rebuild: the occurrence inside its sentence (the second \"cat\")", by.p8 && by.p8.nth === 1 && by.p8.sourceTurnKey === "m2", JSON.stringify(by.p8));
       check("rebuild: not for one hidden on purpose, reply-to-all, a quote not found, one already stored, one an item waits for",
-        !by.p2 && !by.p4 && !by.p5 && !by.p6 && !by.p7 && saved.length === 3, Object.keys(by).join());
+        !by.p2 && !by.p4 && !by.p5 && !by.p6 && !by.p7 && saved.length === 4, Object.keys(by).join());
+      check("rebuild: the nearest answer with its sentence, not a later one with the quote alone (audit 11-20)",
+        by.p9 && by.p9.sourceTurnKey === "m1", JSON.stringify(by.p9));
+      check("rebuild: the ones never placed (reply-to-all, quote not found) stored hidden, drawn hidden next time (audit)",
+        hiddenNow.join() === "p4,p5", hiddenNow.join());
       check("rebuild: all of them in one write (perf audit: ~100 whole-document writes)", writes === 1, writes);
-      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save]].forEach(function (g) {
+      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save], ["addDeletedTurns", real.del]].forEach(function (g) {
         if (g[1]) window[g[0]] = g[1]; else delete window[g[0]];
       });
       JR.site.isChatPage = real.chat; JR.qa.conversation = real.conv; JR.qa.popupTurnsFromApi = real.api; JR.qa.ensure = real.ensure; JR.adoptPopupTurn = real.adopt;
@@ -2412,6 +2425,9 @@ asyncChecks.push(new Promise(function (done) {
     JR.attachToComposer = function (files, cb) { handed.push(files.map(function (f) { return f.name; }).join()); cb({ sent: files, failed: [] }); };
     userPaste(["fa.png", "fb.png"]);
     var f1 = boxWith(["fa.png", "fb.png"]);
+    var checked = JR.setAsideUserFiles(true), stay = f1.querySelectorAll(".card").length; // (at the click: only asked)
+    check("files in the box, at the click: only checked, they stay in the box until the real send (audit: a queued send)",
+      checked && stay === 2 && !document.querySelector("[data-jr-hold]"), checked + " " + stay);
     var aside = JR.setAsideUserFiles();
     var left = f1.querySelectorAll(".card").length, held = !!f1.querySelector("[data-jr-hold]") || f1.hasAttribute("data-jr-hold");
     JR.injectAndSend("Regarding this part of your response: a question long enough to probe", function (r) {

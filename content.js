@@ -468,6 +468,7 @@
     var early = document.getElementById("jr-early-hide");
     if (early) early.remove();
     st.messageQueue.length = 0;
+    if (JR.dropAsideFiles) JR.dropAsideFiles();
     if (st.navWidget) {
       if (st.navWidget._jrScrollCleanup) st.navWidget._jrScrollCleanup();
       st.navWidget.remove();

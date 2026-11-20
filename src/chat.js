@@ -103,24 +103,28 @@
   document.addEventListener("drop", function (e) { noteUserFiles(e.dataTransfer && e.dataTransfer.files, e); }, true);
   document.addEventListener("change", function (e) { if (e.target && e.target.type === "file") noteUserFiles(e.target.files, e); }, true);
 
-  /** Set every file in the site's box aside (true), or none when one isn't a file Popup holds (false: refused as before). */
-  JR.setAsideUserFiles = function () {
+  /** Set every file in the site's box aside (true), or none when one isn't a file Popup holds (false: refused as before).
+   *  checkOnly: only whether they could be (at the click; they leave the box at the real send: a queued send took them
+   *  out early, and a file the user added meanwhile went out with it, hidden — audit 11-20). */
+  JR.setAsideUserFiles = function (checkOnly) {
     var composer = JR.site.composer();
     if (!composer || !JR.site.composerCardCount) return false;
     var count = JR.site.composerCardCount(composer);
     if (!count) { userFiles = []; return true; } // (none in the box: the ones noted were taken out)
     var cards = cardsFor(composer, userFiles.slice().reverse(), []); // (the newest copy of a name first)
     if (cards.size !== count) return false;
+    if (checkOnly) return true;
     // the box keeps its height while they're out: shorter, it gave the chat more room and the reader at the bottom
     // saw the chat move down ~196 px and back (live round 5, claude.ai)
     var box = attachBox(composer);
     if (box) { box.style.setProperty("--jr-hold-h", box.offsetHeight + "px"); box.setAttribute("data-jr-hold", ""); }
     var moved = [];
-    cards.forEach(function (c, f) { if (c.remove) { c.remove.click(); moved.push(f); } });
-    if (moved.length !== count) { if (moved.length) JR.attachToComposer(moved, releaseHold); else releaseHold(); return false; }
+    cards.forEach(function (c, f) { c.remove.click(); moved.push(f); }); // (a card's name was read from its remove button)
     asideFiles = (asideFiles || []).concat(moved.reverse());
     return true;
   };
+  /** Another chat opened: files set aside belong to the one left (never into this one's box). */
+  JR.dropAsideFiles = function () { asideFiles = null; releaseHold(); };
   function releaseHold() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-jr-hold]"), function (b) { b.removeAttribute("data-jr-hold"); });
   }
@@ -129,7 +133,8 @@
     if (!asideFiles || !asideFiles.length) { releaseHold(); return; }
     var files = asideFiles;
     asideFiles = null;
-    JR.attachToComposer(files, releaseHold);
+    st.attaching = true; // (the next queued send waits: set aside mid-upload, the cards don't match yet)
+    JR.attachToComposer(files, function () { st.attaching = false; releaseHold(); });
   }
 
   /** Show ChatGPT's composer again after Popup handed it files. */
@@ -309,7 +314,7 @@
 
   // The user's own half-typed message in the site's box (TODO 4e): set aside for a Popup send — only the question goes
   // — and put back once the site has cleared the box. "" when there is none.
-  var lastDraft = "";
+  var lastDraft = "", lastHadAside = false; // lastHadAside: the last send had the user's files set aside
   function readDraft(composer) {
     var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
     return t.trim() ? t.replace(/\n+$/, "") : "";
@@ -366,6 +371,7 @@
 
     chatInput.focus({ preventScroll: true });
     var draft = lastDraft = readDraft(chatInput);
+    lastHadAside = !!(asideFiles && asideFiles.length);
     if (draft) clearComposer(chatInput, []), chatInput.focus({ preventScroll: true });
     if (draft && bare(JR.site.composerText(chatInput))) { // never sent along with the question
       putDraftBack(chatInput, draft);
@@ -394,9 +400,9 @@
         var left = JR.site.composerText(chatInput);
         if (left.trim().length === 0 || tries > 20) {
           var stuck = bare(left).indexOf(probe) !== -1;
-          if (!stuck) putDraftBack(chatInput, draft); // (still hidden: it comes back as it was)
+          putDraftBack(chatInput, draft); // (still hidden: it comes back as it was; stuck: in place of Popup's text)
           unhideComposer();
-          if (!stuck) handBackFiles();
+          handBackFiles();
           onDone(stuck ? report(false, "submit", "the message stayed in the input after " + how)
                        : report(true, "sent", how));
           return;
@@ -560,6 +566,14 @@
   };
 
   function sendQueued(opts) {
+    // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
+    if (!opts.attached && JR.site.composerHasAttachments(JR.site.composer()) && !JR.setAsideUserFiles()) {
+      JR.prepareSend(opts.waitOpts);
+      report(false, "files", "the user's own files in " + JR.site.label + "'s box can't be set aside");
+      immediateTimeout(opts.waitOpts);
+      JR.drainQueue();
+      return;
+    }
     // Files first: the answer watch's timers (refusal check, quick timeout) start
     // only when the message is really sent, not while ChatGPT uploads.
     if (opts.files && opts.files.length && !opts.attached) {
@@ -574,6 +588,7 @@
         if (location.href !== startUrl) { // the user opened another chat meanwhile: never send there
           removeComposerAttachments(JR.site.composer(), res.sent);
           endAttaching();
+          JR.dropAsideFiles();
           return;
         }
         opts.attached = res;
@@ -588,6 +603,7 @@
     // Offline check: skip injection entirely, save "failed" at once
     if (!navigator.onLine) {
       if (opts.attached) { removeComposerAttachments(JR.site.composer(), opts.attached.sent); endAttaching(); }
+      handBackFiles();
       report(false, "offline", "the browser is offline");
       immediateTimeout(w);
       JR.drainQueue();
@@ -1385,8 +1401,9 @@
           clearComposer(composer, files);
           putDraftBack(composer, lastDraft); // (the user's own text came back to the box with it)
           handBackFiles();
-          // With files, a resend would go out as text only: fail instead (Retry resends the files).
-          if (rejected.count >= 1 || (files && files.length)) {
+          // With files, a resend would go out as text only: fail instead (Retry resends the files). With the user's
+          // own files set aside, they were handed back at the first send: a resend would carry them, hidden (audit)
+          if (rejected.count >= 1 || (files && files.length) || lastHadAside) {
             st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };
             finishWithTimeout();
             return;

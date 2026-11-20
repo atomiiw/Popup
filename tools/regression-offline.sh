@@ -19,6 +19,9 @@ line "A1 syntax (all scripts)" "$([ -z "$bad" ] && echo PASS || echo "FAIL:$bad"
 out=$("$NODE" tools/qa-content-test.js "$PWD" 2>&1 | tail -1)
 line "A2 message format (qa-content)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
 
+out=$("$NODE" tools/storage-test.js "$PWD" 2>&1 | tail -1)
+line "A2b storage (two tabs, rebuild)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
+
 out=$(osascript -l JavaScript tools/net-tap-test.js "$PWD" 2>&1 | tail -1)
 line "A3 ChatGPT data filter (net-tap)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
 
