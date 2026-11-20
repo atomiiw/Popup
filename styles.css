@@ -150,8 +150,9 @@ body.dark /* DeepSeek */ {
   /* As tall as its content, up to the same share of the window on every screen (drag 40-70vh,
      JR.addResizeHandlers); a long answer scrolls inside. On a tiny window the limit stops at
      the quote + question (--jr-upper-h, JR.watchUpper) + a 3-line answer (+ padding, border;
-     the 3 lines: .jr-popup-response min-height, change both). */
-  max-height: max(var(--jr-popup-h, 70vh), calc(var(--jr-upper-h, 0px) + 3 * 1.6 * 16px + 29px));
+     the 3 lines: .jr-popup-response min-height, change both). Below a highlight near the end of a short chat it stops
+     where the chat ends (--jr-popup-cap, JR.positionPopup). */
+  max-height: max(min(var(--jr-popup-h, 70vh), var(--jr-popup-cap, 100vh)), calc(var(--jr-upper-h, 0px) + 3 * 1.6 * 16px + 29px));
   background: var(--jr-bg);
   border: none;
   box-shadow: 0 0 0 1px var(--jr-border), var(--jr-shadow);
@@ -165,6 +166,8 @@ body.dark /* DeepSeek */ {
   display: flex;
   flex-direction: column;
 }
+/* capBelow (popup-helpers.js): for one measurement, never painted — does a taller popup make the chat longer? */
+.jr-popup.jr-popup--probe { max-height: none !important; height: 300vh !important; }
 /* Put back after ChatGPT re-rendered what held it (JR.placePopup): no second fade-in */
 .jr-popup.jr-popup--back { animation: none; }
 

@@ -377,8 +377,15 @@
     var scroller = JR.site.scrollContainer();
     var unlock = scroller ? JR.lockScroll(scroller, JR.viewAnchor()) : null;
     // Page-world guard (scroll-guard.js): the site's own scroll-to-new-turn is ignored while set.
-    document.documentElement.setAttribute("data-jr-scroll-lock", String(Date.now()));
+    var html = document.documentElement;
+    html.setAttribute("data-jr-scroll-lock", String(Date.now()));
+    // it lapses after 2 min (a lost unlock); an answer can take longer (thinking): renewed while its watch runs — the
+    // watch ends on its own (IDLE / GENERATING limits) — else the site scrolled again while lockScroll still held the view
+    var renew = setInterval(function () {
+      if (st.responseWatchActive && html.hasAttribute("data-jr-scroll-lock")) html.setAttribute("data-jr-scroll-lock", String(Date.now()));
+    }, 30000);
     return function () {
+      clearInterval(renew);
       // claude.ai keeps following its newest message after a send (pinned to the bottom): let go first, or its next
       // change scrolls the reader there once the guard is off (live 2026-11-19, Claude Code: to the end of the chat)
       if (JR.site.unpin) JR.site.unpin();

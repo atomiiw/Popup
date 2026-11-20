@@ -177,6 +177,14 @@ var roDone = Promise.resolve().then(function () {
   check("list window: offsetHeight while measuring = real + 60 × hidden items ahead (2–5)", a === 100 + 240, a);
   check("list window: with a hidden answer to reach (id 50) it reaches that far", b === 100 + 60 * 51, b);
   check("list window: any other read is the real height", list.offsetHeight === 100, list.offsetHeight);
+  // live 2026-11-19 22:51: DeepSeek's follow check runs in the same measuring; 200 px up from the bottom (inside the
+  // 240 px extra) it read "at the bottom" and pulled the reader back down after a reload
+  list.style.overflowY = "auto"; list.querySelector(".ds-virtual-list-visible-items").style.height = "1000px"; list.scrollTop = 700;
+  var follow = measuring([list], function () { return list.scrollTop + list.offsetHeight >= list.scrollHeight - 1; });
+  list.scrollTop = 900;
+  var atEnd = measuring([list], function () { return list.scrollTop + list.offsetHeight >= list.scrollHeight - 1; });
+  check("list window: DeepSeek's at-the-bottom check stays true to the real scroll (200 px up: no; at the end: yes)", follow === false && atEnd === true && list.scrollHeight === 1000, [follow, atEnd, list.scrollHeight].join());
+  list.querySelector(".ds-virtual-list-visible-items").style.height = ""; list.style.overflowY = ""; list.scrollTop = 0;
   // live 2026-11-19 (B12/B14 blank at the bottom): DeepSeek's scroll area sets --container-height from offsetHeight in
   // the same measuring; its scrollbar track, that tall and following the scroll, made the chat longer and blank below
   list.insertAdjacentHTML("afterbegin", '<div class="ds-scroll-area__gutters"></div>');

@@ -227,6 +227,10 @@
   // The getter is on the list element itself: DeepSeek's fp.min.js checks that HTMLElement.prototype.offsetHeight is native.
   var NativeRO = window.ResizeObserver;
   var heightDesc = typeof HTMLElement === "function" && Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+  // its "at the bottom → follow" check (scrollTop + offsetHeight >= scrollHeight - 1, onMessageListResize, main.js
+  // 2026-11-19) runs in the same measuring: scrollHeight grows by as much, else 240 px up from the bottom read as the
+  // bottom and the next redraw pulled the reader back down (user, 2026-11-19 22:51, after a reload with 2 popups)
+  var scrollDesc = typeof Element === "function" && Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight");
   if (NativeRO && heightDesc && heightDesc.get) {
     var measured = []; // { el, cb, obs, extra }: lists DeepSeek measures
     var hidSrc = null, hid = new Set();
@@ -250,6 +254,7 @@
       els.forEach(function (el) {
         if (!("_jrTall" in el)) {
           Object.defineProperty(el, "offsetHeight", { configurable: true, get: function () { var h = heightDesc.get.call(this); return this._jrTall ? h + this._jrExtra : h; } });
+          if (scrollDesc && scrollDesc.get) Object.defineProperty(el, "scrollHeight", { configurable: true, get: function () { var h = scrollDesc.get.call(this); return this._jrTall ? h + this._jrExtra : h; } });
         }
         el._jrExtra = extraFor(el);
         el._jrTall = true;

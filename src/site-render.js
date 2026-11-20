@@ -282,7 +282,8 @@
     fd.addEventListener("keydown", function (e) {
       e.preventDefault(); e.stopPropagation();
       focusUntil = 0; giveFocusBack();
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+        shiftKey: e.shiftKey, altKey: e.altKey, repeat: e.repeat, bubbles: true, cancelable: true })); // (Cmd+C stays Cmd+C)
     }, true);
   }
   document.addEventListener("focusin", function (e) { if (!frame || e.target !== frame) lastFocus = e.target; }, true);

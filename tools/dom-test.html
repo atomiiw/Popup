@@ -685,6 +685,35 @@ JR.positionPopup(p16d, place3(C3, 0.6 * W3, 0), host3, null, []);
 check("R26: a short-answer popup picks its side for 70vh (above can't hold it → below)", p16d._jrLockedDirection === "below", p16d._jrLockedDirection);
 p16d.remove();
 
+// 2026-11-20 (user, DeepSeek's first sentence): ChatGPT / DeepSeek clip a popup hanging past the end of the list, so the
+// page can't scroll to it — below a highlight in a short chat it stops where the chat can still scroll to; unclipped, 70vh
+host3.style.overflow = "clip";
+var pcap = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(pcap, place3(W3 + 50, 0.5 * W3, 0), host3, null, []);
+var reachCap = JR.site.visibleBand().bottom + (sc3.scrollHeight - sc3.scrollTop - sc3.clientHeight);
+check("short chat, list clips: a popup below stops where the chat ends (its end and bottom edge reachable)",
+  pcap._jrLockedDirection === "below" && pcap.getBoundingClientRect().bottom <= reachCap - 7 && pcap.offsetHeight > 100,
+  pcap._jrLockedDirection + " bottom " + Math.round(pcap.getBoundingClientRect().bottom) + " reach " + Math.round(reachCap) + " h " + pcap.offsetHeight);
+pcap.remove(); host3.style.overflow = "";
+var pfree = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(pfree, place3(W3 + 50, 0.5 * W3, 0), host3, null, []);
+check("short chat, list doesn't clip (the popup makes the page longer): full 70vh", Math.abs(pfree.offsetHeight - H70) <= 1 && !pfree.style.getPropertyValue("--jr-popup-cap"), pfree.offsetHeight + " vs " + H70);
+pfree.remove();
+
+// 2026-11-20 (user, Claude Code: middle-upper highlight at the end of the chat opened below, behind the composer): the
+// side where it can be seen whole comes first; only when both can, high on screen → below
+host3.style.overflow = "clip";
+var pdir = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.4 * W3, 400), host3, null, []);
+check("end of the chat, list clips, middle-upper highlight: below would sit behind the composer → above",
+  pdir._jrLockedDirection === "above", pdir._jrLockedDirection);
+pdir.remove(); host3.style.overflow = "";
+var pdir2 = popup3(new Array(200).join("<p>line</p>"));
+JR.positionPopup(pdir2, place3(W3 + 400, 400 + 0.4 * W3, 400), host3, null, []);
+check("...the same where the popup makes the page longer: both sides fit → high on screen → below",
+  pdir2._jrLockedDirection === "below", pdir2._jrLockedDirection);
+pdir2.remove();
+
 // R19/R20: drag the far edge (height, 40-70vh, only the answer area changes) or a far corner (both)
 function drag3(p, x, y, dx, dy) {
   p.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
@@ -1991,6 +2020,27 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     done();
   }, 4500);
 }, 25000); }));
+
+// 2026-11-19: the scroll guard lapses after 2 min; an answer that takes longer (thinking) keeps it while its watch runs
+(function () {
+  var st = JR.state, html = document.documentElement, realSet = window.setInterval, realClear = window.clearInterval, tick = null, cleared = false;
+  window.setInterval = function (fn) { tick = fn; return 4242; };
+  window.clearInterval = function (id) { if (id === 4242) cleared = true; else realClear(id); };
+  var w = {};
+  try { JR.prepareSend(w); } finally { window.setInterval = realSet; window.clearInterval = realClear; }
+  var was = st.responseWatchActive;
+  html.setAttribute("data-jr-scroll-lock", "1");
+  st.responseWatchActive = true; tick && tick();
+  var renewed = Number(html.getAttribute("data-jr-scroll-lock")) > Date.now() - 5000;
+  html.setAttribute("data-jr-scroll-lock", "1");
+  st.responseWatchActive = false; tick && tick();
+  var idleKept = html.getAttribute("data-jr-scroll-lock") === "1";
+  window.clearInterval = function (id) { if (id === 4242) cleared = true; else realClear(id); };
+  try { w.unlockScroll(); } finally { window.clearInterval = realClear; }
+  st.responseWatchActive = was; JR.unfreezeChat(); JR.setTailHidden(false);
+  check("scroll guard: renewed while the answer watch runs, not after; the unlock stops renewing and lifts it",
+    renewed && idleKept && cleared && !html.hasAttribute("data-jr-scroll-lock"), [renewed, idleKept, cleared, html.getAttribute("data-jr-scroll-lock")].join());
+})();
 
 Promise.all(asyncChecks).then(function () {
   JR.siteAnswer.stop(); // (one a test left live keeps looking for its original)
