@@ -272,8 +272,10 @@
      *  right edge there, not hidden as for a sidebar that was opened (live round 4, B17: no arrows on Claude Code at all).
      *  Px from the window's right edge; null elsewhere. */
     navRight: function () {
+      if (!/^\/code\//.test(location.pathname)) return null;
       var sc = scroller();
-      if (!sc || !/^\/code\//.test(location.pathname)) return null;
+      // -1: not laid out yet (the page's skeleton, no rows: the arrows went to the right panel, then jumped — live round 5)
+      if (!sc || !sc.querySelector(C.row)) return -1;
       return Math.max(0, Math.round(window.innerWidth - sc.getBoundingClientRect().right)) + 24;
     },
     /** On screen: from the scroller's top (below the chat header laid over it) to the composer box's top. */

@@ -1378,9 +1378,9 @@
       return;
     }
 
-    // Sidebar closed — ensure widget is visible
-    if (st.navWidget) st.navWidget.style.display = "";
-    var navRight = JR.site.navRight ? JR.site.navRight() : null; // (Claude Code: inside the chat's right edge)
+    var navRight = JR.site.navRight ? JR.site.navRight() : null; // (Claude Code: inside the chat's right edge; -1: not yet)
+    // Sidebar closed — ensure widget is visible (once its place is known)
+    if (st.navWidget) st.navWidget.style.display = navRight === -1 ? "none" : "";
 
     if (!st.navWidget) {
       st.navWidget = buildNavWidget();
@@ -1406,8 +1406,10 @@
       // element itself is replaced then, an observer on it saw nothing)
       var side = JR.site.navRight ? setInterval(function () {
         var r = JR.site.navRight();
-        if (st.navWidget && r != null && st.navWidget.style.right !== r + "px") st.navWidget.style.right = r + "px";
-      }, 1000) : 0;
+        if (!st.navWidget || r == null || r === -1) return;
+        if (st.navWidget.style.right !== r + "px") st.navWidget.style.right = r + "px";
+        if (st.navWidget.style.display === "none" && !JR.isRightSidebarOpen()) st.navWidget.style.display = "";
+      }, 250) : 0;
       st.navWidget._jrScrollCleanup = function () {
         (scrollParent === window ? window : scrollParent)
           .removeEventListener("scroll", scrollHandler);
@@ -1416,7 +1418,8 @@
     }
 
     st.navWidget._jrIds = ids;
-    var right = navRight == null ? "" : navRight + "px";
+    if (navRight === -1) st.navWidget.style.display = "none";
+    var right = navRight == null || navRight === -1 ? "" : navRight + "px";
     if (st.navWidget.style.right !== right) st.navWidget.style.right = right;
 
     var currentIdx = findCurrentL1Index(ids);
