@@ -299,12 +299,20 @@
     var again = function () { // measure again where the number changed (after a scroll, new hidden keys, a need)
       measured = measured.filter(function (m) { return m.el.isConnected; });
       measured.forEach(function (m) {
+        var stale = false;
         var tell = function (all) { withTall([m.el], function () { m.cb.call(m.obs, [{ target: m.el, contentRect: m.el.getBoundingClientRect() }], m.obs); }, all); };
-        // the hidden set changed (they came, more came) and the list has items: the whole list once, then the window
-        // again after its items had a frame to measure themselves
+        // newly hidden items DeepSeek may still count at their old height (not on the page: a reload, the self-heal)
+        // and the list has items: the whole list once, then the window again after its items had a frame to measure
+        // themselves. Not for one hidden while on the page — a send's new turn, measured there (perf audit: the whole
+        // list, ~0.7 s, on every send)
         var hiddenNow = hiddenIds();
         if (hiddenNow.size && m.allFor !== hidSig && m.el.querySelector("[data-virtual-list-item-key]")) {
+          var seen = m.allKeys || new Set();
+          hiddenNow.forEach(function (k) { if (!stale && !seen.has(k) && !m.el.querySelector('[data-virtual-list-item-key="' + k + '"]')) stale = true; });
           m.allFor = hidSig;
+          m.allKeys = new Set(hiddenNow);
+        }
+        if (stale) {
           tell(true);
           setTimeout(soon, 120);
           return;

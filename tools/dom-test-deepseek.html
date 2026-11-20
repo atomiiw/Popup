@@ -226,7 +226,22 @@ function allCheck() {
         var later = calls.slice(after.length);
         check("list window: hidden items known → the whole list once, then the window again; the same keys → not again",
           after[0] === "all" && after.indexOf("window") > 0 && later.indexOf("all") === -1, JSON.stringify([after, later]));
-        list.remove(); rules.remove(); done();
+        // perf audit: a send hides its new turn while it is on the page — measured there, no whole-list pass (~0.7 s live)
+        var n0 = calls.length;
+        rules.textContent += ' [data-virtual-list-item-key="1"] { height: 0 }';
+        N.again();
+        setTimeout(function () {
+          var sent = calls.slice(n0);
+          // ...one hidden that isn't on the page (a reload's self-heal): the whole list again
+          rules.textContent += ' [data-virtual-list-item-key="9"] { height: 0 }';
+          N.again();
+          setTimeout(function () {
+            var healed = calls.slice(n0 + sent.length);
+            check("list window: a newly hidden item on the page → no whole-list pass; one not on the page → the whole list",
+              sent.indexOf("all") === -1 && healed[0] === "all", JSON.stringify([sent, healed]));
+            list.remove(); rules.remove(); done();
+          }, 300);
+        }, 300);
       }, 300);
     }, 400);
   });

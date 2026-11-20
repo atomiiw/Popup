@@ -2227,11 +2227,12 @@ asyncChecks.push(new Promise(function (done) {
     } };
     var store = [{ id: "s6", quoteId: "q6", text: "Photosynthesis", status: "done", turnKeys: ["p6"], sourceTurnKey: "m1" },
                  { id: "s7", quoteId: "q7", text: "strong", status: "pending", turnKeys: [] }], saved = [];
-    var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlight, chat: JR.site.isChatPage,
+    var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlights, chat: JR.site.isChatPage,
       conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, adopt: JR.adoptPopupTurn };
     window.getHighlightsByUrl = function () { return Promise.resolve(store.slice()); };
     window.getHiddenTurnKeys = function () { return Promise.resolve(["p2", "p6"]); };
-    window.saveHighlight = function (r) { saved.push(r); store.push(r); return Promise.resolve(r); };
+    var writes = 0;
+    window.saveHighlights = function (list) { writes++; list.forEach(function (r) { saved.push(r); store.push(r); }); return Promise.resolve(list); };
     JR.site.isChatPage = function () { return true; };
     JR.qa.conversation = function () { return Promise.resolve(conv); };
     JR.qa.popupTurnsFromApi = function () { return Promise.resolve([]); };
@@ -2247,7 +2248,8 @@ asyncChecks.push(new Promise(function (done) {
       check("rebuild: the occurrence inside its sentence (the second \"cat\")", by.p8 && by.p8.nth === 1 && by.p8.sourceTurnKey === "m2", JSON.stringify(by.p8));
       check("rebuild: not for one hidden on purpose, reply-to-all, a quote not found, one already stored, one an item waits for",
         !by.p2 && !by.p4 && !by.p5 && !by.p6 && !by.p7 && saved.length === 3, Object.keys(by).join());
-      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlight", real.save]].forEach(function (g) {
+      check("rebuild: all of them in one write (perf audit: ~100 whole-document writes)", writes === 1, writes);
+      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlights", real.save]].forEach(function (g) {
         if (g[1]) window[g[0]] = g[1]; else delete window[g[0]];
       });
       JR.site.isChatPage = real.chat; JR.qa.conversation = real.conv; JR.qa.popupTurnsFromApi = real.api; JR.qa.ensure = real.ensure; JR.adoptPopupTurn = real.adopt;

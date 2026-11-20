@@ -48,6 +48,7 @@ function convKeyForUrl(url) {
 
 var _writeChain = Promise.resolve();
 var _docCache = {}; // storage key → doc (current page's conversations only)
+var _tabToken = Math.random().toString(36).slice(2), _writeCount = 0, _lastWrite = {}; // storage key → this tab's last write
 
 function emptyDoc() {
   return { v: 2, items: [], hidden: [] };
@@ -69,6 +70,8 @@ function modifyDoc(key, fn) {
     var t0 = performance.now();
     var doc = await readDoc(key);
     var out = fn(doc);
+    doc.w = _tabToken + ":" + (++_writeCount); // this tab's write (onChanged below keeps the cache for it)
+    _lastWrite[key] = doc.w;
     await chrome.storage.local.set({ [key]: doc });
     if (typeof JR !== "undefined" && JR.perf) JR.perf.time("storageWrite", Math.round(performance.now() - t0));
     return out;
@@ -81,7 +84,8 @@ function modifyDoc(key, fn) {
 try {
   chrome.storage.onChanged.addListener(function (changes, area) {
     if (area !== "local") return;
-    Object.keys(changes).forEach(function (k) { delete _docCache[k]; });
+    // (Chrome tells every tab of every write, this one's own too: its cache is that write — kept)
+    Object.keys(changes).forEach(function (k) { var v = changes[k].newValue; if (!(v && v.w && v.w === _lastWrite[k])) delete _docCache[k]; });
   });
 } catch (e) { /* context invalidated */ }
 
@@ -199,8 +203,8 @@ function migrateLegacyOnce() {
  * Save a new highlight item (one version). Content fields in opts are accepted
  * for call-site compatibility but NOT stored.
  */
-async function saveHighlight(opts) {
-  var rec = {
+function recordFor(opts) {
+  return {
     id: opts.id || crypto.randomUUID(),
     quoteId: opts.quoteId || crypto.randomUUID(),
     text: opts.text,
@@ -218,18 +222,32 @@ async function saveHighlight(opts) {
     attachments: opts.attachments || undefined, // how many files the question carried (not the files)
     createdAt: Date.now(),
   };
-  await modifyDoc(convKeyForUrl(opts.url), function (doc) {
-    // A new version (edit/retry) is the same highlight: keep where its text was.
-    if (!rec.nth) {
-      var first = doc.items.find(function (it) { return it.quoteId === rec.quoteId && it.nth; });
-      if (first) rec.nth = first.nth;
-    }
-    if (rec.active) {
-      doc.items.forEach(function (it) { if (it.quoteId === rec.quoteId) it.active = false; });
-    }
-    doc.items.push(rec);
-  });
+}
+
+function addRecord(doc, rec) {
+  // A new version (edit/retry) is the same highlight: keep where its text was.
+  if (!rec.nth) {
+    var first = doc.items.find(function (it) { return it.quoteId === rec.quoteId && it.nth; });
+    if (first) rec.nth = first.nth;
+  }
+  if (rec.active) {
+    doc.items.forEach(function (it) { if (it.quoteId === rec.quoteId) it.active = false; });
+  }
+  doc.items.push(rec);
+}
+
+async function saveHighlight(opts) {
+  var rec = recordFor(opts);
+  await modifyDoc(convKeyForUrl(opts.url), function (doc) { addRecord(doc, rec); });
   return rec;
+}
+
+/** Several items of one conversation (opts.url) in one write — a rebuild of ~100 was ~100 whole-document writes. */
+async function saveHighlights(list) {
+  if (!list.length) return [];
+  var recs = list.map(recordFor);
+  await modifyDoc(convKeyForUrl(list[0].url), function (doc) { recs.forEach(function (rec) { addRecord(doc, rec); }); });
+  return recs;
 }
 
 /**

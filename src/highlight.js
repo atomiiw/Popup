@@ -753,7 +753,7 @@
       var byKey = {}; // turn key → its stored item (for a nested one's parent)
       records.forEach(function (rec) { (rec.turnKeys || []).forEach(function (k) { byKey[k] = rec; }); });
       var unlinkedTexts = records.filter(function (rec) { return !(rec.turnKeys || []).length; }).map(function (rec) { return rec.text; });
-      var made = [];
+      var made = [], plainAnswer = {}; // turn key → its answer's plain text (once each: was per pair of turns)
       conv.order.forEach(function (k, i) {
         var p = JR.parsePopupMessage((conv.turns[k] || {}).question || "");
         if (!p || byKey[k] || hidden.has(k) || p.wholeResponse || !p.text) return;
@@ -761,7 +761,8 @@
         var quote = plain(p.text);
         if (!quote) return;
         for (var j = i - 1; j >= 0; j--) {
-          var src = conv.turns[conv.order[j]] || {}, answer = plain(src.answer);
+          var jk = conv.order[j], src = conv.turns[jk] || {};
+          var answer = jk in plainAnswer ? plainAnswer[jk] : (plainAnswer[jk] = plain(src.answer));
           var at = answer.indexOf(quote);
           if (at === -1) continue;
           var parent = JR.isPopupMessage(src.question || "") ? byKey[conv.order[j]] : null;
@@ -780,7 +781,7 @@
         }
       });
       if (!made.length) return;
-      Promise.all(made.map(saveHighlight)).then(function () {
+      saveHighlights(made).then(function () {
         if (gen === restoreGen && location.href === url) JR.restoreHighlights();
       });
     });

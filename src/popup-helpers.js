@@ -1141,7 +1141,8 @@
   var navRecords = null, navPos = new Map(), navAsked = new Set(), navConv = null;
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
     // a highlight added or deleted: counted again at once, not at the next press
-    chrome.storage.onChanged.addListener(function () { navRecords = null; JR.updateNavWidget(); });
+    // (this conversation's only: every tab hears every write, of every chat)
+    chrome.storage.onChanged.addListener(function (changes) { if (!changes[JR_HOST.convKey()]) return; navRecords = null; JR.updateNavWidget(); });
   }
   function records() {
     var conv = JR_HOST.convKey(); // another conversation (the sites move by pushState, not popstate): its own records
@@ -1478,7 +1479,7 @@
   // storage changes (the outline is marked every 500 ms, so a late read corrects itself)
   var msgRecords = null, msgRecordsUrl = null, msgKept = new WeakMap(); // records → messages that have a stored item
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener(function () { msgRecords = null; });
+    chrome.storage.onChanged.addListener(function (changes) { if (changes[JR_HOST.convKey()]) msgRecords = null; });
   }
   function storedItems() {
     if (msgRecordsUrl !== location.pathname) { msgRecords = null; msgRecordsUrl = location.pathname; }
