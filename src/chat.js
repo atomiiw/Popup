@@ -835,16 +835,22 @@
     // drawn in the wrong place; the frame loop is only the fallback (R33).
     var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(function () { correct(); }) : null;
     var observed = [];
+    // what a send changes the size of: the chat's content and its footer (the site's box), the anchor turn, the open
+    // popups (one grows at Return) — any of them: a correction before the frame is drawn
+    function watched(anchor) {
+      var pops = st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []);
+      return Array.prototype.slice.call(container.children).concat([anchor], pops).filter(Boolean);
+    }
     function observe(els) {
-      if (!ro || (els[0] === observed[0] && els[1] === observed[1])) return;
+      if (!ro || (els.length === observed.length && els.every(function (el, i) { return el === observed[i]; }))) return;
       ro.disconnect();
       observed = els;
-      els.forEach(function (el) { if (el) ro.observe(el); });
+      els.forEach(function (el) { ro.observe(el); });
     }
     // from the start, not from the first frame (live 11-20, ChatGPT: the list re-laid as the send began moved the popup
     // 52 px, then a ~0.4 s long task of the site's: no frame ran, that frame stayed on screen — the observer corrects
     // before it is drawn)
-    observe([container.firstElementChild, startAnchor]);
+    observe(watched(startAnchor));
 
     function markUser(e) {
       // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
@@ -883,7 +889,7 @@
       }
 
       var anchor = liveAnchor();
-      observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
+      observe(watched(anchor));
       if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
