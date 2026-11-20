@@ -17,9 +17,11 @@ var pages = {
   V: { messages: [msg("u9", "user", "q", "x9"), msg("a9", "assistant", "y", "x9")].concat(popupPair(10)), page_info: { has_previous_page: true, has_next_page: false } },
   E: { messages: popupPair(20), page_info: { has_previous_page: false, has_next_page: true } },
 };
+var busy = 0; // 429s still to answer (too many requests)
 window.fetch = function (input, init) {
   var url = String(typeof input === "string" ? input : input.url);
   calls.push({ url: url, headers: init && init.headers });
+  if (busy && /before=/.test(url)) { busy--; return Promise.resolve(new Response('{"detail":"Too many requests"}', { status: 429 })); }
   var m = /before=([^&]+)/.exec(url), key = /page=([A-Z])/.exec(url);
   var page = key ? pages[key[1]] : m ? pages[decodeURIComponent(m[1])] : null;
   return Promise.resolve(new Response(JSON.stringify(page || { messages: [] }), { status: 200, headers: { "content-type": "application/json" } }));
@@ -41,6 +43,11 @@ ask("A").then(function (j) {
   check("...asked before the oldest message of each, with the page's own login",
     calls.length === 3 && /before=pu5/.test(calls[1].url) && /before=pu3/.test(calls[2].url) && calls[1].headers && calls[1].headers.Authorization === "Bearer t",
     JSON.stringify(calls.map(function (c) { return c.url.replace(/^.*messages\?/, ""); })));
+  busy = 1;
+  return ask("A");
+}).then(function (j) {
+  check("an extra page answered 429 (too many requests): asked again a little later, the page filled",
+    j.messages.map(function (m) { return m.id; }).join() === "u1,a1" && calls.length === 4, calls.length + " " + j.messages.length);
   return ask("V");
 }).then(function (j) {
   check("a page keeping a message: as it is, nothing more fetched", j.messages.map(function (m) { return m.id; }).join() === "u9,a9" && calls.length === 1, calls.length);
@@ -59,6 +66,7 @@ ask("A").then(function (j) {
         var w = f.contentWindow;
         w.fetch("/backend-api/conversations/" + CONV + "/messages?before=x&num_turns=10&include_has_versions=true");
         w.fetch("/backend-api/conversation/" + CONV);
+        w.fetch("/backend-api/conversations/" + CONV + "?num_turns=10&include_has_versions=true");
         var seen = w.seen.slice(); f.remove(); done(seen);
       };
       document.body.appendChild(f);
@@ -66,7 +74,8 @@ ask("A").then(function (j) {
   }
   return inFrame("jr-render-frame").then(function (seen) {
     check("render frame: a 10-turn history page is asked 100 at a time, other requests as they are",
-      /num_turns=100&include_has_versions=true$/.test(seen[0]) && seen[1] === "/backend-api/conversation/" + CONV, JSON.stringify(seen));
+      /num_turns=100&include_has_versions=true$/.test(seen[0]) && seen[1] === "/backend-api/conversation/" + CONV &&
+      /\?num_turns=100&/.test(seen[2]), JSON.stringify(seen));
     return inFrame("");
   }).then(function (seen) {
     check("another frame of the site: untouched", /num_turns=10&/.test(seen[0]), JSON.stringify(seen));

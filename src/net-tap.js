@@ -24,7 +24,8 @@
     try { render = !!window.frameElement && window.frameElement.classList.contains("jr-render-frame"); } catch (e) { /* another origin */ }
     if (render) window.fetch = function (input, init) {
       var url = typeof input === "string" ? input : input && input.url;
-      if (url && /\/backend-api\/conversations\/[0-9a-f-]+\/messages\?/.test(url) && /[?&]num_turns=10(&|$)/.test(url)) {
+      // (the first page too: conversations/<id>?num_turns=10 — live, old Chrome: the frame had 3 turns and stopped there)
+      if (url && /\/backend-api\/conversations\/[0-9a-f-]{36}(\/messages)?\?/.test(url) && /[?&]num_turns=10(&|$)/.test(url)) {
         var more = url.replace(/([?&]num_turns=)10(&|$)/, "$1100$2");
         input = typeof input === "string" ? more : new Request(more, input);
       }
@@ -337,13 +338,15 @@
     var conv = /\/backend-api\/conversations\/([0-9a-f-]{36})(?:\/messages)?(?:[?#]|$)/.exec(url);
     if (method === "GET" && conv && filterOn()) {
       var reqInit = init || (input && typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
-      var fetchOlder = function (before) { // (the page's own request headers: its login)
+      var fetchOlder = function (before, tries) { // (the page's own request headers: its login)
         // 100 turns at a time (live: the test chat's run of ~100 Popup Q&As took a dozen 10-turn round trips and the
-        // page gave up: "Couldn't load earlier messages"; 100 turns: one, ~0.6 s)
+        // page gave up: "Couldn't load earlier messages"; 100 turns: one, ~0.6 s; the server's limit is 100)
         var t0 = Date.now();
         return origFetch.call(window, "/backend-api/conversations/" + conv[1] + "/messages?before=" + encodeURIComponent(before) +
           "&num_turns=100&include_has_versions=true", reqInit).then(function (r) {
           filterStatus.fill = (filterStatus.fill || []).slice(-9).concat([{ before: String(before).slice(0, 8), status: r.status, ms: Date.now() - t0 }]);
+          // too many requests at once (live round 5: a 429, and the page showed "Couldn't load"): again, a little later
+          if (r.status === 429 && (tries || 0) < 3) return new Promise(function (go) { setTimeout(go, 1000 * ((tries || 0) + 1)); }).then(function () { return fetchOlder(before, (tries || 0) + 1); });
           return r.ok ? r.json() : null;
         });
       };
