@@ -457,9 +457,10 @@
   function onNavigate() {
     var currentUrl = location.href;
     if (currentUrl === st.lastKnownUrl) return;
-    var sameChat = currentUrl.split("#")[0] === String(st.lastKnownUrl).split("#")[0];
+    var sameChat = JR_HOST.convKey(currentUrl) === JR_HOST.convKey(String(st.lastKnownUrl));
     st.lastKnownUrl = currentUrl;
-    // Only the #hash changed (Settings on ChatGPT / claude.ai is an overlay with its own hash): same chat, keep everything
+    // The same conversation (Settings on ChatGPT / claude.ai is an overlay with its own #hash; claude.ai opens an
+    // artifact with ?artifact=… — live T-f2: the popups closed and the hidden Q&A showed): keep everything
     if (sameChat) return;
 
     JR.removeAllPopups();

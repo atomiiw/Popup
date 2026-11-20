@@ -57,10 +57,10 @@
   function cardsRoot(composer) { var b = S.composerBox(composer); return b && b.parentElement; } // also holds the file tiles
   function q(k) { return String(k).replace(/["\\]/g, ""); }
   function isAnswerRow(row) { return !!(row && row.querySelector(C.answer)); }
-  /** Claude Code: a row's reply text with the blocks beside it that hold a card or media (a file it made: "HTML
-   *  login.html 6.5 kB", its preview opens from it), not the status line ("Created login.html"); in page order. */
+  /** A row's reply text with the blocks beside it that hold a card or media (Claude Code: a file it made, "HTML
+   *  login.html 6.5 kB"; claude.ai: an artifact, "Red Button · Artifact" — its preview opens from it), not the status
+   *  line ("Created login.html"); in page order. */
   function mediaBeside(row, prose) {
-    if (!/^\/code\//.test(location.pathname)) return prose;
     var status = row.querySelector(C.answer + " [data-cds=TurnStatus]"), box = status && status.parentElement;
     if (!box) return prose;
     // (a card's block holds its title as reply text too: the whole block, and that text not twice — live T-e4)
@@ -186,8 +186,8 @@
       return (el && el.closest && el.closest(C.answer)) || null;
     },
     hasAssistant: function (turn) { return isAnswerRow(turn); },
-    /** The reply text of the answer, in all its rows (Claude Code: around its tool steps) — and on Claude Code the
-     *  cards beside it (a file it made, its preview opens from there: user 11-20 "能显示图片和多媒体"), in page order. */
+    /** The reply text of the answer, in all its rows (Claude Code: around its tool steps) — and the cards beside it
+     *  (a file or an artifact it made, its preview opens from there: user 11-20 "能显示图片和多媒体"), in page order. */
     assistantBodies: function (turn) {
       var a = turn && turn.querySelector(C.answer), k = a && a.getAttribute(KEY);
       var rows = k && turn.parentElement ? rowsOf(turn.parentElement, k) : [turn];
