@@ -1250,7 +1250,12 @@
   function showAnswer(popup, hlId, entry, item, contentContainer) {
     var keys = (item.turnKeys || []).join(), keep = null, oldH = 0;
     if (item.status === "done" && keys) {
-      popup.querySelectorAll(":scope > .jr-popup-response").forEach(function (r) { if (r._jrKeys === keys) keep = r; });
+      // (the same Q&A: a key in common — the streaming area had the turn's key, the done version its keys: equal strings
+      // only, the area was dropped and a new one empty ~0.5 s until its copy came — the flash at the end, drawn record 11-20)
+      var mine = keys.split(",");
+      popup.querySelectorAll(":scope > .jr-popup-response").forEach(function (r) {
+        if (r._jrKeys && String(r._jrKeys).split(",").some(function (k) { return mine.indexOf(k) !== -1; })) keep = r;
+      });
     }
     popup.querySelectorAll(":scope > .jr-popup-response, :scope > .jr-popup-loading:not(.jr-popup-stale)").forEach(function (el) {
       if (keep && (el === keep || el === keep._jrWait)) return;
