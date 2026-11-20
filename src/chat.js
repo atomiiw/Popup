@@ -841,6 +841,10 @@
       observed = els;
       els.forEach(function (el) { if (el) ro.observe(el); });
     }
+    // from the start, not from the first frame (live 11-20, ChatGPT: the list re-laid as the send began moved the popup
+    // 52 px, then a ~0.4 s long task of the site's: no frame ran, that frame stayed on screen — the observer corrects
+    // before it is drawn)
+    observe([container.firstElementChild, startAnchor]);
 
     function markUser(e) {
       // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
