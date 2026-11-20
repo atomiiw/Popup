@@ -726,8 +726,65 @@
       JR.reapplyHighlights();
       JR.recheckTurns(); // run the mount pass (self-heal / adoption) now that items are known
       readBackFromConversation(records, gen);
+      rebuildFromConversation(records, gen, url);
     });
   };
+
+  /** A quote (the page's text) and an answer from the site's data (Markdown) compared: no markup, single spaces. */
+  var plain = JR.plainForMatch = function (s) {
+    return String(s || "")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // images
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links: their text
+      .replace(/[*_`~#>|]/g, "")                   // emphasis, code marks, headings, quotes, table bars
+      .replace(/\s+/g, " ").trim();
+  };
+
+  /**
+   * Popup questions in the conversation that no stored item points to and that weren't hidden on purpose (a new
+   * computer, storage lost — user 2026-11-20: "deleted wasn't lost but the highlights were"): stored again from the
+   * quote each one carries. Its quote in an earlier answer of the chat → a highlight there; in an earlier popup's
+   * answer → nested in that popup. Reply-to-all questions (no quote) and quotes not found stay as they are (hidden).
+   * Only the branch shown (an edited question's older versions aren't in it). Then restored like any stored item.
+   */
+  function rebuildFromConversation(records, gen, url) {
+    Promise.all([JR.qa.conversation(), getHiddenTurnKeys(url)]).then(function (r) {
+      var conv = r[0], hidden = new Set(r[1]);
+      if (gen !== restoreGen || !conv) return;
+      var byKey = {}; // turn key → its stored item (for a nested one's parent)
+      records.forEach(function (rec) { (rec.turnKeys || []).forEach(function (k) { byKey[k] = rec; }); });
+      var unlinkedTexts = records.filter(function (rec) { return !(rec.turnKeys || []).length; }).map(function (rec) { return rec.text; });
+      var made = [];
+      conv.order.forEach(function (k, i) {
+        var p = JR.parsePopupMessage((conv.turns[k] || {}).question || "");
+        if (!p || byKey[k] || hidden.has(k) || p.wholeResponse || !p.text) return;
+        if (unlinkedTexts.indexOf(p.text) !== -1) return; // an item without its turn yet: JR.adoptPopupTurn links it
+        var quote = plain(p.text);
+        if (!quote) return;
+        for (var j = i - 1; j >= 0; j--) {
+          var src = conv.turns[conv.order[j]] || {}, answer = plain(src.answer);
+          var at = answer.indexOf(quote);
+          if (at === -1) continue;
+          var parent = JR.isPopupMessage(src.question || "") ? byKey[conv.order[j]] : null;
+          if (JR.isPopupMessage(src.question || "") && !parent) return; // in a popup Popup can't place: leave it
+          // which occurrence: the one inside its sentence, if the sentence is found
+          var sAt = p.sentence ? answer.indexOf(plain(p.sentence)) : -1;
+          if (sAt !== -1 && answer.indexOf(quote, sAt) !== -1) at = answer.indexOf(quote, sAt);
+          var nth = 0;
+          for (var x = answer.indexOf(quote); x !== -1 && x < at; x = answer.indexOf(quote, x + 1)) nth++;
+          var rec = { id: crypto.randomUUID(), quoteId: crypto.randomUUID(), text: p.text, nth: nth, sentence: p.sentence,
+            status: "done", url: url, parentId: parent ? parent.quoteId : null, parentItemId: parent ? parent.id : null,
+            sourceTurnKey: parent ? null : conv.order[j], turnKeys: [k], wholeResponse: false };
+          byKey[k] = rec;
+          made.push(rec);
+          return;
+        }
+      });
+      if (!made.length) return;
+      Promise.all(made.map(saveHighlight)).then(function () {
+        if (gen === restoreGen && location.href === url) JR.restoreHighlights();
+      });
+    });
+  }
 
   /**
    * Answers whose turns aren't in the DOM: read them from ChatGPT's conversation
@@ -755,8 +812,8 @@
         if (linked.has(t.turnKey)) return;
         // A Popup question nothing points to: keep it out of the main chat, and
         // link it to the item with the same highlighted text, if any.
+        // (not stored as hidden: rebuildFromConversation stores it as an item when it can place it)
         JR.hideTurnKeys([t.turnKey]);
-        addDeletedTurns(location.href, [t.turnKey]);
         JR.adoptPopupTurn(t.turnKey, t.parsed);
       });
     });

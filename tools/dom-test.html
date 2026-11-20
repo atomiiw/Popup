@@ -2064,6 +2064,54 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 4500);
 }, 25000); }));
 
+// 2026-11-20 (user: on a new computer the Q&As stayed hidden but every highlight was gone): Popup questions in the
+// conversation with no stored item and not hidden on purpose are stored again from the quote they carry.
+asyncChecks.push(new Promise(function (done) {
+  setTimeout(function () {
+    function msg(text, sentence, q) { return JR.buildMessage({ question: q || "why?", text: text, sentence: sentence }); }
+    var conv = { order: ["m1", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "m2", "p8"], turns: {
+      m1: { question: "tell me", answer: "The **cell** wall is strong. Photosynthesis makes sugar." },
+      p1: { question: msg("cell wall", "The cell wall is strong."), answer: "A rigid layer around the cell." },
+      p2: { question: msg("makes sugar"), answer: "deleted one" },
+      p3: { question: msg("rigid layer"), answer: "nested answer" },
+      p4: { question: JR.buildMessage({ question: "shorter", wholeResponse: true }), answer: "reply to all" },
+      p5: { question: msg("not anywhere"), answer: "lost" },
+      p6: { question: msg("Photosynthesis"), answer: "already stored" },
+      p7: { question: msg("strong"), answer: "an item waits for it" },
+      m2: { question: "more", answer: "a cat sat. the cat ran." },
+      p8: { question: msg("cat", "the cat ran."), answer: "second cat" },
+    } };
+    var store = [{ id: "s6", quoteId: "q6", text: "Photosynthesis", status: "done", turnKeys: ["p6"], sourceTurnKey: "m1" },
+                 { id: "s7", quoteId: "q7", text: "strong", status: "pending", turnKeys: [] }], saved = [];
+    var real = { get: window.getHighlightsByUrl, hid: window.getHiddenTurnKeys, save: window.saveHighlight, chat: JR.site.isChatPage,
+      conv: JR.qa.conversation, api: JR.qa.popupTurnsFromApi, ensure: JR.qa.ensure, adopt: JR.adoptPopupTurn };
+    window.getHighlightsByUrl = function () { return Promise.resolve(store.slice()); };
+    window.getHiddenTurnKeys = function () { return Promise.resolve(["p2", "p6"]); };
+    window.saveHighlight = function (r) { saved.push(r); store.push(r); return Promise.resolve(r); };
+    JR.site.isChatPage = function () { return true; };
+    JR.qa.conversation = function () { return Promise.resolve(conv); };
+    JR.qa.popupTurnsFromApi = function () { return Promise.resolve([]); };
+    JR.qa.ensure = function () { return Promise.resolve([]); };
+    JR.adoptPopupTurn = function () {};
+    JR.restoreHighlights();
+    setTimeout(function () {
+      var by = {}; saved.forEach(function (r) { by[r.turnKeys[0]] = r; });
+      check("rebuild: a Popup question with its quote in an earlier answer → a level-1 item there (no Markdown in the way)",
+        by.p1 && by.p1.sourceTurnKey === "m1" && !by.p1.parentId && by.p1.text === "cell wall" && by.p1.status === "done", JSON.stringify(by.p1));
+      check("rebuild: a quote in an earlier popup's answer → nested in that popup",
+        by.p3 && by.p1 && by.p3.parentId === by.p1.quoteId && by.p3.parentItemId === by.p1.id && !by.p3.sourceTurnKey, JSON.stringify(by.p3));
+      check("rebuild: the occurrence inside its sentence (the second \"cat\")", by.p8 && by.p8.nth === 1 && by.p8.sourceTurnKey === "m2", JSON.stringify(by.p8));
+      check("rebuild: not for one hidden on purpose, reply-to-all, a quote not found, one already stored, one an item waits for",
+        !by.p2 && !by.p4 && !by.p5 && !by.p6 && !by.p7 && saved.length === 3, Object.keys(by).join());
+      [["getHighlightsByUrl", real.get], ["getHiddenTurnKeys", real.hid], ["saveHighlight", real.save]].forEach(function (g) {
+        if (g[1]) window[g[0]] = g[1]; else delete window[g[0]];
+      });
+      JR.site.isChatPage = real.chat; JR.qa.conversation = real.conv; JR.qa.popupTurnsFromApi = real.api; JR.qa.ensure = real.ensure; JR.adoptPopupTurn = real.adopt;
+      done();
+    }, 400);
+  }, 24950);
+}));
+
 // 2026-11-20: a site with freezeRow (claude.ai) gets every element added during the send; unfreeze unmarks.
 // (In its own task: the checks below end any freeze synchronously, and a disconnect drops records not yet delivered.)
 asyncChecks.push(new Promise(function (done) {

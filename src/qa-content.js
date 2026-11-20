@@ -459,17 +459,62 @@
       // uncached [] made them fetch again forever (home page, API failure).
       // resetApi() clears the cache on navigation.
       if (!conv) { JR.qa.turnOrderCache = []; return []; }
-      var order = [];
-      var node = conv.mapping[conv.current_node];
-      for (var guard = 0; node && guard < 100000; guard++) {
-        var m = node.message;
-        if (m && m.author && m.author.role === "user") order.push(node.id);
-        node = node.parent ? conv.mapping[node.parent] : null;
-      }
-      order.reverse();
+      var order = branchUserIds(conv);
       JR.qa.turnOrderCache = order;
       return order;
     });
+  };
+
+  /** ChatGPT: the user message ids of the branch shown (= its turn keys), in order. */
+  function branchUserIds(conv) {
+    var order = [];
+    var node = conv.mapping[conv.current_node];
+    for (var guard = 0; node && guard < 100000; guard++) {
+      var m = node.message;
+      if (m && m.author && m.author.role === "user") order.push(node.id);
+      node = node.parent ? conv.mapping[node.parent] : null;
+    }
+    return order.reverse();
+  }
+
+  /**
+   * The conversation as the site's own data has it, one shape on every site: { order: [turn key] (the branch shown),
+   * turns: { key: { question, answer } } } — the question as it was sent, the answer as text / Markdown. Null when
+   * unavailable (Claude Code on the web: no data source known; the page's rows only).
+   */
+  /** Whether this page's conversation can be read from the site's data (JR.qa.conversation). */
+  JR.qa.hasConversation = function () {
+    return JR.site.name === "chatgpt" || JR.site.name === "deepseek" || (JR.site.name === "claude" && !/^session_/.test(JR.site.conversationId() || ""));
+  };
+
+  JR.qa.conversation = function () {
+    if (JR.site.name === "chatgpt") {
+      return fetchConversation().then(function (conv) {
+        if (!conv) return null;
+        var order = branchUserIds(conv), turns = {};
+        order.forEach(function (k) { turns[k] = { question: textOf(conv.mapping[k].message), answer: answerFor(conv.mapping, k) }; });
+        return { order: order, turns: turns };
+      });
+    }
+    if (JR.site.name === "deepseek") {
+      return siteData().then(function (msgs) {
+        if (!msgs || !msgs.length) return null;
+        var byId = {}, tip = null;
+        msgs.forEach(function (m) { byId[String(m.message_id)] = m; if (!tip || Number(m.message_id) > Number(tip.message_id)) tip = m; });
+        var chain = []; // the branch shown ends at the newest message
+        for (var m = tip, g = 0; m && g < 100000; g++) { chain.push(m); m = m.parent_id != null ? byId[String(m.parent_id)] : null; }
+        var order = [], turns = {};
+        chain.reverse().forEach(function (a) {
+          if (a.role !== "ASSISTANT") return; // a turn's key is its answer's id; its question the parent
+          var q = byId[String(a.parent_id)], k = String(a.message_id);
+          order.push(k);
+          turns[k] = { question: q ? dsText(q) : "", answer: JR.site.answerMarkdown(a) };
+        });
+        return { order: order, turns: turns };
+      });
+    }
+    if (JR.site.name === "claude") return siteData();
+    return Promise.resolve(null);
   };
 
   JR.qa.resetApi = function () { convFetch = null; siteConv = null; JR.qa.apiStatus = "unused"; JR.qa.turnOrderCache = null; };
@@ -504,7 +549,9 @@
         var parsed = msg ? JR.parsePopupMessage(msg) : null;
         if (parsed) {
           JR.hideTurnKeys([key]);
-          addDeletedTurns(location.href, [key]);
+          // stored as hidden only where the conversation can't be read (Claude Code): elsewhere the restore stores it
+          // as an item from the conversation (highlight.js rebuildFromConversation) — as "hidden" it never would be
+          if (!JR.qa.hasConversation()) addDeletedTurns(location.href, [key]);
           var hv = harvest(turns[i]);
           if (hv) { cache.set(key, hv); newlyLoaded.push(key); }
           if (JR.adoptPopupTurn) JR.adoptPopupTurn(key, parsed);
