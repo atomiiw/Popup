@@ -1645,7 +1645,9 @@
           JR.updateNavWidget();
           return;
         }
-        if ((waited += 100) > 2000) return;
+        // (6 s: ChatGPT's new front end draws a turn just mounted in parts — its highlight was put back after 2 s: the jump
+        // reached the turn and opened nothing, live C4 11-20)
+        if ((waited += 100) > 6000) { JR.navTrace += ", highlight not back"; return; }
         if (JR.reapplyHighlights) JR.reapplyHighlights();
         setTimeout(open, 100);
       })();
