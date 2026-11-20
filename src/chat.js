@@ -321,6 +321,9 @@
   // a tab in the background runs no animation frames (peer audit A2: a queued send there never pressed send; the
   // refusal check saw it in the box, cleared it, sent again — "Couldn't get a response")
   function nextFrame(cb) { return document.hidden ? setTimeout(cb, 16) : requestAnimationFrame(cb); }
+  // The send's hold corrects now and after the site's queued updates — before the frame is drawn: what the site does
+  // in reply to Popup typing or clicking runs right there, on ChatGPT ~0.4 s with no frame of ours (live 11-20)
+  function holdNow() { if (JR.holdNow) { JR.holdNow(); Promise.resolve().then(function () { if (JR.holdNow) JR.holdNow(); }); } }
   function readDraft(composer) {
     var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
     return t.trim() ? t.replace(/\n+$/, "") : "";
@@ -388,6 +391,7 @@
     }
     var inserted = insertIntoComposer(chatInput, message);
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+    holdNow(); // (the site re-lays as its box changes — live 11-20: here, not at the click, the popup moved 52 px)
     submitting = inserted;
     if (!inserted) {
       putDraftBack(chatInput, draft);
@@ -429,7 +433,7 @@
         sendBtn.click();
         // the site's send runs in this click — on ChatGPT ~0.4 s, its list re-laid, before any frame of ours: the hold
         // corrects now and after the site's queued updates, before that frame is drawn (live 11-20: 52 px off ~0.4 s)
-        if (JR.holdNow) { JR.holdNow(); Promise.resolve().then(function () { if (JR.holdNow) JR.holdNow(); }); }
+        holdNow();
         afterSubmit("send button");
         return;
       }
@@ -842,7 +846,7 @@
     // popups (one grows at Return) — any of them: a correction before the frame is drawn
     function watched(anchor) {
       var pops = st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []);
-      return Array.prototype.slice.call(container.children).concat([anchor], pops).filter(Boolean);
+      return [container].concat(Array.prototype.slice.call(container.children), [anchor], pops).filter(Boolean);
     }
     function observe(els) {
       if (!ro || (els.length === observed.length && els.every(function (el, i) { return el === observed[i]; }))) return;
