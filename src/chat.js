@@ -368,6 +368,13 @@
     // chat above it moved for ~0.2 s — drawn record 11-20)
     var box = JR.site.composerBox ? JR.site.composerBox(chatInput) : null, boxH = box ? box.offsetHeight : 0;
     if (box && boxH) box.setAttribute("data-jr-injecting-box", "");
+    // ...and every layer between the input and the box (its row of buttons moved 8 px inside the held box — drawn record)
+    var held = [];
+    for (var up = chatInput.parentElement && chatInput.parentElement.parentElement; up && box && up !== box && box.contains(up); up = up.parentElement) {
+      up.style.setProperty("--jr-ih", up.offsetHeight + "px");
+      up.setAttribute("data-jr-injecting-hold", "");
+      held.push(up);
+    }
     chatInput.setAttribute("data-jr-injecting", "");
     var hideStyle = document.createElement("style");
     hideStyle.id = "jr-hide-style";
@@ -375,12 +382,14 @@
       "[data-jr-injecting], [data-jr-injecting] * { color: transparent !important; caret-color: transparent !important; }" +
       // (min too: the draft set aside, a box of several lines got shorter and the chat moved — live round 5, claude.ai)
       "\n:has(> [data-jr-injecting]) { max-height: " + composerH + "px !important; min-height: " + composerH + "px !important; overflow: hidden !important; }" +
-      (boxH ? "\n[data-jr-injecting-box] { max-height: " + boxH + "px !important; min-height: " + boxH + "px !important; overflow: hidden !important; }" : "");
+      (boxH ? "\n[data-jr-injecting-box] { max-height: " + boxH + "px !important; min-height: " + boxH + "px !important; overflow: hidden !important; }" : "") +
+      "\n[data-jr-injecting-hold] { max-height: var(--jr-ih) !important; min-height: var(--jr-ih) !important; overflow: hidden !important; }";
     document.head.appendChild(hideStyle);
     function unhideComposer() {
       hideStyle.remove();
       chatInput.removeAttribute("data-jr-injecting");
       if (box) box.removeAttribute("data-jr-injecting-box");
+      held.forEach(function (el) { el.removeAttribute("data-jr-injecting-hold"); el.style.removeProperty("--jr-ih"); });
     }
 
     chatInput.focus({ preventScroll: true });
