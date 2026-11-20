@@ -1271,7 +1271,11 @@
       if (direction < 0 && p < lo) pick = i;
     });
     if (pick >= 0 || !unknown) return pick; // -1: none that way
-    return direction > 0 ? ids.length - 1 : 0; // no turn order to tell: the last / first
+    // no turn order to tell (Claude Code: rows not mounted, no conversation read): by where the reader is in the chat —
+    // at the bottom ∧ is the last one, at the top ∨ the first (live round 5: ∧ at the bottom opened nothing near)
+    var sc = JR.site.scrollContainer(), room = sc ? sc.scrollHeight - sc.clientHeight : 0;
+    var at = (room > 0 ? sc.scrollTop / room : direction > 0 ? 0 : 1) * (ids.length - 1);
+    return direction > 0 ? Math.min(ids.length - 1, Math.ceil(at)) : Math.max(0, Math.floor(at));
   }
 
   /**

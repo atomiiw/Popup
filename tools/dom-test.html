@@ -1568,6 +1568,17 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   st.navWidget = { _jrIds: ids }; st.activeHighlightId = null;
   JR.navigateHighlight(1); JR.navigateHighlight(-1);
   check("∨ / ∧ with nothing mounted that way: the next / previous highlight by turn (h2, h0), not the chat's last / first", got.join() === "h2,h0", got.join());
+  // no turn order at all (Claude Code), nothing wrapped: by the reader's place in the chat — at the bottom ∧ → the last
+  got = [];
+  var realSc = JR.site.scrollContainer, noOrder = ["n0", "n1", "n2"];
+  JR.site.scrollContainer = function () { return { scrollTop: 900, scrollHeight: 1000, clientHeight: 100 }; };
+  st.navWidget = { _jrIds: noOrder }; st.activeHighlightId = null;
+  JR.navigateHighlight(-1);
+  JR.site.scrollContainer = function () { return { scrollTop: 0, scrollHeight: 1000, clientHeight: 100 }; };
+  JR.navigateHighlight(1);
+  JR.site.scrollContainer = realSc;
+  check("no turn order, nothing on the page: ∧ at the bottom → the last (n2), ∨ at the top → the first (n0)", got.join() === "n2,n0", got.join());
+  st.navWidget = { _jrIds: ids };
   // user 2026-11-18 (screenshot): none in view, the first one mounted above it, the next ones not mounted — ∨ did nothing
   got = [];
   var sp0 = document.createElement("span"); sp0.style.cssText = "position:fixed;top:-100px"; sp0.textContent = "h0"; document.body.appendChild(sp0);
