@@ -24,6 +24,7 @@
 
   /** True when ChatGPT's right sidebar (research/canvas) is visible. [LAYOUT-LOCKED] */
   JR.isRightSidebarOpen = function () { // [LAYOUT-LOCKED]
+    if (JR.site.navRight && JR.site.navRight() != null) return false; // a panel that is always there (Claude Code)
     var chatCol = JR.site.chatColumn();
     if (!chatCol) return false;
     var rightGap = window.innerWidth - chatCol.getBoundingClientRect().right;
@@ -1354,6 +1355,7 @@
 
     // Sidebar closed — ensure widget is visible
     if (st.navWidget) st.navWidget.style.display = "";
+    var navRight = JR.site.navRight ? JR.site.navRight() : null; // (Claude Code: inside the chat's right edge)
 
     if (!st.navWidget) {
       st.navWidget = buildNavWidget();
@@ -1381,6 +1383,8 @@
     }
 
     st.navWidget._jrIds = ids;
+    var right = navRight == null ? "" : navRight + "px";
+    if (st.navWidget.style.right !== right) st.navWidget.style.right = right;
 
     var currentIdx = findCurrentL1Index(ids);
 

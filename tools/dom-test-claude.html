@@ -178,6 +178,10 @@ Promise.all(pending).then(function () {
     check("freezeRow: content added into a row later marks that row", shell.hasAttribute("data-jr-freeze"), shell.outerHTML.slice(0, 80));
     wrap.remove(); shell.remove(); JR.isPopupMessage = realIs;
   })();
+  (function () { // live round 4 (B17): Claude Code's right panel is always there — Popup's arrows go inside the chat, not hidden
+    var onCode = /^\/code\//.test(location.pathname);
+    check("navRight: only on a Claude Code page (this test page isn't one)", S.navRight() === null || onCode, S.navRight());
+  })();
   out.push(failed ? failed + " FAILED" : "all passed");
   document.getElementById("out").textContent = out.join("\n");
   document.title = failed ? "FAIL" : "PASS";

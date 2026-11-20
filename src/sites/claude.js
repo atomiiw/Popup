@@ -268,6 +268,14 @@
       return host || scroller() || document.body;
     },
     chatColumn: function () { return scroller(); },
+    /** Claude Code on the web keeps a panel on the right for good (environment, context): Popup's ∧ ∨ go inside the chat's
+     *  right edge there, not hidden as for a sidebar that was opened (live round 4, B17: no arrows on Claude Code at all).
+     *  Px from the window's right edge; null elsewhere. */
+    navRight: function () {
+      var sc = scroller();
+      if (!sc || !/^\/code\//.test(location.pathname)) return null;
+      return Math.max(0, Math.round(window.innerWidth - sc.getBoundingClientRect().right)) + 24;
+    },
     /** On screen: from the scroller's top (below the chat header laid over it) to the composer box's top. */
     visibleBand: function () {
       var sc = scroller(), box = S.composerBox(S.composer()), head = document.querySelector("[data-testid=chat-header]");
