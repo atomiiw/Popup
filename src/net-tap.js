@@ -174,7 +174,12 @@
     }
     // ChatGPT's thinking models (live 2026-11-20, "gpt-6-thinking"): the send's stream carries the thoughts and a
     // resume token, then ends; the answer comes on the next stream — not done yet: that one is followed
-    if (acc.resume && !acc.text.trim() && !acc.media) { following = { question: question, until: Date.now() + 180000 }; logRaw(url, "resuming"); return; }
+    if (acc.resume && !acc.text.trim() && !acc.media) {
+      following = { question: question, until: Date.now() + 180000 };
+      logRaw(url, "resuming");
+      emit({ kind: "resuming" }); // (chat.js reads the answer from the conversation once ChatGPT is done)
+      return;
+    }
     emit({ kind: "done", text: acc.text, media: !!acc.media });
   }
   var following = null; // { question, until }: the next event stream of the site carries this Popup question's answer

@@ -49,5 +49,24 @@ check("user's own message not recognised", !JR.isPopupMessage("Regarding this pa
   check("whole response", p && p.question === "Summarize" && p.wholeResponse === true, p);
 }
 
-console.log(failed ? failed + " FAILED" : "all passed");
-process.exit(failed ? 1 : 0);
+// A send whose stream ended before the answer (live 11-20, a thinking model): the Q&A and its answer from the
+// conversation — the newest user message with that text, its answer text, or an image it made
+(async () => {
+  const M = "Regarding this part of your response:\n\"x\"\n\nDraw\n\n(For this response only: brief)";
+  const mapping = {
+    u0: { message: { author: { role: "user" }, content: { parts: [M] }, create_time: 1 }, children: ["a0"] },
+    a0: { message: { author: { role: "assistant" }, content: { content_type: "text", parts: ["old"] } }, children: [] },
+    u1: { message: { author: { role: "user" }, content: { parts: [M] }, create_time: 5 }, children: ["t1"] },
+    t1: { message: { author: { role: "tool" }, content: { content_type: "multimodal_text", parts: [{ content_type: "image_asset_pointer" }] } }, children: ["a1"] },
+    a1: { message: { author: { role: "assistant" }, content: { content_type: "text", parts: [""] } }, children: ["u2"] },
+    u2: { message: { author: { role: "user" }, content: { parts: ["next"] }, create_time: 9 }, children: ["a2"] },
+    a2: { message: { author: { role: "assistant" }, content: { content_type: "text", parts: ["not this"] } }, children: [] },
+  };
+  ctx.fetch = (url) => Promise.resolve({ ok: true, json: () => Promise.resolve(/session/.test(url) ? { accessToken: "t" } : { mapping }) });
+  JR.site.name = "chatgpt"; JR.site.conversationId = () => "c1";
+  const a = await JR.qa.answerFor(M);
+  check("answer from the conversation: the newest sent copy, an image it made, not the next turn's text",
+    a && a.turnKey === "u1" && a.media === true && a.text === "", a);
+  console.log(failed ? failed + " FAILED" : "all passed");
+  process.exit(failed ? 1 : 0);
+})();

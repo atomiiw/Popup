@@ -430,6 +430,37 @@
    * Every Popup-format question in the conversation data, as { turnKey, parsed }.
    * Lets old or unlinked items be matched to their Q&A without scrolling to it.
    */
+  /**
+   * A message just sent and its answer, read fresh from the conversation (ChatGPT): { turnKey, text, media } of the
+   * newest user message with exactly this text, or null. For a send whose stream ended before the answer (a thinking
+   * model resumes it elsewhere, live 2026-11-20).
+   */
+  JR.qa.answerFor = function (message) {
+    convFetch = null; // (fresh: the cached copy is from before the send)
+    return fetchConversation().then(function (conv) {
+      if (!conv) return null;
+      var want = String(message || "").trim(), best = null;
+      Object.keys(conv.mapping).forEach(function (id) {
+        var m = conv.mapping[id].message;
+        if (m && m.author && m.author.role === "user" && textOf(m).trim() === want && (!best || (m.create_time || 0) >= best.t)) best = { id: id, t: m.create_time || 0 };
+      });
+      if (!best) return null;
+      var text = "", media = false;
+      (function walk(id) {
+        var node = conv.mapping[id];
+        (node && node.children || []).forEach(function (c) {
+          var m = conv.mapping[c] && conv.mapping[c].message;
+          if (m && m.author && m.author.role === "user") return; // (the next turn)
+          var ps = (m && m.content && m.content.parts) || [];
+          if (m && m.author.role === "assistant" && m.content.content_type === "text") text += ps.filter(function (x) { return typeof x === "string"; }).join("");
+          if (ps.some(function (x) { return x && typeof x === "object" && /image_asset_pointer/.test(x.content_type || ""); })) media = true;
+          walk(c);
+        });
+      })(best.id);
+      return text.trim() || media ? { turnKey: best.id, text: text, media: media } : null;
+    });
+  };
+
   JR.qa.popupTurnsFromApi = function () {
     return fetchConversation().then(function (conv) {
       if (!conv) return [];

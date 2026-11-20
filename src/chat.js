@@ -937,6 +937,7 @@
     // when the answer's turn isn't in the DOM (virtualized away) or ChatGPT
     // failed to render it; ChatGPT's own DOM rendering is preferred otherwise.
     var net = { matched: false, text: "", done: false };
+    var resumeLook = { n: 0, busy: false };
     // The popup's mirror of ChatGPT's own rendering, once there is one. ChatGPT's virtual list drops the hidden
     // Q&A turn when it ends (R36-1: 1 s before done), so the mirror stays the answer: never switch to Popup's
     // Markdown drawing then (that switch and the later upgrade were the two shifts after streaming, R36f)
@@ -966,6 +967,7 @@
       }
       net.text = d.text || net.text; // (to tell when it is done, never drawn: the popup shows the site answer only)
       if (d.kind === "done") { net.done = true; net.media = !!d.media; } // (media: an image it made, no text)
+      if (d.kind === "resuming") net.resuming = Date.now(); // the stream ended before the answer (see poll)
     }
     document.addEventListener("jr-net", onNet);
 
@@ -1478,6 +1480,18 @@
       // ChatGPT is answering but our turn never mounted (user scrolled far away).
       if (!qaKeys.length && !net.matched && generating && Date.now() - startTime >= 4000 && (!st.lastSendReport || st.lastSendReport.ok)) {
         st.lastSendReport = { ok: false, stage: "turn-not-found", detail: "ChatGPT is generating but the new turn is not in the DOM", when: new Date().toISOString() };
+      }
+
+      // The send's stream ended before the answer (ChatGPT's thinking models resume it on another connection, live
+      // 11-20): once ChatGPT is done, the Q&A and its answer from the conversation (up to 6 looks, 3 s apart)
+      if (net.resuming && !net.done && !generating && !resumeLook.busy && resumeLook.n < 6 && Date.now() - net.resuming >= 1500) {
+        resumeLook.busy = true; resumeLook.n++;
+        JR.qa.answerFor(message).then(function (a) {
+          resumeLook.busy = false;
+          if (!a) { net.resuming = Date.now() + 1500; return; }
+          onNet({ detail: JSON.stringify({ kind: "turn", turnKey: a.turnKey }) });
+          net.text = a.text; net.media = a.media; net.done = true;
+        }, function () { resumeLook.busy = false; });
       }
 
       // Hard 10-second timeout: no answer text and ChatGPT isn't working on it.
