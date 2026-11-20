@@ -245,6 +245,10 @@
       var r = cardsRoot(composer);
       return !!(r && r.querySelector("[data-cds-attachment]"));
     },
+    composerCardCount: function (composer) {
+      var r = cardsRoot(composer);
+      return r ? r.querySelectorAll("[data-cds-attachment]").length : 0;
+    },
     attachmentsUploading: function (composer) {
       var r = cardsRoot(composer);
       return !!(r && r.querySelector("[data-cds-attachment] [role=progressbar], [data-cds-attachment][aria-busy=true], [data-cds-attachment] [aria-busy=true]"));

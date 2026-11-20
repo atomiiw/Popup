@@ -339,6 +339,11 @@
       var box = JR.site.composerBox(composer);
       return !!(box && box.querySelector('button use[href*="xmark"]'));
     },
+    /** How many attachment cards the composer holds (TODO 4e: are they all files Popup knows?). */
+    composerCardCount: function (composer) {
+      var box = JR.site.composerBox(composer);
+      return box ? box.querySelectorAll('button use[href*="xmark"]').length : 0;
+    },
 
     /** True while some card in the composer is still uploading. */
     attachmentsUploading: function (composer) {

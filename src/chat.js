@@ -89,6 +89,42 @@
     cards.forEach(function (c) { if (c.remove) c.remove.click(); });
   }
 
+  // TODO 4e (files): the user's own files in the site's box are set aside for a Popup send and handed back after it.
+  // Popup can hand back only files it holds: the ones the user put in the box (paste, drop, the site's file picker) —
+  // kept in memory only, never stored.
+  var userFiles = [], asideFiles = null;
+  function noteUserFiles(list, e) {
+    if (e._jrOwn || !list || !list.length) return; // (Popup's own paste into the box: attachToComposer)
+    if (e.target && e.target.closest && e.target.closest(".jr-popup")) return; // a popup's own files
+    Array.prototype.forEach.call(list, function (f) { userFiles.push(f); });
+    if (userFiles.length > 50) userFiles = userFiles.slice(-50);
+  }
+  document.addEventListener("paste", function (e) { noteUserFiles(e.clipboardData && e.clipboardData.files, e); }, true);
+  document.addEventListener("drop", function (e) { noteUserFiles(e.dataTransfer && e.dataTransfer.files, e); }, true);
+  document.addEventListener("change", function (e) { if (e.target && e.target.type === "file") noteUserFiles(e.target.files, e); }, true);
+
+  /** Set every file in the site's box aside (true), or none when one isn't a file Popup holds (false: refused as before). */
+  JR.setAsideUserFiles = function () {
+    var composer = JR.site.composer();
+    if (!composer || !JR.site.composerCardCount) return false;
+    var count = JR.site.composerCardCount(composer);
+    if (!count) return true;
+    var cards = cardsFor(composer, userFiles.slice().reverse(), []); // (the newest copy of a name first)
+    if (cards.size !== count) return false;
+    var moved = [];
+    cards.forEach(function (c, f) { if (c.remove) { c.remove.click(); moved.push(f); } });
+    if (moved.length !== count) { if (moved.length) JR.attachToComposer(moved, function () {}); return false; }
+    asideFiles = (asideFiles || []).concat(moved.reverse());
+    return true;
+  };
+  /** After a Popup send (done or not): the files set aside go back into the box. */
+  function handBackFiles() {
+    if (!asideFiles || !asideFiles.length) return;
+    var files = asideFiles;
+    asideFiles = null;
+    JR.attachToComposer(files, function () {});
+  }
+
   /** Show ChatGPT's composer again after Popup handed it files. */
   function endAttaching() {
     var box = attachBox(JR.site.composer());
@@ -218,11 +254,14 @@
 
   // --- Chat injection ---
 
+  /** Text without any whitespace: a ProseMirror box's textContent has no line breaks between its paragraphs. */
+  function bare(t) { return (t || "").replace(/\s+/g, ""); }
+
   /** Insert text into ChatGPT's composer. Returns true if the text is verifiably there. */
   function insertIntoComposer(composer, message) {
-    var probe = message.replace(/\s+/g, " ").slice(0, 30);
+    var probe = bare(message).slice(0, 30);
     function landed() {
-      return JR.site.composerText(composer).replace(/\s+/g, " ").indexOf(probe) !== -1;
+      return bare(JR.site.composerText(composer)).indexOf(probe) !== -1;
     }
 
     if (composer.tagName === "TEXTAREA") {
@@ -249,8 +288,25 @@
     // Strategy 3: synthetic paste event
     var dt = new DataTransfer();
     dt.setData("text/plain", message);
-    composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    var own = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    own._jrOwn = true; // not the user's files (TODO 4e)
+    composer.dispatchEvent(own);
     return landed();
+  }
+
+  // The user's own half-typed message in the site's box (TODO 4e): set aside for a Popup send — only the question goes
+  // — and put back once the site has cleared the box. "" when there is none.
+  var lastDraft = "";
+  function readDraft(composer) {
+    var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
+    return t.trim() ? t.replace(/\n+$/, "") : "";
+  }
+  function putDraftBack(composer, draft) {
+    if (!composer || !draft || bare(JR.site.composerText(composer)) === bare(draft)) return;
+    if (bare(JR.site.composerText(composer))) clearComposer(composer, []);
+    composer.focus({ preventScroll: true });
+    insertIntoComposer(composer, draft);
+    composer.blur();
   }
 
   /** Record the outcome of a send step (shown by JR.diagnose and the timeout UI). */
@@ -295,15 +351,26 @@
     }
 
     chatInput.focus({ preventScroll: true });
+    var draft = lastDraft = readDraft(chatInput);
+    if (draft) clearComposer(chatInput, []), chatInput.focus({ preventScroll: true });
+    if (draft && bare(JR.site.composerText(chatInput))) { // never sent along with the question
+      putDraftBack(chatInput, draft);
+      unhideComposer();
+      handBackFiles();
+      onDone(report(false, "draft", "the text already in the input box could not be set aside"));
+      return;
+    }
     var inserted = insertIntoComposer(chatInput, message);
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
     if (!inserted) {
+      putDraftBack(chatInput, draft);
       unhideComposer();
+      handBackFiles();
       onDone(report(false, "insert", "the text did not appear in ChatGPT's input box"));
       return;
     }
 
-    var probe = message.replace(/\s+/g, " ").slice(0, 30);
+    var probe = bare(message).slice(0, 30);
     function afterSubmit(how) {
       chatInput.blur();
       if (scrollParent) scrollParent.scrollTop = savedScrollTop;
@@ -312,8 +379,10 @@
       (function removeHideWhenEmpty() {
         var left = JR.site.composerText(chatInput);
         if (left.trim().length === 0 || tries > 20) {
+          var stuck = bare(left).indexOf(probe) !== -1;
+          if (!stuck) putDraftBack(chatInput, draft); // (still hidden: it comes back as it was)
           unhideComposer();
-          var stuck = left.replace(/\s+/g, " ").indexOf(probe) !== -1;
+          if (!stuck) handBackFiles();
           onDone(stuck ? report(false, "submit", "the message stayed in the input after " + how)
                        : report(true, "sent", how));
           return;
@@ -439,7 +508,9 @@
     var dt = new DataTransfer();
     upload.forEach(function (f) { dt.items.add(f); });
     buttonsBeforePaste = JR.site.composerButtons(composer);
-    composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    var own = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    own._jrOwn = true; // not the user's files (TODO 4e)
+    composer.dispatchEvent(own);
     var t0 = Date.now(), readySince = 0;
     (function check() {
       var elapsed = Date.now() - t0;
@@ -1257,6 +1328,8 @@
         var probe = norm60(message).slice(0, 30);
         if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
           clearComposer(composer, files);
+          putDraftBack(composer, lastDraft); // (the user's own text came back to the box with it)
+          handBackFiles();
           // With files, a resend would go out as text only: fail instead (Retry resends the files).
           if (rejected.count >= 1 || (files && files.length)) {
             st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };

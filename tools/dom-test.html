@@ -1665,6 +1665,41 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 50);
 }, 24850); })); // (its own time: one popup is live at a time)
 
+// TODO 4e (user, 2026-11-19): a half-typed message in the site's box is never sent with a Popup question, and is back
+// in the box after the send — an editable box (ChatGPT, claude.ai) and a textarea (DeepSeek)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var bare = function (t) { return (t || "").replace(/\s+/g, ""); };
+  var realRaf = window.requestAnimationFrame; // (no frames here at this point: the send would wait for good)
+  window.requestAnimationFrame = function (cb) { return setTimeout(cb, 16); };
+  var msg = "Regarding this part of your response: a Popup question that is long enough";
+  function run(html, read, clear, next) {
+    var form = document.createElement("form");
+    form.innerHTML = html + '<button type="button" data-testid="send-button">send</button>';
+    document.body.appendChild(form);
+    var box = form.firstChild, sent = null;
+    form.querySelector("button").addEventListener("click", function () { sent = read(box); clear(box); });
+    var realComposer = JR.site.composer; // (the site's box: here this one — the page has other editable boxes)
+    JR.site.composer = function () { return box; };
+    JR.injectAndSend(msg, function (r) {
+      setTimeout(function () { var after = read(box); form.remove(); JR.site.composer = realComposer; next(r, sent, after); }, 20);
+    });
+  }
+  run('<div contenteditable="true" class="ProseMirror" data-composer-markdown=""><p>my draft</p><p>line two</p></div>',
+    function (b) { return b.innerText; }, function (b) { b.innerHTML = ""; },
+    function (r1, sent1, after1) {
+      run('<textarea name="prompt">ds draft\nsecond</textarea>',
+        function (b) { return b.value; }, function (b) { b.value = ""; },
+        function (r2, sent2, after2) {
+          check("draft in the box: only the Popup question is sent, the draft is back after (editable box)",
+            r1.ok && bare(sent1) === bare(msg) && bare(after1) === "mydraftlinetwo" && /my draft\s*\n\s*line two/.test(after1), JSON.stringify([r1, sent1, after1]));
+          check("draft in the box: only the Popup question is sent, the draft is back after (textarea)",
+            r2.ok && bare(sent2) === bare(msg) && after2 === "ds draft\nsecond", JSON.stringify([r2, sent2, after2]));
+          window.requestAnimationFrame = realRaf;
+          done();
+        });
+    });
+}, 24900); })); // (its own time: it needs the keyboard focus)
+
 // candidate 1: a finished popup whose original is on the page shows its copy at once — no "Loading…" in between
 (function () {
   var t = document.createElement("div"); t.setAttribute("data-turn-key", "now-1"); t.hidden = true;
@@ -2110,6 +2145,62 @@ asyncChecks.push(new Promise(function (done) {
       done();
     }, 400);
   }, 24950);
+}));
+
+// TODO 4e (files, 2026-11-20): the user's own files in the site's box are set aside for a Popup send, handed back after
+// it; a card Popup doesn't hold the file of → refused as before, nothing touched
+asyncChecks.push(new Promise(function (done) {
+  setTimeout(function () {
+    var realRaf = window.requestAnimationFrame; window.requestAnimationFrame = function (cb) { return setTimeout(cb, 16); };
+    var real = { comp: JR.site.composer, count: JR.site.composerCardCount, btns: JR.site.composerButtons, has: JR.site.composerHasAttachments, attach: JR.attachToComposer };
+    function userPaste(names) {
+      var dt = new DataTransfer();
+      names.forEach(function (n) { dt.items.add(new File(["x"], n, { type: "image/png" })); });
+      document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+    }
+    function boxWith(names) {
+      var form = document.createElement("form");
+      form.innerHTML = '<div contenteditable="true" class="ProseMirror" data-composer-markdown=""><p>half typed</p></div><div class="cards"></div>' +
+        '<button type="button" data-testid="send-button">send</button>';
+      document.body.appendChild(form);
+      names.forEach(function (n) {
+        var c = document.createElement("div"); c.className = "card";
+        c.innerHTML = '<button aria-label="Remove ' + n + '">x</button>';
+        c.querySelector("button").addEventListener("click", function () { c.remove(); });
+        form.querySelector(".cards").appendChild(c);
+      });
+      var box = form.firstChild;
+      JR.site.composer = function () { return box; };
+      JR.site.composerCardCount = function () { return form.querySelectorAll(".card").length; };
+      JR.site.composerHasAttachments = function () { return form.querySelectorAll(".card").length > 0; };
+      JR.site.composerButtons = function () { return Array.prototype.slice.call(form.querySelectorAll(".card button")); };
+      form.querySelector("[data-testid=send-button]").addEventListener("click", function () { box.innerHTML = ""; });
+      return form;
+    }
+    var handed = [];
+    JR.attachToComposer = function (files, cb) { handed.push(files.map(function (f) { return f.name; }).join()); cb({ sent: files, failed: [] }); };
+    userPaste(["fa.png", "fb.png"]);
+    var f1 = boxWith(["fa.png", "fb.png"]);
+    var aside = JR.setAsideUserFiles();
+    var left = f1.querySelectorAll(".card").length;
+    JR.injectAndSend("Regarding this part of your response: a question long enough to probe", function (r) {
+      setTimeout(function () {
+        var draftBack = f1.firstChild.innerText.replace(/\s+/g, "");
+        check("files and text in the box: set aside for the Popup send, both back after it (files in their order)",
+          aside && left === 0 && r.ok && handed.join("|") === "fa.png,fb.png" && draftBack === "halftyped", [aside, left, JSON.stringify(r), handed.join("|"), draftBack].join(" "));
+        f1.remove();
+        var f2 = boxWith(["fa.png", "stranger.png"]);
+        var aside2 = JR.setAsideUserFiles();
+        check("files in the box: one Popup doesn't hold → refused, nothing moved",
+          !aside2 && f2.querySelectorAll(".card").length === 2, aside2 + " " + f2.querySelectorAll(".card").length);
+        f2.remove();
+        JR.site.composer = real.comp; JR.site.composerButtons = real.btns; JR.site.composerHasAttachments = real.has; JR.attachToComposer = real.attach;
+        if (real.count) JR.site.composerCardCount = real.count; else delete JR.site.composerCardCount;
+        window.requestAnimationFrame = realRaf;
+        done();
+      }, 30);
+    });
+  }, 26000);
 }));
 
 // 2026-11-20: a site with freezeRow (claude.ai) gets every element added during the send; unfreeze unmarks.

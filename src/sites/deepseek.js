@@ -226,6 +226,10 @@
       var r = cardsRoot(composer);
       return !!(r && r.querySelector(".ds-animated-size-item"));
     },
+    composerCardCount: function (composer) {
+      var r = cardsRoot(composer);
+      return r ? r.querySelectorAll(".ds-animated-size-item").length : 0;
+    },
     attachmentsUploading: function (composer) {
       var r = cardsRoot(composer);
       return !!r && Array.prototype.some.call(r.querySelectorAll(".ds-animated-size-item .ds-loading"), function (l) {

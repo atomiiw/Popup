@@ -98,6 +98,7 @@
   JR.blockedByComposerAttachments = function (questionDiv) {
     if (questionDiv) JR.layerNotes(questionDiv).forEach(function (n) { if (n.classList.contains("jr-attach-note--blocked")) n.remove(); });
     if (!JR.site.composerHasAttachments(JR.site.composer())) return false;
+    if (JR.setAsideUserFiles && JR.setAsideUserFiles()) return false; // TODO 4e: set aside, handed back after the send
     var note = questionDiv && JR.showAttachmentNote(questionDiv, null,
       "Send or remove your files in " + JR.site.label + "\u2019s box first");
     if (note) note.classList.add("jr-attach-note--blocked");
