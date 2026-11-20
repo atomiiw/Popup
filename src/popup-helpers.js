@@ -853,6 +853,10 @@
       e.preventDefault();
 
       popup._jrResizing = true;
+      // the resize cursor everywhere while dragging (user 2026-11-20: past the popup it was an arrow again)
+      var html = document.documentElement;
+      html.style.setProperty("--jr-resize-cursor", cursorFor(edge));
+      html.classList.add("jr-resizing");
       var startX = e.clientX;
       var startY = e.clientY;
       var startWidth = popup.offsetWidth;
@@ -947,6 +951,8 @@
           popup._jrBottomAnchor = anchorBottom;
         }
         popup.style.cursor = "";
+        html.classList.remove("jr-resizing");
+        html.style.removeProperty("--jr-resize-cursor");
         document.removeEventListener("mousemove", onMove, true);
         document.removeEventListener("mouseup", onUp, true);
       }

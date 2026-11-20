@@ -714,6 +714,21 @@ check("...the same where the popup makes the page longer: both sides fit → hig
   pdir2._jrLockedDirection === "below", pdir2._jrLockedDirection);
 pdir2.remove();
 
+// 2026-11-20: while an edge is dragged the resize cursor is on the whole page (past the popup too), gone after
+(function () {
+  var pc = popup3(new Array(200).join("<p>line</p>"));
+  JR.positionPopup(pc, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, []);
+  JR.addResizeHandlers(pc);
+  var rc = pc.getBoundingClientRect();
+  pc.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: rc.left + 100, clientY: rc.bottom - 2 }));
+  var during = getComputedStyle(document.body).cursor;
+  document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: rc.left + 100, clientY: rc.bottom - 2 }));
+  var html = document.documentElement;
+  check("resize: while dragging an edge the page shows the resize cursor (past the popup too); nothing left after",
+    during === "row-resize" && !html.classList.contains("jr-resizing") && !html.style.getPropertyValue("--jr-resize-cursor"), during + " / " + html.className);
+  pc.remove();
+})();
+
 // R19/R20: drag the far edge (height, 40-70vh, only the answer area changes) or a far corner (both)
 function drag3(p, x, y, dx, dy) {
   p.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));

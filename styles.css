@@ -166,6 +166,8 @@ body.dark /* DeepSeek */ {
   display: flex;
   flex-direction: column;
 }
+/* JR.addResizeHandlers: while a popup edge is dragged, the resize cursor stays wherever the pointer goes */
+html.jr-resizing, html.jr-resizing * { cursor: var(--jr-resize-cursor) !important; }
 /* chat.js freezeChat + sites/claude.js freezeRow: a Popup question row added during the send, before its answer row
    (the turn hidden by key) exists — hidden like claude.ai's Q&As (never display:none: rocksteady keeps 0x0 rows' heights) */
 [data-jr-freeze] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
