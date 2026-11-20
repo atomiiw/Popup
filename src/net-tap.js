@@ -321,8 +321,14 @@
     if (method === "GET" && conv && filterOn()) {
       var reqInit = init || (input && typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
       var fetchOlder = function (before) { // (the page's own request headers: its login)
+        // 100 turns at a time (live: the test chat's run of ~100 Popup Q&As took a dozen 10-turn round trips and the
+        // page gave up: "Couldn't load earlier messages"; 100 turns: one, ~0.6 s)
+        var t0 = Date.now();
         return origFetch.call(window, "/backend-api/conversations/" + conv[1] + "/messages?before=" + encodeURIComponent(before) +
-          "&num_turns=10&include_has_versions=true", reqInit).then(function (r) { return r.ok ? r.json() : null; });
+          "&num_turns=100&include_has_versions=true", reqInit).then(function (r) {
+          filterStatus.fill = (filterStatus.fill || []).slice(-9).concat([{ before: String(before).slice(0, 8), status: r.status, ms: Date.now() - t0 }]);
+          return r.ok ? r.json() : null;
+        });
       };
       return origFetch.apply(this, arguments).then(function (res) {
         if (!res.ok) return res;
