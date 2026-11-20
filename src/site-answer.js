@@ -114,7 +114,7 @@
     return all.length > 0 && all[all.length - 1] === t;
   }
 
-  /** The original: the turn on the page, else the site's own place for it (JR.siteOriginal: the render frame,
+  /** The original: the turn on the page, else the site's own place for it (JR.site.original: the render frame,
    *  DeepSeek's kept item), as long as it takes. */
   function find(l) {
     // the key followed till now first: asking for another one first would wait behind its own hold (review: ChatGPT's
@@ -127,7 +127,7 @@
       if (usable(t) && JR.site.assistantBodies(t).length) return follow(l, t, keys[i], true);
     }
     // one search at a time: the site redrawing meanwhile asked again for each change (a test: without end)
-    if (!JR.siteOriginal || l.finding) return;
+    if (!JR.site.original || l.finding) return;
     l.finding = true;
     (function next(i) { // its keys in turn (2 in ChatGPT's legacy DOM: question and answer turn)
       if (live !== l) return;
@@ -139,13 +139,13 @@
       }
       var key = keys[i];
       l.asked.push(key);
-      JR.siteOriginal(key).then(function (turn) {
+      JR.site.original(key).then(function (turn) {
         // never a detached one (it would loop), and only one with an answer drawn
         if (!turn || !turn.isConnected || !JR.site.assistantBodies(turn).length) {
-          if (turn && JR.siteOriginalRelease) JR.siteOriginalRelease(key);
+          if (turn && JR.site.releaseOriginal) JR.site.releaseOriginal(key);
           return next(i + 1);
         }
-        if (live !== l) return JR.siteOriginalRelease && JR.siteOriginalRelease(key);
+        if (live !== l) return JR.site.releaseOriginal && JR.site.releaseOriginal(key);
         follow(l, turn, key, false);
       });
     })(0);
@@ -221,7 +221,7 @@
       if (!l) return;
       if (l.observer) l.observer.disconnect();
       // every one asked for: one still being found is let go too (else the frame would keep it for good)
-      if (JR.siteOriginalRelease) l.asked.forEach(JR.siteOriginalRelease);
+      if (JR.site.releaseOriginal) l.asked.forEach(JR.site.releaseOriginal);
     },
   };
 })();

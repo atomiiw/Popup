@@ -1459,7 +1459,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var realConv = JR.site.conversationId, got = [];
   JR.site.conversationId = function () { return null; }; // each render then ends at once
-  ["a", "b", "c"].forEach(function (k) { JR.siteOriginal(k).then(function () { got.push(k); }); });
+  ["a", "b", "c"].forEach(function (k) { JR.site.original(k).then(function () { got.push(k); }); });
   setTimeout(function () {
     JR.site.conversationId = realConv;
     check("site render: the newest request goes next (a in progress, then c, then b)", got.join() === "a,c,b", got.join());
@@ -1467,9 +1467,9 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     // request is dropped — it isn't run, it ends with nothing
     var runs = 0, ends = [];
     JR.site.conversationId = function () { runs++; return null; };
-    JR.siteOriginal("d").then(function (t) { ends.push("d" + t); });
-    JR.siteOriginal("e").then(function (t) { ends.push("e" + t); });
-    JR.siteOriginalRelease("e");
+    JR.site.original("d").then(function (t) { ends.push("d" + t); });
+    JR.site.original("e").then(function (t) { ends.push("e" + t); });
+    JR.site.releaseOriginal("e");
     setTimeout(function () {
       JR.site.conversationId = realConv;
       check("site render: a request let go before it runs is dropped (not run, ends with nothing)", runs === 1 && ends.sort().join() === "dnull,enull", runs + " " + ends.join());
@@ -1571,15 +1571,15 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // user 2026-11-18 ("no backup, go all in") + architecture candidate 1 (2026-11-19): a finished popup shows only the
 // site answer — "Loading…" until its original is found (looked for again when none is), never a drawing of Popup's
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, calls = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, calls = 0;
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="held-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>SITE</p></div></div></div>';
   document.body.appendChild(far);
-  JR.siteOriginal = function () {
+  JR.site.original = function () {
     calls++;
     return calls === 1 ? Promise.resolve(null) : new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 6000); });
   };
-  JR.siteOriginalRelease = function () {};
+  JR.site.releaseOriginal = function () {};
   var p = document.createElement("div"); p.className = "jr-popup";
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   document.body.appendChild(p);
@@ -1593,7 +1593,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     var early = shows();
     setTimeout(function () {
       var late = shows();
-      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); p.remove();
       JR.state.completedHighlights.delete("held-hl");
       check("finished popup: Loading… after 6 s (no fallback), then the site answer from its original", early === "loading" && late === "copy:SITE" && calls === 2, JSON.stringify([early, late, calls]));
       done();
@@ -1604,12 +1604,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // candidate 1: a popup rebuilt while its original is still being found (its question read back after a reload) takes
 // over that search — not a second one from the start (the frame: slow)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, calls = 0, released = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, calls = 0, released = 0;
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="tk-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>TAKEN</p></div></div></div>';
   document.body.appendChild(far);
-  JR.siteOriginal = function () { calls++; return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 300); }); };
-  JR.siteOriginalRelease = function () { released++; };
+  JR.site.original = function () { calls++; return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 300); }); };
+  JR.site.releaseOriginal = function () { released++; };
   var p = document.createElement("div"); p.className = "jr-popup";
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   document.body.appendChild(p);
@@ -1619,7 +1619,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   setTimeout(function () {
     var r = p.querySelector(".jr-popup-response");
     var ok = calls === 1 && released === 0 && r && /TAKEN/.test(r.textContent) && !p.querySelector(":scope > .jr-popup-loading");
-    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); p.remove();
     JR.state.completedHighlights.delete("tk-hl");
     check("rebuilt while its original is being found: the same search goes on, its copy shows", ok, JSON.stringify([calls, released, r && r.textContent]));
     done();
@@ -1658,12 +1658,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live dev.145 (ChatGPT): the copy starts empty with Reply in it (an original found later, in the frame) — the answer
 // goes before Reply, also as it grows
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease };
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal };
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="rp-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>one</p></div></div></div>';
   document.body.appendChild(far);
-  JR.siteOriginal = function () { return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 30); }); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return new Promise(function (ok) { setTimeout(function () { ok(far.firstChild); }, 30); }); };
+  JR.site.releaseOriginal = function () {};
   var p = document.createElement("div"); p.className = "jr-popup";
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   document.body.appendChild(p);
@@ -1676,7 +1676,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     far.querySelector(".markdown").insertAdjacentHTML("afterend", '<div class="markdown"><p>two</p></div>');
     setTimeout(function () {
       check("Reply stays after the answer (a copy that starts empty, and as it grows)", first && replyLast(), r.innerHTML.slice(0, 200));
-      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); p.remove();
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); p.remove();
       JR.state.completedHighlights.delete("rp-hl");
       done();
     }, 20);
@@ -1795,12 +1795,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 
 // Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes
 // there (new text, a new block, a button's result) shows in the copy; Popup's own layer (onChange) is put back after
-// each patch; the page dropping the turn moves to the site's own place for it (JR.siteOriginal); stop lets it go
+// each patch; the page dropping the turn moves to the site's own place for it (JR.site.original); stop lets it go
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "sa-1");
   orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>first</p></div></div>';
   document.body.appendChild(orig);
-  var copy = document.createElement("div"), changes = 0, realOrig = JR.siteOriginal, released = null;
+  var copy = document.createElement("div"), changes = 0, realOrig = JR.site.original, released = null;
   document.body.appendChild(copy);
   var keepP = null;
   JR.siteAnswer.follow(copy, "sa-1", function (el) {
@@ -1820,8 +1820,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     var far = document.createElement("div");
     far.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>first, more</p><pre>out: 42</pre><p>from the frame</p></div></div>';
     var farDoc = document.createElement("div"); farDoc.hidden = true; farDoc.appendChild(far); document.body.appendChild(farDoc); // (in the frame's document)
-    JR.siteOriginal = function (key) { return Promise.resolve(key === "sa-1" ? far : null); };
-    JR.siteOriginalRelease = function (key) { released = key; };
+    JR.site.original = function (key) { return Promise.resolve(key === "sa-1" ? far : null); };
+    JR.site.releaseOriginal = function (key) { released = key; };
     orig.remove();
     md.appendChild(document.createElement("p")); // (a change the observer sees, on a turn no longer on the page)
     JR.siteAnswer.follow(copy, "sa-1", null); // what a reopen does
@@ -1835,7 +1835,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
         check("site answer: Popup's own layer is put back after each patch (onChange)", layer && changes >= 2, "changes=" + changes);
         check("site answer: the page dropped the turn — the site's own place for it takes over; stop lets it go",
           moved && copy.textContent.indexOf("after stop") === -1 && released === "sa-1", JSON.stringify([moved, released]));
-        JR.siteOriginal = realOrig; JR.siteOriginalRelease = undefined; copy.remove(); farDoc.remove();
+        JR.site.original = realOrig; JR.site.releaseOriginal = undefined; copy.remove(); farDoc.remove();
         done();
       }, 50);
     }, 50);
@@ -1850,11 +1850,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(t);
   var frameDoc = document.implementation.createHTMLDocument("frame").body; // (the frame's own document)
   frameDoc.innerHTML = '<div data-turn-key="sa-2"><div data-message-author-role="assistant"><div class="markdown"><p>frame</p></div></div></div>';
-  var real = { h: JR.site.harvestable, g: JR.site.isGenerating, o: JR.siteOriginal, r: JR.siteOriginalRelease }, gen = true;
+  var real = { h: JR.site.harvestable, g: JR.site.isGenerating, o: JR.site.original, r: JR.site.releaseOriginal }, gen = true;
   JR.site.harvestable = function () { return false; };
   JR.site.isGenerating = function () { return gen; };
-  JR.siteOriginal = function () { return Promise.resolve(frameDoc.firstChild); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return Promise.resolve(frameDoc.firstChild); };
+  JR.site.releaseOriginal = function () {};
   var copy = document.createElement("div");
   JR.siteAnswer.follow(copy, "sa-2", null);
   setTimeout(function () {
@@ -1873,7 +1873,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
       setTimeout(function () {
         check("site answer: while another turn streams, an older incomplete page turn isn't followed (the frame's is)", copy2.textContent === "frame", copy2.textContent);
         JR.siteAnswer.stop();
-        JR.site.harvestable = real.h; JR.site.isGenerating = real.g; JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r;
+        JR.site.harvestable = real.h; JR.site.isGenerating = real.g; JR.site.original = real.o; JR.site.releaseOriginal = real.r;
         t.remove(); newer.remove();
         done();
       }, 50);
@@ -1884,13 +1884,13 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live 2026-11-18 (B6): a parent active again after its child closed shows its last copy while its original is found
 // again (the frame); a click on a site control then went nowhere — it goes to the original once that is found
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, ran = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, ran = 0;
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="sl-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div></div></div>';
   document.body.appendChild(far);
   far.querySelector("button").addEventListener("click", function () { ran++; });
-  JR.siteOriginal = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
+  JR.site.releaseOriginal = function () {};
   var copy = document.createElement("div"); copy.className = "jr-popup-response";
   copy.innerHTML = '<div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div>'; // its last copy
   document.body.appendChild(copy);
@@ -1899,7 +1899,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   copy.querySelector("button").click(); // before the original is found
   setTimeout(function () {
     check("site controls in a popup: a click while its original is still being found goes there once it is", ran === 1, ran);
-    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); copy.remove();
     done();
   }, 800);
 }, 9500); }));
@@ -1907,13 +1907,13 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // P0-7 #4 (2026-11-20): one rule for whatever the site handles — ChatGPT's entity links too go to the original, and
 // also when it is still being found
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, ran = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, ran = 0;
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="en-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>see <span data-inline-mention-interactive="">Paris</span></p></div></div></div>';
   document.body.appendChild(far);
   far.querySelector("span").addEventListener("click", function () { ran++; });
-  JR.siteOriginal = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
+  JR.site.releaseOriginal = function () {};
   var copy = document.createElement("div"); copy.className = "jr-popup-response";
   copy.innerHTML = '<div class="markdown"><p>see <span data-inline-mention-interactive="">Paris</span></p></div>';
   document.body.appendChild(copy);
@@ -1922,7 +1922,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   copy.querySelector("span").click(); // before the original is found
   setTimeout(function () {
     check("an entity link in a popup: clicked in the original, also while it is still being found", ran === 1, ran);
-    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); copy.remove();
     done();
   }, 800);
 }, 27000); })); // (its own time: one popup is live at a time)
@@ -1930,7 +1930,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live 2026-11-19 (dev.133 trace, ChatGPT B6): the site replaced the original's turn just after it was found again; a
 // click then went to the replaced (detached) one — nothing copied. It goes to the turn found again instead.
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, hits = [];
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, hits = [];
   var far = document.createElement("div"); far.hidden = true; document.body.appendChild(far);
   function turn(n) {
     far.innerHTML = '<div data-turn-key="sr-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>x</p><button aria-label="Copy code">c</button></div></div></div>';
@@ -1938,8 +1938,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     return far.firstChild;
   }
   var asked = 0;
-  JR.siteOriginal = function () { asked++; var n = asked; return new Promise(function (r) { setTimeout(function () { r(n === 1 ? first : turn("second")); }, n === 1 ? 0 : 300); }); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { asked++; var n = asked; return new Promise(function (r) { setTimeout(function () { r(n === 1 ? first : turn("second")); }, n === 1 ? 0 : 300); }); };
+  JR.site.releaseOriginal = function () {};
   var first = turn("first");
   var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
   JR.wireResponseClicks(copy);
@@ -1949,7 +1949,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     copy.querySelector("button").click();
     setTimeout(function () {
       check("site controls in a popup: a click right after the site replaced the original goes to the turn found again", hits.join() === "second", hits.join());
-      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); copy.remove();
       done();
     }, 800);
   }, 50);
@@ -2024,11 +2024,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // review of dev.135: (a) no original for 3 rounds — it stopped looking and the popup stayed on "Loading…" for good;
 // (b) a re-find put the followed key first in the Q&A's keys, so its rebuilt popup no longer matched and looked again
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, asked = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, asked = 0;
   var far = document.createElement("div"); far.hidden = true; document.body.appendChild(far);
   function turn() { far.innerHTML = '<div data-turn-key="st-a-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>late</p></div></div></div>'; return far.firstChild; }
-  JR.siteOriginal = function (key) { asked++; return Promise.resolve(asked > 6 && key === "st-a" ? turn() : null); }; // 3 rounds of 2 keys: none
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function (key) { asked++; return Promise.resolve(asked > 6 && key === "st-a" ? turn() : null); }; // 3 rounds of 2 keys: none
+  JR.site.releaseOriginal = function () {};
   var copy = document.createElement("div"); document.body.appendChild(copy);
   JR.siteAnswer.follow(copy, ["st-q", "st-a"], null);
   setTimeout(function () {
@@ -2040,7 +2040,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
       setTimeout(function () {
         check("site answer: still looked for after 3 rounds without an original (no Loading for good)", a, copy.textContent);
         check("site answer: after a re-find the rebuilt popup is still the same Q&A (not looked for again)", asked === before, (asked - before) + " asked");
-        JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+        JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove(); copy.remove();
         done();
       }, 50);
     }, 100);
@@ -2050,12 +2050,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // user 2026-11-18 (dev.111: "成功了但是太慢 而且为啥loading出来的版本下面没有reply"): Popup's Reply stays in the copy
 // through every patch; a rebuilt popup of the same Q&A gets the original already found (not looked for again)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, asked = 0, released = 0;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal }, asked = 0, released = 0;
   var far = document.createElement("div"); far.hidden = true;
   far.innerHTML = '<div data-turn-key="sc-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>one</p></div></div></div>';
   document.body.appendChild(far);
-  JR.siteOriginal = function () { asked++; return Promise.resolve(far.firstChild); };
-  JR.siteOriginalRelease = function () { released++; };
+  JR.site.original = function () { asked++; return Promise.resolve(far.firstChild); };
+  JR.site.releaseOriginal = function () { released++; };
   var c1 = document.createElement("div");
   JR.siteAnswer.follow(c1, ["sc-1"], null);
   setTimeout(function () {
@@ -2068,7 +2068,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
       check("site answer: Reply stays in the copy through patches; a rebuilt popup gets the original already found",
         reply && c2.lastElementChild === reply && /one/.test(c2.textContent) && /two/.test(c2.textContent) && asked === 1 && released === 0,
         JSON.stringify([c2.innerHTML.slice(0, 120), asked, released]));
-      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove();
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; far.remove();
       done();
     }, 50);
   }, 50);
@@ -2077,18 +2077,18 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // user 2026-11-18 (screenshot, dev.112): a frame original's generated code styles apply only in a marked copy — the
 // rebuilt popup's copy it is handed to is marked too (it lost them: no monospace, no indentation)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope }, marked = [];
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope }, marked = [];
   var fdoc = document.implementation.createHTMLDocument("frame");
   fdoc.body.innerHTML = '<div data-turn-key="sd-1"><div data-message-author-role="assistant"><div class="markdown"><p>code</p></div></div></div>';
-  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.firstChild); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return Promise.resolve(fdoc.body.firstChild); };
+  JR.site.releaseOriginal = function () {};
   JR.siteOriginalScope = function (el) { if (marked.indexOf(el) === -1) marked.push(el); };
   var c1 = document.createElement("div"), c2 = document.createElement("div");
   JR.siteAnswer.follow(c1, ["sd-1"], null);
   setTimeout(function () {
     JR.siteAnswer.follow(c2, ["sd-1"], null); // its popup rebuilt
     check("site answer: a frame original's copy is marked for its styles, also the rebuilt popup's", marked.indexOf(c1) !== -1 && marked.indexOf(c2) !== -1 && /code/.test(c2.textContent), marked.length);
-    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
     done();
   }, 50);
 }, 21000); }));
@@ -2096,11 +2096,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live 2026-11-18 (dev.115 trace): the site replaces the whole turn of a followed original (ChatGPT redraws it in the
 // frame) — nothing changes inside the old one; the copy follows the new one
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope };
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope };
   var fdoc = document.implementation.createHTMLDocument("frame"), turnHTML = function (t) { return '<div data-turn-key="se-1"><div data-message-author-role="assistant"><div class="markdown"><p>' + t + '</p></div></div></div>'; };
   fdoc.body.innerHTML = turnHTML("old drawing");
-  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.querySelector("[data-turn-key]")); };
-  JR.siteOriginalRelease = function () {};
+  JR.site.original = function () { return Promise.resolve(fdoc.body.querySelector("[data-turn-key]")); };
+  JR.site.releaseOriginal = function () {};
   JR.siteOriginalScope = function () {};
   var c = document.createElement("div");
   JR.siteAnswer.follow(c, ["se-1"], null);
@@ -2108,7 +2108,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     fdoc.body.innerHTML = turnHTML("new drawing"); // replaced, not changed
     setTimeout(function () {
       check("site answer: the site replaced the whole original — the copy follows the new one", /new drawing/.test(c.textContent), c.textContent);
-      JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
       done();
     }, 50);
   }, 50);
@@ -2117,12 +2117,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // review of dev.125: opening a child popup stops its parent's follow (only the active popup follows; the parent's
 // patches redrew its paragraphs and took away the highlight the child was opened from)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease, s: JR.siteOriginalScope }, st = JR.state;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope }, st = JR.state;
   var saved = { stack: st.popupStack.slice(), p: st.activePopup, h: st.activeSourceHighlights, id: st.activeHighlightId };
   var fdoc = document.implementation.createHTMLDocument("frame");
   fdoc.body.innerHTML = '<div data-turn-key="sf-1"><div data-message-author-role="assistant"><div class="markdown"><p>parent</p></div></div></div>';
-  JR.siteOriginal = function () { return Promise.resolve(fdoc.body.firstChild); };
-  JR.siteOriginalRelease = function () {}; JR.siteOriginalScope = function () {};
+  JR.site.original = function () { return Promise.resolve(fdoc.body.firstChild); };
+  JR.site.releaseOriginal = function () {}; JR.siteOriginalScope = function () {};
   var c = document.createElement("div");
   JR.siteAnswer.follow(c, ["sf-1"], null);
   setTimeout(function () {
@@ -2131,7 +2131,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     check("site answer: opening a child popup stops the parent's follow", before && JR.siteAnswer.current() === null, before);
     st.popupStack.length = 0; Array.prototype.push.apply(st.popupStack, saved.stack);
     st.activePopup = saved.p; st.activeSourceHighlights = saved.h; st.activeHighlightId = saved.id;
-    JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; JR.siteOriginalScope = real.s;
+    JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
     done();
   }, 50);
 }, 23000); }));
@@ -2154,7 +2154,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live 2026-11-19 (dev.130 trace, ChatGPT 9/80 ~40 s): the frame first showed earlier turns at a place, then — its
 // heights measured — later ones there; the search kept the bound from before and went to and fro in a window without
 // the turn (160 steps). Simulated frame: estimated heights, then measured ones after a few steps.
-var realSiteOriginal = JR.siteOriginal, realSiteOriginalRelease = JR.siteOriginalRelease;
+var realSiteOriginal = JR.site.original, realSiteOriginalRelease = JR.site.releaseOriginal;
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var N = 40, keys = [], sets = 0, st = 0, simDoc = null;
   for (var k = 0; k < N; k++) keys.push("sim" + k);
@@ -2175,8 +2175,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }
   var real = { conv: JR.site.conversationId, url: JR.site.chatUrl, scr: JR.site.frameScroller, cnt: JR.site.frameTurnCount,
     ft: JR.site.frameTurn, tk: JR.site.turnKey, sel: JR.SEL.turn, ord: JR.qa.turnOrder, cache: JR.qa.turnOrderCache,
-    o: JR.siteOriginal, r: JR.siteOriginalRelease };
-  JR.siteOriginal = realSiteOriginal; JR.siteOriginalRelease = realSiteOriginalRelease;
+    o: JR.site.original, r: JR.site.releaseOriginal };
+  JR.site.original = realSiteOriginal; JR.site.releaseOriginal = realSiteOriginalRelease;
   JR.site.conversationId = function () { return "sim-conv"; };
   JR.site.chatUrl = function () { return "about:blank"; };
   JR.site.frameScroller = function (d) { if (simDoc !== d) { simDoc = d; mount(); } return sc; };
@@ -2186,14 +2186,14 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.SEL.turn = "[data-sim]";
   JR.qa.turnOrderCache = keys; JR.qa.turnOrder = function () { return Promise.resolve(keys); };
   var found = null;
-  JR.siteOriginal("sim17").then(function (t) { found = t; });
+  JR.site.original("sim17").then(function (t) { found = t; });
   setTimeout(function () {
     check("site render: the turn is found though the frame's heights change during the search (once ~40 s)",
       found && found.getAttribute("data-sim") === "sim17", (found ? found.getAttribute("data-sim") : found) + " after " + sets + " scrolls");
-    JR.siteOriginalRelease("sim17");
+    JR.site.releaseOriginal("sim17");
     JR.site.conversationId = real.conv; JR.site.chatUrl = real.url; JR.site.frameScroller = real.scr; JR.site.frameTurnCount = real.cnt;
     JR.site.frameTurn = real.ft; JR.site.turnKey = real.tk; JR.SEL.turn = real.sel; JR.qa.turnOrder = real.ord; JR.qa.turnOrderCache = real.cache;
-    JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r;
+    JR.site.original = real.o; JR.site.releaseOriginal = real.r;
     done();
   }, 4500);
 }, 25000); }));

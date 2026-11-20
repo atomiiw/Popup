@@ -191,18 +191,18 @@
 
   /**
    * The original of the turn with this key in the frame (site-answer.js, design A): the frame's turn, held there —
-   * the frame isn't scrolled for anything else — until JR.siteOriginalRelease(key). Null if it isn't found.
+   * the frame isn't scrolled for anything else — until JR.site.releaseOriginal(key). Null if it isn't found.
    */
   var holding = null, wanted = null, reloadedFor = new Set(); // { key, release }; the key asked for and not released yet;
   // the keys a fresh frame was loaded for once (a Set: two answers asked in turn would reload it for each again)
-  JR.siteOriginal = function (key) {
+  JR.site.original = function (key) {
     // held already: the site redrew it in the frame (live 2026-11-18: the re-ask then waited behind its own hold) — the
     // frame's turn now, at once
     if (holding && holding.key === key) { // (mid-redraw: a moment; gone for good — the frame scrolled on: found again)
       return until(function () { var d = doc(); return d && JR.site.frameTurn(d, key); }, 100, 10).then(function (t) {
         if (t) return t;
-        JR.siteOriginalRelease(key);
-        return JR.siteOriginal(key);
+        JR.site.releaseOriginal(key);
+        return JR.site.original(key);
       });
     }
     wanted = key;
@@ -237,7 +237,7 @@
       }, key, give);
     });
   };
-  JR.siteOriginalRelease = function (key) {
+  JR.site.releaseOriginal = function (key) {
     if (wanted === key) wanted = null;
     jobs = jobs.filter(function (j) { if (j.key !== key) return true; j.drop(null); j.done(null); return false; }); // not found for nobody
     if (!holding || holding.key !== key) return;

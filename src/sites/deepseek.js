@@ -345,11 +345,11 @@
   };
   /**
    * The original of a hidden answer (site-answer.js, design A): DeepSeek can't be framed, but the answer is in its list —
-   * kept drawn there (0 px, unseen; keepMounted) until JR.siteOriginalRelease(key). Null after ~5 s if the list doesn't
+   * kept drawn there (0 px, unseen; keepMounted) until JR.site.releaseOriginal(key). Null after ~5 s if the list doesn't
    * draw it (still kept) (an answer above the list's first drawn item can't be reached).
    */
   var kept = null;
-  JR.siteOriginal = function (key) {
+  S.original = function (key) {
     S.keepMounted(kept = key, "popup");
     var n = 0;
     return new Promise(function (resolve) {
@@ -364,7 +364,7 @@
       })();
     });
   };
-  JR.siteOriginalRelease = function (key) {
+  S.releaseOriginal = function (key) {
     if (kept !== key) return;
     kept = null;
     S.keepMounted(null, "popup");

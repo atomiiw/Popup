@@ -233,15 +233,15 @@ function allCheck() {
 }
 // design A (2026-11-18): an original is kept drawn in DeepSeek's list while it is live, let go on release
 var origDone = roDone.then(function () {
-  return JR.siteOriginal("5").then(function (t) {
+  return S.original("5").then(function (t) {
     var kept = document.documentElement.getAttribute("data-jr-ds-need");
-    JR.siteOriginalRelease("5");
+    S.releaseOriginal("5");
     check("siteOriginal: the list item, kept drawn until released", t === item(5) && kept === "5" && !document.documentElement.hasAttribute("data-jr-ds-need"), JSON.stringify([!!t, kept]));
     // review of dev.128: a send and a popup each keep their own item drawn (they took the one slot from each other)
     S.keepMounted("7");
-    return JR.siteOriginal("5").then(function () {
+    return S.original("5").then(function () {
       var both = document.documentElement.getAttribute("data-jr-ds-need");
-      JR.siteOriginalRelease("5");
+      S.releaseOriginal("5");
       var sendOnly = document.documentElement.getAttribute("data-jr-ds-need");
       S.keepMounted(null);
       check("keepMounted: a send's item and a popup's original are kept drawn together", both === "7 5" && sendOnly === "7" && !document.documentElement.hasAttribute("data-jr-ds-need"), JSON.stringify([both, sendOnly]));
