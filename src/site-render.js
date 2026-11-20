@@ -193,6 +193,10 @@
         if (!conv || !key) return give(null);
         if (fresh) { dropFrame(); reloadedFor.delete(key); }
         if (onWaiting) onWaiting("frame");
+        // a Q&A newer than the order read (sent since): the order read again, and a copy newer than it (live Beta C2: the
+        // copy and the order from before the send — looked for at the end of an old copy until the deadline)
+        var known = (JR.qa.turnOrderCache || []).indexOf(key) >= 0;
+        if (!known && JR.site.name === "chatgpt" && JR.qa.resetApi) { JR.qa.resetApi(); dropFrame(); }
         return (JR.qa.turnOrder ? JR.qa.turnOrder() : Promise.resolve([])).then(function (order) {
           // ChatGPT: the copy opened at the answer (its network tap there, net-tap.js) — the answer drawn last, at once;
           // no scrolling the copy to it (its list didn't follow a scroll: 20–40 s, or never — live 11-20). One already

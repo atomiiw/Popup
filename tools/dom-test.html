@@ -1998,6 +1998,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
   // (built before it is placed, as createPopup does — live C4: the watch ended at once there)
   JR.state.completedHighlights.set("av-hl", { question: "Q", spans: [], items: [{ id: "av-1", question: "Q", status: "done", turnKeys: ["av-key"] }], activeItemIndex: 0 });
+  // (shown before — the popup reopened, as live Beta C2: a watch that stopped on "shown" never saw it go unreachable)
+  JR.availability.on("av-1", { t: "locate" }); JR.availability.on("av-1", { t: "found", via: "frame" });
   JR.rebuildPopupAfterEdit(p, "av-hl");
   document.body.appendChild(p);
   setTimeout(function () {

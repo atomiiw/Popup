@@ -1299,7 +1299,8 @@
       // (its Loading… taken out of the popup — the copy is in, or another answer area — ends the watch; not "not in the
       // document": a popup is built before it is placed — live C4: the watch ended at once, Loading… with no end)
       if (!wait || !wait.parentNode) { if (stop) stop(); return; }
-      if (s.kind === "shown") { if (stop) stop(); return; } // (its copy is in: done watching)
+      // (not "shown": a reopened popup's version is still shown from before, then located again — live Beta C2: the watch
+      // ended at once and its unreachable never reached the popup; its copy coming in removes the Loading… — above)
       if (s.kind === "failed" && item.status === "pending") { // (a send's deadline passed: the failed view, Retry)
         if (stop) stop();
         setTimeout(function () { if (popup.isConnected && JR.rebuildPopupAfterEdit) JR.rebuildPopupAfterEdit(popup, hlId); }, 0);
