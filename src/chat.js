@@ -597,11 +597,22 @@
     // virtual list re-measures, which detaches the original element.
     var anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
     if (anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey) || anchorEl;
-    function liveAnchor() {
-      if (anchorEl && anchorEl.isConnected) return anchorEl;
-      if (anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);
-      return anchorEl && anchorEl.isConnected ? anchorEl : null;
+    // marked for scroll-guard.js (page world): a site scroll keeping it in view goes through
+    var marked = null;
+    function mark(el) {
+      if (el === marked) return;
+      if (marked) marked.removeAttribute("data-jr-anchor");
+      marked = el;
+      if (el) el.setAttribute("data-jr-anchor", "");
     }
+    function liveAnchor() {
+      if (!(anchorEl && anchorEl.isConnected) && anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);
+      var a = anchorEl && anchorEl.isConnected ? anchorEl : null;
+      mark(a);
+      return a;
+    }
+    // a site scroll scroll-guard.js let through (it kept the reader's place): the place to fall back to from now on
+    var html = document.documentElement, siteScroll = html.getAttribute("data-jr-site-scroll");
     var savedTop = container.scrollTop;
     var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     var userScrolling = false;
@@ -655,6 +666,8 @@
 
       var anchor = liveAnchor();
       observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
+      var site = html.getAttribute("data-jr-site-scroll");
+      if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
       if (userScrolling) {
         savedTop = container.scrollTop;
         // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
@@ -685,6 +698,7 @@
 
     return function unlock() {
       if (rafId) cancelAnimationFrame(rafId);
+      mark(null);
       if (ro) ro.disconnect();
       removeListeners(container);
       if (wheelTimer) clearTimeout(wheelTimer);

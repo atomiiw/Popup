@@ -75,13 +75,42 @@
     }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-jr-scroll-lock"] });
   }
 
+  // Which site scrolls a lock lets through: the ones that keep what the reader is looking at (Popup marks it,
+  // [data-jr-anchor]) in view. ChatGPT's new front end (2026-11-20) keeps the reading position itself after a send —
+  // blocked, the reader ended on another passage; a scroll taking it out of view (the new turn at the end, R33) is
+  // still blocked. The anchor not on the page (unmounted): blocked only within two screens of the end. A scroll let
+  // through is noted (data-jr-site-scroll): Popup's own hold then falls back to there, not to a stale position.
+  function blocks(el, top) {
+    if (!lockOn() || !isThreadScroller(el)) return false;
+    if (typeof top !== "number" || !isFinite(top)) return true;
+    var max = el.scrollHeight - el.clientHeight;
+    top = Math.max(0, Math.min(top, max));
+    var a = document.querySelector("[data-jr-anchor]");
+    if (a && el.contains(a)) {
+      var r = a.getBoundingClientRect(), y = r.top - el.getBoundingClientRect().top - (top - el.scrollTop);
+      return y + r.height <= 0 || y >= el.clientHeight;
+    }
+    return top >= max - el.clientHeight;
+  }
+  var passed = 0;
+  function letThrough(el) {
+    if (lockOn() && isThreadScroller(el)) document.documentElement.setAttribute("data-jr-site-scroll", String(++passed));
+  }
+  function targetTop(el, name, args) {
+    var a = args[0], top = a && typeof a === "object" ? a.top : args[1];
+    if (typeof top !== "number") return undefined; // no vertical part
+    return name === "scrollBy" ? el.scrollTop + top : top;
+  }
+
   var P = Element.prototype;
 
   ["scrollTo", "scroll", "scrollBy"].forEach(function (name) {
     var orig = P[name];
     if (typeof orig !== "function") return;
     P[name] = function () {
-      if (lockOn() && isThreadScroller(this)) return note(name, arguments[0]);
+      var top = targetTop(this, name, arguments);
+      if (top !== undefined && blocks(this, top)) return note(name, arguments[0]);
+      if (top !== undefined) letThrough(this);
       return orig.apply(this, arguments);
     };
   });
@@ -99,7 +128,8 @@
       enumerable: desc.enumerable,
       get: desc.get,
       set: function (v) {
-        if (lockOn() && isThreadScroller(this)) return note("scrollTop=", Math.round(v));
+        if (blocks(this, v)) return note("scrollTop=", Math.round(v));
+        letThrough(this);
         desc.set.call(this, v);
       },
     });

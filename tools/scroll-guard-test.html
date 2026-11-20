@@ -1,0 +1,67 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RUNNING</title></head>
+<body>
+<pre id="out"></pre>
+<script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
+<script src="../src/scroll-guard.js"></script>
+<script>
+// scroll-guard.js (page world) on a file: page = the ChatGPT rules ([data-app-action-timeline-scroll]).
+var out = [], failed = 0;
+function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
+var html = document.documentElement;
+var sc = document.createElement("div");
+sc.setAttribute("data-app-action-timeline-scroll", "");
+sc.style.cssText = "position:absolute;top:0;left:0;width:400px;height:400px;overflow-y:auto";
+sc.innerHTML = "<div style='height:5000px;position:relative'><div id='a' style='position:absolute;top:2000px;height:40px'>anchor</div>" +
+  "<div id='end' style='position:absolute;top:4900px;height:20px'>new turn</div></div>";
+document.body.appendChild(sc);
+var a = document.getElementById("a"), max = 5000 - 400;
+function reset(top) { html.removeAttribute("data-jr-scroll-lock"); sc.scrollTop = top; html.setAttribute("data-jr-scroll-lock", String(Date.now())); }
+function site() { return html.getAttribute("data-jr-site-scroll"); }
+
+// 2026-11-20 (ChatGPT's new front end keeps the reading position itself after a send; blocking it left the reader elsewhere)
+a.setAttribute("data-jr-anchor", "");
+reset(1900);
+sc.scrollTo({ top: max, behavior: "instant" });
+check("locked: a scroll to the end (the new turn) that takes the anchor out of view is blocked", sc.scrollTop === 1900, sc.scrollTop);
+sc.scrollBy(0, 2000);
+check("locked: scrollBy taking the anchor out of view is blocked", sc.scrollTop === 1900, sc.scrollTop);
+var s0 = site();
+sc.scrollTo({ top: 1950, behavior: "instant" });
+check("locked: a site scroll keeping the anchor in view goes through, and is noted for Popup's hold", sc.scrollTop === 1950 && site() !== s0, sc.scrollTop + " " + site());
+sc.scrollTop = 1750;
+check("locked: scrollTop = … keeping the anchor in view goes through", sc.scrollTop === 1750, sc.scrollTop);
+sc.scrollTo(0, 1650);
+check("locked: scrollTo(x, y) keeping the anchor in view goes through", sc.scrollTop === 1650, sc.scrollTop);
+var s1 = site();
+sc.scrollTo({ left: 0 });
+check("locked: a scroll with no vertical part changes nothing and notes nothing", sc.scrollTop === 1650 && site() === s1, sc.scrollTop + " " + site());
+document.getElementById("end").scrollIntoView();
+check("locked: scrollIntoView of something in the chat is still blocked", sc.scrollTop === 1650, sc.scrollTop);
+
+// the anchor not on the page (ChatGPT unmounted its turn): only a scroll near the end is blocked
+a.removeAttribute("data-jr-anchor");
+reset(1900);
+sc.scrollTo({ top: 3000 });
+check("locked, no anchor: a scroll far from the end goes through", sc.scrollTop === 3000, sc.scrollTop);
+sc.scrollTo({ top: max - 100 });
+check("locked, no anchor: a scroll to within two screens of the end is blocked", sc.scrollTop === 3000, sc.scrollTop);
+
+// not locked: nothing is touched
+html.removeAttribute("data-jr-scroll-lock");
+var s2 = site();
+sc.scrollTo({ top: max });
+check("not locked: every scroll goes through, nothing noted", sc.scrollTop === max && site() === s2, sc.scrollTop + " " + site());
+
+// another element than the thread scroller: never touched
+var other = document.createElement("div"); other.style.cssText = "height:100px;overflow:auto"; other.innerHTML = "<div style='height:1000px'></div>";
+document.body.appendChild(other); html.setAttribute("data-jr-scroll-lock", String(Date.now()));
+other.scrollTo({ top: 500 });
+check("locked: another scroller (a popup's answer, a code block) is never blocked", other.scrollTop === 500, other.scrollTop);
+html.removeAttribute("data-jr-scroll-lock");
+
+out.push(failed ? failed + " FAILED" : "all passed");
+document.getElementById("out").textContent = out.join("\n");
+document.title = failed ? "FAIL" : "PASS";
+</script>
+</body></html>

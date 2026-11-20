@@ -1016,6 +1016,34 @@ asyncChecks.push(new Promise(function (done) {
   }, 900);
 }));
 
+// 2026-11-20 (ChatGPT's new front end): after a send it lays the chat out anew and keeps the reading position itself;
+// the anchor's turn is unmounted meanwhile. A site scroll scroll-guard.js let through (data-jr-site-scroll) is the
+// place to fall back to — not the scrollTop from before the send (another passage now). The anchor is marked meanwhile.
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:200px;overflow:auto";
+  sc.innerHTML = "<div class='list' style='height:4000px;position:relative'><div class='a' style='position:absolute;top:1500px;height:50px'>x</div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1400;
+  var a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame, html = document.documentElement;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var markedDuring = a.hasAttribute("data-jr-anchor");
+  a.remove(); run(2);                                            // the anchor's turn unmounted
+  sc.scrollTop = 2600; html.setAttribute("data-jr-site-scroll", "t" + Date.now()); // ChatGPT keeps the passage: let through
+  run(3);
+  check("new ChatGPT: the lock falls back to where the site kept the reader, not to the scrollTop before the send",
+    sc.scrollTop === 2600, sc.scrollTop);
+  unlock();
+  check("the lock marks its anchor for scroll-guard.js while it holds, and unmarks it after", markedDuring && !a.hasAttribute("data-jr-anchor") && !document.querySelector("[data-jr-anchor]"), markedDuring + " " + !!document.querySelector("[data-jr-anchor]"));
+  sc.remove(); html.removeAttribute("data-jr-site-scroll");
+})();
+
 // R33: Return in a popup's question (or a click on its send arrow) is not the user scrolling the chat:
 // ChatGPT re-lays the chat ~0.5 s after the send, and the lock must still keep the highlight in place.
 ["keydown", "pointerdown"].forEach(function (type) {
