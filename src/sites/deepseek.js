@@ -59,20 +59,26 @@
   }
   // `ready` comes first in the reply, possibly before DeepSeek adds the answer item: keep the ids and map
   // on the next jr-net event that finds a new temporary ANSWER item (never a user item).
-  var pending = null;
-  document.addEventListener("jr-net", function (e) {
-    var d; try { d = JSON.parse(e.detail); } catch (err) { return; }
-    if (d.kind === "turn" && d.turnKey) pending = d;
-    if (!pending) return;
+  var pending = null, retry = 0;
+  function mapPending() {
+    if (!pending) return true;
     // The newest answer item with a temporary key is this reply's (sends are queued, one at a time)
     var answer = Array.prototype.slice.call(root().querySelectorAll(C.item)).filter(function (i) {
       return Number(i.getAttribute(KEY)) < 0 && !realOf[i.getAttribute(KEY)] && isAnswer(i);
     }).pop();
-    if (!answer) return;
+    if (!answer) return false;
     remember(answer.getAttribute(KEY), pending.turnKey);
     var user = answer.previousElementSibling;
     if (user && pending.userKey && Number(user.getAttribute(KEY)) < 0) remember(user.getAttribute(KEY), pending.userKey);
     pending = null;
+    return true;
+  }
+  document.addEventListener("jr-net", function (e) {
+    var d; try { d = JSON.parse(e.detail); } catch (err) { return; }
+    if (d.kind === "turn" && d.turnKey) { pending = d; retry = 0; }
+    if (mapPending()) return;
+    // the user's own send has no later event (its text isn't sent): look again until the item is added (peer review)
+    (function again() { if (pending && ++retry <= 50 && !mapPending()) setTimeout(again, 200); })();
   });
 
   function itemSel(k) { return "[" + KEY + '="' + String(k).replace(/["\\]/g, "") + '"]'; }

@@ -291,7 +291,25 @@ var origDone = roDone.then(function () {
   if (wasDark) document.body.classList.add("dark");
   r.remove();
 })();
-origDone.then(allCheck).then(function () {
+// peer review of A4: the user's own send has no later jr-net event — its ids map once the answer item is added
+function lateItemCheck() {
+  return new Promise(function (done) {
+    var q = item(-2).cloneNode(true), a = item(-3).cloneNode(true);
+    q.setAttribute("data-virtual-list-item-key", "-8"); a.setAttribute("data-virtual-list-item-key", "-9");
+    var host = item(-2).parentElement;
+    host.appendChild(q);
+    document.dispatchEvent(new CustomEvent("jr-net", { detail: JSON.stringify({ kind: "turn", turnKey: "900", userKey: "899" }) }));
+    setTimeout(function () {
+      host.appendChild(a); // DeepSeek adds the answer item after the reply's ids — and no event follows
+      setTimeout(function () {
+        check("ids before the answer item, no later event (the user's own send): mapped once it is added",
+          S.turnKey(item(-9)) === "900" && S.turnKey(item(-8)) === "899", S.turnKey(item(-9)) + " " + S.turnKey(item(-8)));
+        q.remove(); a.remove(); done();
+      }, 500);
+    }, 300);
+  });
+}
+origDone.then(allCheck).then(lateItemCheck).then(function () {
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";
