@@ -51,13 +51,6 @@
     try { return frame && frame.contentDocument; } catch (e) { return null; }
   }
 
-  /** The frame's mounted turns that are in the order, as { i: place in the order, top: in the scroller }, by place. */
-  function placed(d, sc, order) {
-    var base = sc.getBoundingClientRect().top - sc.scrollTop;
-    return Array.prototype.map.call(d.querySelectorAll(JR.SEL.turn), function (t) {
-      return { i: order.indexOf(JR.site.turnKey(t)), top: t.getBoundingClientRect().top - base };
-    }).filter(function (p) { return p.i >= 0; }).sort(function (a, b) { return a.i - b.i; });
-  }
 
   /**
    * The turn in the frame. ChatGPT mounts only turns near the scroll position and, in a long chat, loads the earlier
@@ -68,57 +61,17 @@
   function findTurn(key, onWaiting) {
     var d = doc(), sc = d && JR.site.frameScroller(d);
     if (!sc) { missWhy[key] = "copy-not-ready"; return Promise.resolve(null); }
-    missWhy[key] = "not-found";
-    var order = JR.qa.turnOrderCache || [], target = order.indexOf(key), atTop = 0;
-    var below = 0, above = Infinity, height = -1; // scroll positions where it was seen to be further down / up
-    var stride = 0.8, lastDir = 0; // a step, in screens: halved each time the direction turns (it went to and fro past it)
-    var mounted = "", still = 0; // the turns the frame has mounted, and for how many steps they didn't change
-    if (target >= 0) sc.scrollTop = sc.scrollHeight * target / order.length - sc.clientHeight / 2;
-    else sc.scrollTop = sc.scrollHeight;
-    // not in the order: newer than it (sent since) — at the end if anywhere; look there only (it was a 40 s search)
-    var steps = target < 0 && order.length ? 8 : 160;
-    return (function step(n) {
-      var t = JR.site.frameTurn(d, key);
-      if (!t && !wanted.has(key)) return Promise.resolve(null); // let go: stop (it ran 40 s for nobody)
-      if (t || n <= 0) return Promise.resolve(t || null);
-      var at = placed(d, sc, order), last = at[at.length - 1];
-      var down = target >= 0 && at.length && last.i < target;
-      if (!down && sc.scrollTop <= 0) {
-        if (++atTop > 20) { missWhy[key] = "not-loaded"; return Promise.resolve(null); } // ~5 s at the top and nothing earlier came
-        if (onWaiting) onWaiting("older");
-        // (at 0 already, setting 0 again is no scroll: ChatGPT's new front end loads earlier turns on a scroll at the
-        // top — live round 5: the frame sat there ~20 s; a step down and back is one)
-        sc.scrollTop = 40;
-        return wait(50).then(function () { sc.scrollTop = 0; return wait(200); }).then(function () { return step(n - 1); });
-      } else atTop = 0;
-      // scrolled far, the same turns mounted step after step: the frame's list is stuck (live 11-20) — a fresh frame
-      var sig = at.map(function (p) { return p.i; }).join();
-      still = sig === mounted ? still + 1 : 0;
-      mounted = sig;
-      if (still >= 12) { missWhy[key] = "copy-stuck"; return Promise.resolve(null); }
-      if (sc.scrollHeight > height * 1.1) { height = sc.scrollHeight; below = 0; above = Infinity; } // earlier turns came (not: measured heights settling)
-      if (target >= 0 && at.length) { if (down) below = Math.max(below, sc.scrollTop); else if (at[0].i > target) above = Math.min(above, sc.scrollTop); }
-      var dir = down ? 1 : -1;
-      if (lastDir && dir !== lastDir) stride = Math.max(0.1, stride / 2);
-      lastDir = dir;
-      var want = sc.scrollTop + dir * sc.clientHeight * stride;
-      var per = at.length >= 2 ? (last.top - at[0].top) / Math.max(1, last.i - at[0].i) : 0;
-      if (target >= 0 && per > 0 && (target < at[0].i - 2 || target > last.i + 2)) {
-        // far off: jump to where it should be, from the turns there and their average height (live 2026-11-18: a fresh
-        // frame has only the last turns loaded, so the place estimated from the whole order was far off — 62 steps)
-        var ref = target < at[0].i ? at[0] : last;
-        want = ref.top + (target - ref.i) * per - sc.clientHeight / 2;
-        // …but never back past where it was seen to be below / above: halfway instead (turn heights differ a lot, the
-        // jumps went to and fro past it — 160 steps, 40 s)
-        var top = Math.min(above, sc.scrollHeight);
-        // …unless that window is under a screen and it isn't there: the bounds are from before the frame measured its
-        // heights (live 2026-11-19: earlier turns, then later ones at the same place — 160 steps to and fro, 40 s)
-        if (top - below < sc.clientHeight) { below = 0; above = Infinity; top = sc.scrollHeight; }
-        if (!(want > below && want < top)) want = (below + top) / 2;
-      }
-      sc.scrollTop = Math.max(0, want);
-      return wait(250).then(function () { return step(n - 1); });
-    })(steps);
+    var list = JR.reachTurn.listOf(sc, function () { return Array.prototype.slice.call(d.querySelectorAll(JR.SEL.turn)); },
+      function (k) { return JR.site.frameTurn(d, k); });
+    return JR.reachTurn(list, key, JR.qa.turnOrderCache || [], {
+      cancel: function () { return !wanted.has(key); }, // let go: stop (it ran 40 s for nobody)
+      onWaiting: onWaiting,
+      wait: wait,
+    }).then(function (r) {
+      if (r.turn) return r.turn;
+      missWhy[key] = { stuck: "copy-stuck", "not-loaded": "not-loaded" }[r.why] || "not-found";
+      return null;
+    });
   }
 
   /** Scroll the frame to the top until the whole conversation is loaded (no growth for 2 s, or 30 s), so a later

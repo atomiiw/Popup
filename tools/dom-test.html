@@ -26,6 +26,7 @@
 <script src="../src/site-render.js"></script>
 <script src="../src/availability.js"></script>
 <script src="../src/locator.js"></script>
+<script src="../src/reach-turn.js"></script>
 <script src="../src/site-answer.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
@@ -1598,7 +1599,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     var at = sc.scrollTop;
     setTimeout(function () {
       check("Esc while a jump searches: it stops scrolling (live R5b: it went on and opened the popup)",
-        sc.scrollTop === at && at < 3000 && ended === null, at + " → " + sc.scrollTop + " " + ended);
+        sc.scrollTop === at && at < 3000 && ended !== true, at + " → " + sc.scrollTop + " " + ended);
       JR.site.scrollContainer = real.sc; JR.site.findTurnByKey = real.find; JR.qa.turnOrderCache = real.order; sc.remove();
       done();
     }, 400);
@@ -2399,7 +2400,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     keys.forEach(function (key, i) {
       if (pos(i) >= st + 800 || pos(i) + h(i) <= st - 400) return;
       var t = simDoc.createElement("div"); t.setAttribute("data-sim", key);
-      t.getBoundingClientRect = function () { return { top: pos(i) - st }; };
+      t.getBoundingClientRect = function () { return { top: pos(i) - st, height: h(i) }; };
       simDoc.body.appendChild(t);
     });
   }

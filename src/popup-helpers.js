@@ -1109,47 +1109,18 @@
   }
 
   /**
-   * Scroll the thread until ChatGPT mounts the turn with this key, then call
-   * done(true) (done(false) after ~4 s). Direction comes from the turn order:
-   * compare the target's index with the turns that are mounted now.
+   * Scroll the chat until the site mounts the turn with this key, then done(true); done(false) if it can't be reached
+   * (JR.reachTurn: the same search as the hidden copy's — earlier turns loaded at the top, ChatGPT's new front end; no
+   * order: up from here, then down). Another jump or Esc stops it (navGen).
    */
   JR.scrollToTurnKey = function (key, done) {
     var scroller = JR.site.scrollContainer();
-    var order = JR.qa.turnOrderCache || [];
-    var pos = turnPosition(order);
-    var target = pos(key);
-    if (scroller && target < 0 && !order.length) { sweepTo(scroller, key, done); return; }
-    if (!scroller || target < 0) { done(false); return; }
-    if (JR.site.unpin) JR.site.unpin();
-    // First jump to the estimated position (when the whole order is known), then step a screen at a time.
-    if (order.length) scroller.scrollTop = scroller.scrollHeight * (target / order.length) - scroller.clientHeight / 2;
-    var tries = 0;
-    (function step() {
-      if (JR.site.findTurnByKey(key)) { done(true); return; }
-      if (++tries > 40) { done(false); return; }
-      var mounted = JR.site.turns().map(function (t) { return pos(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
-      var dir = mounted.length && Math.min.apply(null, mounted) > target ? -1 : 1;
-      if (JR.site.unpin) JR.site.unpin();
-      scroller.scrollTop += dir * scroller.clientHeight * 0.8;
-      setTimeout(step, 100);
-    })();
+    if (!scroller) { done(false); return; }
+    var gen = navGen, order = JR.qa.turnOrderCache || [];
+    var list = JR.reachTurn.listOf(scroller, JR.site.turns, JR.site.findTurnByKey, JR.site.unpin);
+    JR.reachTurn(list, key, order, { cancel: function () { return gen !== navGen; }, position: JR.site.turnPosition })
+      .then(function (r) { JR.navTrace = (JR.navTrace || "") + (r.why ? ", " + r.why : ""); done(!!r.turn); });
   };
-
-  /** No turn order to aim with (Claude Code: no conversation read): up from here to the top, then down from here to
-   *  the end, a screen at a time, until its turn is mounted (live round 5: ∧ at the bottom opened nothing). */
-  function sweepTo(scroller, key, done) {
-    var from = scroller.scrollTop, dir = -1, tries = 0, gen = navGen;
-    (function step() {
-      if (gen !== navGen) return; // another jump, or the popups closed: stop scrolling (up to 20 s otherwise — audit)
-      if (JR.site.findTurnByKey(key)) { done(true); return; }
-      if (++tries > 200) { done(false); return; }
-      if (dir < 0 && scroller.scrollTop <= 0) { dir = 1; scroller.scrollTop = from; }
-      else if (dir > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) { done(false); return; }
-      if (JR.site.unpin) JR.site.unpin();
-      scroller.scrollTop += dir * scroller.clientHeight * 0.8;
-      setTimeout(step, 100);
-    })();
-  }
 
   // --- Navigation order (user, 2026-11-18: "popups in their physical on-page order, popups in popups right after
   // their parent"): highlights by conversation turn, then by place in their answer's text; inside a popup, its

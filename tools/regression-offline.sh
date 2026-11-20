@@ -22,6 +22,9 @@ line "A2 message format (qa-content)" "$([ "$out" = "all passed" ] && echo PASS 
 out=$("$NODE" tools/availability-test.js "$PWD" 2>&1 | tail -1)
 line "A2c availability (answer waits)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
 
+out=$("$NODE" tools/reach-turn-test.js "$PWD" 2>&1 | tail -1)
+line "A2d reach a turn (paged list)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
+
 out=$("$NODE" tools/storage-test.js "$PWD" 2>&1 | tail -1)
 line "A2b storage (two tabs, rebuild)" "$([ "$out" = "all passed" ] && echo PASS || echo "FAIL: $out")"
 
