@@ -39,6 +39,15 @@ check("locked: a scroll with no vertical part changes nothing and notes nothing"
 document.getElementById("end").scrollIntoView();
 check("locked: scrollIntoView of something in the chat is still blocked", sc.scrollTop === 1650, sc.scrollTop);
 
+// where the reader saw it (data-jr-anchor-y, Popup's hold): a scroll must leave it within 40 px of there
+reset(1900);
+a.setAttribute("data-jr-anchor-y", String(Math.round(a.getBoundingClientRect().top)));
+sc.scrollTo({ top: 1950 });
+check("locked, place known: a scroll moving the anchor 50 px (still in view) is blocked", sc.scrollTop === 1900, sc.scrollTop);
+sc.scrollTo({ top: 1920 });
+check("locked, place known: a scroll moving it 20 px goes through", sc.scrollTop === 1920, sc.scrollTop);
+a.removeAttribute("data-jr-anchor-y");
+
 // the anchor not on the page (ChatGPT unmounted its turn): only a scroll near the end is blocked
 a.removeAttribute("data-jr-anchor");
 reset(1900);

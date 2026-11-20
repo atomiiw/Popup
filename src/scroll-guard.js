@@ -87,7 +87,12 @@
     top = Math.max(0, Math.min(top, max));
     var a = document.querySelector("[data-jr-anchor]");
     if (a && el.contains(a)) {
-      var r = a.getBoundingClientRect(), y = r.top - el.getBoundingClientRect().top - (top - el.scrollTop);
+      var r = a.getBoundingClientRect(), shift = top - el.scrollTop;
+      // where the reader saw it (Popup's hold): the scroll must leave it there, within 40 px (live 2026-11-20: one
+      // of ChatGPT's scrolls while it laid the chat out anew moved it 292 px for 150 ms — in view, still a jump)
+      var saw = parseFloat(a.getAttribute("data-jr-anchor-y"));
+      if (saw === saw) return Math.abs(r.top - shift - saw) > 40;
+      var y = r.top - el.getBoundingClientRect().top - shift;
       return y + r.height <= 0 || y >= el.clientHeight;
     }
     return top >= max - el.clientHeight;

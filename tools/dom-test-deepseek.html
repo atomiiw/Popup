@@ -192,8 +192,46 @@ var roDone = Promise.resolve().then(function () {
   measuring([list], function () { var h = list.offsetHeight + "px"; list.style.setProperty("--container-height", h); gut.style.setProperty("--container-height", h); });
   check("list window: DeepSeek's scroll area gets the real height (its scrollbar)", list.style.getPropertyValue("--container-height") === "100px" && gut.style.getPropertyValue("--container-height") === "100px",
     list.style.getPropertyValue("--container-height") + " " + gut.style.getPropertyValue("--container-height"));
+  // B4 (2026-11-20): the whole list once — DeepSeek reads scrollTop 0 and a huge height, its follow check stays true
+  list.style.overflowY = "auto"; list.querySelector(".ds-virtual-list-visible-items").style.height = "1000px"; list.scrollTop = 700;
+  var seen = measuring([list], function () {
+    return [list.scrollTop, list.offsetHeight, list.scrollTop + list.offsetHeight >= list.scrollHeight - 1];
+  }, true);
+  list.scrollTop = 900;
+  var seenEnd = measuring([list], function () { return list.scrollTop + list.offsetHeight >= list.scrollHeight - 1; }, true);
+  check("list window, the whole list once: DeepSeek reads scrollTop 0 and a huge height; its follow check keeps its true answer (700: no, end: yes)",
+    seen[0] === 0 && seen[1] > 100000 && seen[2] === false && seenEnd === true, JSON.stringify(seen) + " " + seenEnd);
+  check("list window, the whole list once: outside it every read is real again", list.scrollTop === 900 && list.offsetHeight === 100, list.scrollTop + " " + list.offsetHeight);
+  list.querySelector(".ds-virtual-list-visible-items").style.height = ""; list.style.overflowY = ""; list.scrollTop = 0;
   list.remove(); hideRules.remove();
 });
+// ...and when: the first time hidden items are known for a measured list (and when they change), then the window again
+function allCheck() {
+  return new Promise(function (done) {
+    var list = document.createElement("div"); list.className = "ds-virtual-list ds-virtual-list--printable"; list.style.height = "100px";
+    list.innerHTML = '<div class="ds-virtual-list-visible-items"><div data-virtual-list-item-key="1">a</div></div>';
+    document.body.appendChild(list);
+    var calls = [];
+    var ro = new ResizeObserver(function () { calls.push(list.scrollTop === 0 && list.offsetHeight > 100000 ? "all" : "window"); });
+    ro.observe(list);
+    setTimeout(function () {
+      var before = calls.length;
+      var rules = document.createElement("style"); rules.id = "jr-hide-turns";
+      rules.textContent = '[data-virtual-list-item-key="7"] { height: 0 }';
+      document.head.appendChild(rules);
+      setTimeout(function () {
+        var after = calls.slice(before);
+        rules.textContent += ' '; // the same keys again: no second whole-list pass
+        setTimeout(function () {
+          var later = calls.slice(before + after.length);
+          check("list window: hidden items known → the whole list once, then the window again; the same keys → not again",
+            after[0] === "all" && after.indexOf("window") > 0 && later.indexOf("all") === -1, JSON.stringify([after, later]));
+          ro.disconnect(); list.remove(); rules.remove(); done();
+        }, 300);
+      }, 400);
+    }, 200);
+  });
+}
 // design A (2026-11-18): an original is kept drawn in DeepSeek's list while it is live, let go on release
 var origDone = roDone.then(function () {
   return JR.siteOriginal("5").then(function (t) {
@@ -211,7 +249,7 @@ var origDone = roDone.then(function () {
     });
   });
 });
-origDone.then(function () {
+origDone.then(allCheck).then(function () {
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";

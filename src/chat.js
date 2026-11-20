@@ -677,10 +677,16 @@
     // marked for scroll-guard.js (page world): a site scroll keeping it in view goes through
     var marked = null;
     function mark(el) {
-      if (el === marked) return;
-      if (marked) marked.removeAttribute("data-jr-anchor");
-      marked = el;
-      if (el) el.setAttribute("data-jr-anchor", "");
+      if (el !== marked) {
+        if (marked) { marked.removeAttribute("data-jr-anchor"); marked.removeAttribute("data-jr-anchor-y"); }
+        marked = el;
+        if (el) el.setAttribute("data-jr-anchor", "");
+      }
+      // where the reader sees it: a site scroll that keeps it there goes through (scroll-guard.js)
+      var y = savedAnchorY === null ? null : String(Math.round(savedAnchorY));
+      if (el && el.getAttribute("data-jr-anchor-y") !== y) {
+        if (y === null) el.removeAttribute("data-jr-anchor-y"); else el.setAttribute("data-jr-anchor-y", y);
+      }
     }
     function liveAnchor() {
       if (!(anchorEl && anchorEl.isConnected) && anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);

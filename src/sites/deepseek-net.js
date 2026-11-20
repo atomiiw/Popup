@@ -233,12 +233,13 @@
   var scrollDesc = typeof Element === "function" && Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight");
   if (NativeRO && heightDesc && heightDesc.get) {
     var measured = []; // { el, cb, obs, extra }: lists DeepSeek measures
-    var hidSrc = null, hid = new Set();
+    var hidSrc = null, hid = new Set(), hidSig = "";
     var hiddenIds = function () {
       var st = document.getElementById("jr-hide-turns"), t = st ? st.textContent : "";
       if (t !== hidSrc) {
         hidSrc = t; hid = new Set();
         (t.match(/item-key="\d+"/g) || []).forEach(function (m) { hid.add(Number(m.slice(10, -1))); });
+        hidSig = Array.from(hid).sort(function (a, b) { return a - b; }).join(); // (the keys, not the rules' text)
       }
       return hid;
     };
@@ -250,19 +251,29 @@
       for (var id = start; id < start + 5000 && real < 30; id++) { if (h.has(id)) hidden++; else real++; }
       return 60 * Math.max(hidden, need > start ? need - start + 2 : 0);
     };
-    var withTall = function (els, fn) {
+    // all: the whole list, once (B4, user 2026-11-20: scrolling up pulled back to the bottom, flickered). DeepSeek counts
+    // an item it hasn't measured yet at an estimate (~60 px); a hidden Popup Q&A measures 0. Each one met for the first
+    // time while scrolling up shrank the chat (live: 10152 → 5916 px) under the reader, with its own corrections on top.
+    // Told the list starts at the top and is a million px tall for one measuring, it draws every item once and keeps
+    // their real heights; the hidden ones stay items (a popup copies DeepSeek's own drawing of its answer).
+    var topDesc = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+    var withTall = function (els, fn, all) {
       els.forEach(function (el) {
         if (!("_jrTall" in el)) {
           Object.defineProperty(el, "offsetHeight", { configurable: true, get: function () { var h = heightDesc.get.call(this); return this._jrTall ? h + this._jrExtra : h; } });
-          if (scrollDesc && scrollDesc.get) Object.defineProperty(el, "scrollHeight", { configurable: true, get: function () { var h = scrollDesc.get.call(this); return this._jrTall ? h + this._jrExtra : h; } });
+          // (its follow check, scrollTop + offsetHeight >= scrollHeight - 1, keeps its true answer in either mode)
+          if (scrollDesc && scrollDesc.get) Object.defineProperty(el, "scrollHeight", { configurable: true, get: function () { var h = scrollDesc.get.call(this); return this._jrTall ? h + this._jrExtra - (this._jrAll ? topDesc.get.call(this) : 0) : h; } });
+          if (topDesc && topDesc.get) Object.defineProperty(el, "scrollTop", { configurable: true, get: function () { return this._jrAll ? 0 : topDesc.get.call(this); }, set: function (v) { topDesc.set.call(this, v); } });
         }
-        el._jrExtra = extraFor(el);
+        el._jrExtra = all ? 1e6 : extraFor(el);
+        el._jrAll = !!all;
         el._jrTall = true;
       });
       var before = els.map(function (el) { return el.style.getPropertyValue("--container-height"); });
       try { return fn(); } finally {
         els.forEach(function (el, i) {
           el._jrTall = false;
+          el._jrAll = false;
           // its scroll area read the same height in the same measuring, for its scrollbar track: that much taller and
           // following the scroll, the track made the chat longer and blank at the bottom (live 2026-11-19) — the real one
           var v = el.style.getPropertyValue("--container-height");
@@ -288,8 +299,18 @@
     var again = function () { // measure again where the number changed (after a scroll, new hidden keys, a need)
       measured = measured.filter(function (m) { return m.el.isConnected; });
       measured.forEach(function (m) {
+        var tell = function (all) { withTall([m.el], function () { m.cb.call(m.obs, [{ target: m.el, contentRect: m.el.getBoundingClientRect() }], m.obs); }, all); };
+        // the hidden set changed (they came, more came) and the list has items: the whole list once, then the window
+        // again after its items had a frame to measure themselves
+        var hiddenNow = hiddenIds();
+        if (hiddenNow.size && m.allFor !== hidSig && m.el.querySelector("[data-virtual-list-item-key]")) {
+          m.allFor = hidSig;
+          tell(true);
+          setTimeout(soon, 120);
+          return;
+        }
         if (extraFor(m.el) === m.el._jrExtra) return;
-        withTall([m.el], function () { m.cb.call(m.obs, [{ target: m.el, contentRect: m.el.getBoundingClientRect() }], m.obs); });
+        tell(false);
       });
     };
     var queued = false;

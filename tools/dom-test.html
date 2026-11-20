@@ -1055,14 +1055,15 @@ asyncChecks.push(new Promise(function (done) {
   var unlock = JR.lockScroll(sc, a);
   window.requestAnimationFrame = raf;
   run(2);
-  var markedDuring = a.hasAttribute("data-jr-anchor");
+  var markedDuring = a.hasAttribute("data-jr-anchor") && a.getAttribute("data-jr-anchor-y") === String(Math.round(a.getBoundingClientRect().top));
   a.remove(); run(2);                                            // the anchor's turn unmounted
   sc.scrollTop = 2600; html.setAttribute("data-jr-site-scroll", "t" + Date.now()); // ChatGPT keeps the passage: let through
   run(3);
   check("new ChatGPT: the lock falls back to where the site kept the reader, not to the scrollTop before the send",
     sc.scrollTop === 2600, sc.scrollTop);
   unlock();
-  check("the lock marks its anchor for scroll-guard.js while it holds, and unmarks it after", markedDuring && !a.hasAttribute("data-jr-anchor") && !document.querySelector("[data-jr-anchor]"), markedDuring + " " + !!document.querySelector("[data-jr-anchor]"));
+  check("the lock marks its anchor and where the reader sees it for scroll-guard.js while it holds, and unmarks it after",
+    markedDuring && !a.hasAttribute("data-jr-anchor") && !a.hasAttribute("data-jr-anchor-y") && !document.querySelector("[data-jr-anchor]"), markedDuring + " " + !!document.querySelector("[data-jr-anchor]"));
   sc.remove(); html.removeAttribute("data-jr-site-scroll");
 })();
 
