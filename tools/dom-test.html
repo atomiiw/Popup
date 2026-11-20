@@ -1925,8 +1925,13 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
             function (r3, sent3, after3) {
               check("draft in the box, the send stuck (the site kept the text): the draft is back, not Popup's message (audit)",
                 !r3.ok && after3 === "kept draft", JSON.stringify([r3, after3]));
-              window.requestAnimationFrame = realRaf;
-              done();
+              run('<textarea name="prompt"></textarea>', function (b) { return b.value; }, function () {},
+                function (r4, sent4, after4) {
+                  check("no draft, the send stuck: the box is empty again, Popup's message not left in it (peer audit #13)",
+                    !r4.ok && after4 === "", JSON.stringify([r4, after4]));
+                  window.requestAnimationFrame = realRaf;
+                  done();
+                });
             });
         });
     });
@@ -1947,6 +1952,27 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     !p.querySelector(":scope > .jr-popup-loading") && r && !r.classList.contains("jr-popup-response--waiting") && /ON PAGE/.test(r.textContent),
     p.innerHTML.slice(0, 200));
   JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("now-hl");
+})();
+
+// peer audit A1: a popup reopened while its send waits in the queue (the main answer still writing) stays pending —
+// it was marked failed with Retry while the message still went out later (Retry sent it twice)
+(function () {
+  function reopen(queued) {
+    var p = document.createElement("div"); p.className = "jr-popup";
+    p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+    document.body.appendChild(p);
+    var item = { id: "qa1-i", question: "Q", status: "pending", turnKeys: [] };
+    JR.state.completedHighlights.set("qa1-hl", { question: "Q", spans: [], items: [item], activeItemIndex: 0 });
+    if (queued) JR.state.messageQueue.push({ message: "m", waitOpts: { preRegisteredHlId: "qa1-hl", preRegisteredItemId: "qa1-i" } });
+    try { JR.rebuildPopupAfterEdit(p, "qa1-hl"); } catch (e) { out.push("NOTE A1 rebuild threw: " + e.message); }
+    JR.state.messageQueue.length = 0; JR.siteAnswer.stop(); p.remove(); JR.state.completedHighlights.delete("qa1-hl");
+    return item.status;
+  }
+  var live = JR.state.responseWatchActive; JR.state.responseWatchActive = false;
+  var q = reopen(true), notQ = reopen(false);
+  JR.state.responseWatchActive = live;
+  check("A1: reopened while its send is queued: still pending (not failed with Retry); not queued and no watch: failed",
+    q === "pending" && notQ === "failed", q + " " + notQ);
 })();
 
 // Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes

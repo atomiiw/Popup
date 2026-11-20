@@ -623,12 +623,12 @@
       }
     });
 
-    // Enter sends, Cmd/Ctrl+Enter inserts newline
+    // Enter sends; Shift+Enter (as in every site's own box — peer audit A3: it sent) or Cmd/Ctrl+Enter inserts a newline
     questionText.addEventListener("keydown", function (e) {
       if (e.key === "Enter") {
         // Ignore Enter while an IME composition is active (e.g. Chinese/Japanese/Korean input)
         if (e.isComposing || e.keyCode === 229) return;
-        if (e.metaKey || e.ctrlKey) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) {
           document.execCommand("insertLineBreak");
           e.preventDefault();
         } else {
@@ -992,7 +992,7 @@
       entry.activeItemIndex = idx;
       var item = entry.items[idx];
       // A stale pending one failed (no watch running after reload/reopen)
-      if (item.status === "pending" && !st.responseWatchActive) {
+      if (item.status === "pending" && !st.responseWatchActive && !JR.isQueued(id)) { // (queued: it goes later — A1)
         item.status = "failed";
         updateHighlightFields(item.id, { status: "failed" });
       }
@@ -1178,12 +1178,12 @@
 
       // Losing focus keeps the edit (switching desktops, clicking elsewhere): only Esc or closing the popup gives it up
 
-      // Enter sends edit, Cmd/Ctrl+Enter inserts newline, Escape cancels
+      // Enter sends edit, Shift/Cmd/Ctrl+Enter inserts newline, Escape cancels
       questionText.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           // Ignore Enter while an IME composition is active (e.g. Chinese/Japanese/Korean input)
           if (e.isComposing || e.keyCode === 229) return;
-          if (e.metaKey || e.ctrlKey) {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) {
             document.execCommand("insertLineBreak");
             e.preventDefault();
           } else {

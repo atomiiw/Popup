@@ -316,6 +316,11 @@
   // The user's own half-typed message in the site's box (TODO 4e): set aside for a Popup send — only the question goes
   // — and put back once the site has cleared the box. "" when there is none.
   var lastDraft = "", lastHadAside = false; // lastHadAside: the last send had the user's files set aside
+  // between Popup's text going into the box and the send button pressed: Popup's own text in the box is no refusal
+  var submitting = false;
+  // a tab in the background runs no animation frames (peer audit A2: a queued send there never pressed send; the
+  // refusal check saw it in the box, cleared it, sent again — "Couldn't get a response")
+  function nextFrame(cb) { return document.hidden ? setTimeout(cb, 16) : requestAnimationFrame(cb); }
   function readDraft(composer) {
     var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
     return t.trim() ? t.replace(/\n+$/, "") : "";
@@ -383,6 +388,7 @@
     }
     var inserted = insertIntoComposer(chatInput, message);
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
+    submitting = inserted;
     if (!inserted) {
       putDraftBack(chatInput, draft);
       unhideComposer();
@@ -393,6 +399,7 @@
 
     var probe = bare(message).slice(0, 30);
     function afterSubmit(how) {
+      submitting = false;
       chatInput.blur();
       if (scrollParent) scrollParent.scrollTop = savedScrollTop;
       // Keep the text hidden until React has actually cleared the input.
@@ -401,6 +408,7 @@
         var left = JR.site.composerText(chatInput);
         if (left.trim().length === 0 || tries > 20) {
           var stuck = bare(left).indexOf(probe) !== -1;
+          if (stuck && !draft) clearComposer(chatInput, []); // (Popup's message never stays in the site's box — peer audit #13)
           putDraftBack(chatInput, draft); // (still hidden: it comes back as it was; stuck: in place of Popup's text)
           unhideComposer();
           handBackFiles();
@@ -409,7 +417,7 @@
           return;
         }
         tries++;
-        requestAnimationFrame(removeHideWhenEmpty);
+        nextFrame(removeHideWhenEmpty);
       })();
     }
 
@@ -440,7 +448,7 @@
         setTimeout(function () { afterSubmit("form submit"); }, 300);
       }, 300);
     }
-    requestAnimationFrame(trySend);
+    nextFrame(trySend);
   };
 
   /**
@@ -558,7 +566,16 @@
     })();
   };
 
+  /** A send for this highlight still waits (queued, or its files going in): not failed, it hasn't gone yet. */
+  JR.isQueued = function (hlId) {
+    return st.attaching || st.messageQueue.some(function (o) {
+      var w = o.waitOpts || {};
+      return (w.editOpts ? w.editOpts.hlId : w.preRegisteredHlId) === hlId;
+    });
+  };
+
   JR.enqueueMessage = function (opts) {
+    opts.url = location.href; // (sent only in the chat it was asked in — peer audit A8)
     if (JR.isGenerating() || st.responseWatchActive || st.attaching) {
       st.messageQueue.push(opts);
       return;
@@ -567,6 +584,12 @@
   };
 
   function sendQueued(opts) {
+    // its highlight deleted while it waited (peer audit A1): not sent
+    var qw = opts.waitOpts || {}, qid = qw.editOpts ? qw.editOpts.hlId : qw.preRegisteredHlId;
+    if (qid && !st.completedHighlights.has(qid)) { JR.drainQueue(); return; }
+    // another chat opened while it waited (the URL check runs every 500 ms, the queue every 300): never sent there
+    // (the conversation, not the URL: claude.ai's Settings change the hash)
+    if (opts.url && JR_HOST.convKey(opts.url) !== JR_HOST.convKey(location.href)) { st.messageQueue.length = 0; return; }
     // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
     if (!opts.attached && !opts.aside && JR.site.composerHasAttachments(JR.site.composer())) {
       if (!JR.setAsideUserFiles()) {
@@ -1142,6 +1165,15 @@
       unlockScroll = null;
       st.cancelResponseWatch = null;
     };
+    // its popup closed while the send waited in the queue (peer audit A1): the watch starts detached, as if closed now —
+    // a popup opened again on it gets the answer (it showed Loading… for good)
+    if (popup && !popup.isConnected && (editOpts || preRegisteredHlId)) {
+      var waitedEntry = st.completedHighlights.get(editOpts ? editOpts.hlId : preRegisteredHlId);
+      var shown = st.activeSourceHighlights;
+      st.activeSourceHighlights = waitedEntry && waitedEntry.spans ? waitedEntry.spans.slice() : [];
+      st.cancelResponseWatch();
+      st.activeSourceHighlights = shown;
+    }
 
     function captureResponse() {
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
@@ -1409,7 +1441,7 @@
       // ChatGPT refused the send ("wait for this response to finish") and put
       // our message back in its input box: clear it at once (the user must never
       // see it), then send again when ChatGPT is really idle — once.
-      if (!qaKeys.length && !net.matched && !rejected.pending && Date.now() - startTime >= 1500) {
+      if (!qaKeys.length && !net.matched && !rejected.pending && !submitting && Date.now() - startTime >= 1500) {
         var composer = JR.site.composer();
         var probe = norm60(message).slice(0, 30);
         if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
