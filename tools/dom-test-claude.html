@@ -161,6 +161,23 @@ Promise.all(pending).then(function () {
     check("sentAttachments: the file's name (no timestamp) and image address", at.length === 1 && at[0].name === "image.png" && at[0].url === "data:,", JSON.stringify(at));
     row.remove(); ans.remove();
   })();
+  (function () { // 2026-11-20 (Claude Code): a Popup message's question row, added before its answer row, is hidden at once
+    var realIs = JR.isPopupMessage;
+    JR.isPopupMessage = function (t) { return /^Regarding this part of your response/.test(t); };
+    var wrap = document.createElement("div");
+    wrap.innerHTML = '<div data-testid="transcript-row"><div data-cds="UserMessage" data-turn-key="zk"><p>Regarding this part of your response: "x"</p></div></div>' +
+      '<div data-testid="transcript-row"><div data-cds="UserMessage" data-turn-key="zm"><p>my own message</p></div></div>';
+    document.body.appendChild(wrap);
+    S.freezeRow(wrap);
+    var rows = wrap.querySelectorAll('[data-testid="transcript-row"]');
+    check("freezeRow: a Popup question row is marked (hidden), the user's own message is not",
+      rows[0].hasAttribute("data-jr-freeze") && !rows[1].hasAttribute("data-jr-freeze"), rows[0].hasAttribute("data-jr-freeze") + " " + rows[1].hasAttribute("data-jr-freeze"));
+    var inner = document.createElement("div"); inner.innerHTML = '<div data-cds="UserMessage"><p>Regarding this part of your response: "y"</p></div>';
+    var shell = document.createElement("div"); shell.setAttribute("data-testid", "transcript-row"); document.body.appendChild(shell);
+    shell.appendChild(inner); S.freezeRow(inner);
+    check("freezeRow: content added into a row later marks that row", shell.hasAttribute("data-jr-freeze"), shell.outerHTML.slice(0, 80));
+    wrap.remove(); shell.remove(); JR.isPopupMessage = realIs;
+  })();
   out.push(failed ? failed + " FAILED" : "all passed");
   document.getElementById("out").textContent = out.join("\n");
   document.title = failed ? "FAIL" : "PASS";

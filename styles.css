@@ -166,6 +166,9 @@ body.dark /* DeepSeek */ {
   display: flex;
   flex-direction: column;
 }
+/* chat.js freezeChat + sites/claude.js freezeRow: a Popup question row added during the send, before its answer row
+   (the turn hidden by key) exists — hidden like claude.ai's Q&As (never display:none: rocksteady keeps 0x0 rows' heights) */
+[data-jr-freeze] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
 /* capBelow (popup-helpers.js): for one measurement, never painted — does a taller popup make the chat longer? */
 .jr-popup.jr-popup--probe { max-height: none !important; height: 300vh !important; }
 /* Put back after ChatGPT re-rendered what held it (JR.placePopup): no second fade-in */

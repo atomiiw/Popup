@@ -112,6 +112,18 @@
       var k = a && a.getAttribute(KEY);
       return k ? k.replace(/-hub-reply$/, "") : null;
     },
+    /** During a Popup send (chat.js freezeChat): a Popup message's question row comes before its answer row — the
+     *  "turn" the freeze hides by key — and was seen until the answer arrived (user 2026-11-20, Claude Code: the
+     *  message showed in the main chat, then went). Marked as it is added, before it is painted (styles.css). */
+    freezeRow: function (node) {
+      var rows = node.matches(C.row) ? [node] : Array.prototype.slice.call(node.querySelectorAll(C.row));
+      var up = node.closest && node.closest(C.row);
+      if (up && rows.indexOf(up) === -1) rows.push(up);
+      rows.forEach(function (row) {
+        var u = row.querySelector(C.user);
+        if (u && !row.hasAttribute("data-jr-freeze") && JR.isPopupMessage(textWithBreaks(u))) row.setAttribute("data-jr-freeze", "");
+      });
+    },
     /** Both rows of the Q&A (rocksteady keeps them as siblings, each with its own key) — the hiding rule's. */
     turnSelector: function (key) { return key ? JR_HOST.all.claude.hide(key) : null; },
     findTurnByKey: function (key) { return key ? answerRowOf(root(), key) : null; },

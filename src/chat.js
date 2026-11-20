@@ -177,8 +177,12 @@
     if (_freeze) return;
     var snap = JR.snapshotTurns();
     var root = JR.site.scrollContainer() || document.body;
-    var mo = new MutationObserver(function () {
+    var mo = new MutationObserver(function (records) {
       if (JR.perf) JR.perf.count("freezeObserver");
+      // a site whose question row comes before the turn (claude.ai): hidden the moment it is added
+      if (JR.site.freezeRow) records.forEach(function (r) {
+        for (var n = 0; n < r.addedNodes.length; n++) if (r.addedNodes[n].nodeType === 1) JR.site.freezeRow(r.addedNodes[n]);
+      });
       var fresh = JR.findNewTurns(snap);
       var keys = [];
       for (var i = 0; i < fresh.length; i++) {
@@ -205,6 +209,8 @@
     if (!_freeze) return [];
     _freeze.mo.disconnect();
     if (_freeze.style) _freeze.style.remove();
+    // the rows freezeRow hid: ours are hidden by key by now (its answer came); a failed send's shows again
+    Array.prototype.forEach.call(document.querySelectorAll("[data-jr-freeze]"), function (r) { r.removeAttribute("data-jr-freeze"); });
     var keys = _freeze.keys;
     _freeze = null;
     return keys;

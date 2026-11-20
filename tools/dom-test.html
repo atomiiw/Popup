@@ -2049,6 +2049,27 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 4500);
 }, 25000); }));
 
+// 2026-11-20: a site with freezeRow (claude.ai) gets every element added during the send; unfreeze unmarks.
+// (In its own task: the checks below end any freeze synchronously, and a disconnect drops records not yet delivered.)
+asyncChecks.push(new Promise(function (done) {
+  setTimeout(function () {
+    var realFR = JR.site.freezeRow, seen = [];
+    JR.site.freezeRow = function (n) { seen.push(n); n.setAttribute("data-jr-freeze", ""); };
+    JR.unfreezeChat();
+    JR.freezeChat();
+    var added = document.createElement("div"); (JR.site.scrollContainer() || document.body).appendChild(added);
+    setTimeout(function () {
+      var marked = added.hasAttribute("data-jr-freeze");
+      JR.unfreezeChat();
+      check("freeze: an element added during a send goes to the site's freezeRow; unfreeze takes the mark off",
+        seen.indexOf(added) !== -1 && marked && !added.hasAttribute("data-jr-freeze"), seen.length + " " + marked + " " + added.hasAttribute("data-jr-freeze"));
+      added.remove();
+      if (realFR) JR.site.freezeRow = realFR; else delete JR.site.freezeRow;
+      done();
+    }, 0);
+  }, 24300);
+}));
+
 // 2026-11-19: the scroll guard lapses after 2 min; an answer that takes longer (thinking) keeps it while its watch runs
 (function () {
   var st = JR.state, html = document.documentElement, realSet = window.setInterval, realClear = window.clearInterval, tick = null, cleared = false;
