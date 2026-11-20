@@ -355,6 +355,8 @@
    * draw it (still kept) (an answer above the list's first drawn item can't be reached).
    */
   var kept = null;
+  S.originalPlace = "kept";
+  S.originalWhy = function () { return "not-drawn"; }; // (the list didn't draw the kept item in ~5 s)
   S.original = function (key) {
     S.keepMounted(kept = key, "popup");
     var n = 0;

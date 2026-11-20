@@ -24,6 +24,8 @@
 <script src="../src/attachments.js"></script>
 <script src="../src/qa-content.js"></script>
 <script src="../src/site-render.js"></script>
+<script src="../src/availability.js"></script>
+<script src="../src/locator.js"></script>
 <script src="../src/site-answer.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
@@ -609,7 +611,7 @@ JR.state.attaching = false;
   JR.state.completedHighlights.set("nk-hl", { question: null, spans: [], items: [{ id: "nk-1", question: null, status: "done", turnKeys: [] }], activeItemIndex: 0 });
   try { JR.rebuildPopupAfterEdit(nk, "nk-hl"); } catch (e) { out.push("NOTE nk rebuild threw: " + e.message); }
   var nkMsg = nk.querySelector(".jr-popup-loading");
-  check("an item with no Q&A shows as failed, not Loading… for good", !!nkMsg && /Couldn/.test(nkMsg.textContent), nkMsg && nkMsg.textContent);
+  check("an item with no Q&A shows as failed (why: not in the chat), not Loading… for good", !!nkMsg && /isn\u2019t in the current version of the chat/.test(nkMsg.textContent), nkMsg && nkMsg.textContent);
   nk.remove(); JR.state.completedHighlights.delete("nk-hl");
 })();
 
@@ -1953,6 +1955,41 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     p.innerHTML.slice(0, 200));
   JR.siteAnswer.stop(); t.remove(); p.remove(); JR.state.completedHighlights.delete("now-hl");
 })();
+
+// redesign 11-20 (docs/DESIGN-availability.md): a done version whose original is never found says what it waits for,
+// ends unreachable at its deadline with Try again (no resend), and Try again looks again in a fresh hidden copy
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var L = JR.availability.LIMITS, real = { loc: L.locating, hint: L.hint, orig: JR.site.original, why: JR.site.originalWhy, send: JR.enqueueMessage };
+  L.locating = 600; L.hint = 200;
+  var asks = [], sent = 0;
+  JR.site.original = function (key, onWaiting, fresh) { asks.push(fresh ? "fresh" : "plain"); if (onWaiting) onWaiting("frame"); return Promise.resolve(null); };
+  JR.site.originalWhy = function () { return "copy-stuck"; };
+  JR.enqueueMessage = function () { sent++; };
+  var p = document.createElement("div"); p.className = "jr-popup";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
+  document.body.appendChild(p);
+  JR.state.completedHighlights.set("av-hl", { question: "Q", spans: [], items: [{ id: "av-1", question: "Q", status: "done", turnKeys: ["av-key"] }], activeItemIndex: 0 });
+  JR.rebuildPopupAfterEdit(p, "av-hl");
+  setTimeout(function () {
+    var why = p.querySelector(".jr-popup-wait-why");
+    check("availability: after a moment, Loading… says what it waits for", why && /Finding the answer/.test(why.textContent), why && why.textContent);
+    setTimeout(function () {
+      JR.availability.on("av-1", { t: "tick" }); // (its deadline passed: the 1 s ticker's job, done here at once)
+      var s1 = JR.availability.of("av-1"), btn = p.querySelector(".jr-popup-unreachable .jr-retry-btn");
+      check("availability: at its deadline unreachable — its reason kept, Try again (not Loading… for good)",
+        s1.kind === "unreachable" && s1.reason === "copy-stuck" && !!btn && /couldn.t be loaded/.test(p.textContent), JSON.stringify(s1));
+      var n = asks.length;
+      if (btn) btn.click();
+      setTimeout(function () {
+        check("availability: Try again looks again in a fresh hidden copy, nothing resent",
+          asks[n] === "fresh" && sent === 0 && JR.availability.of("av-1").kind === "locating", asks.slice(n).join() + " sent=" + sent + " " + JR.availability.of("av-1").kind);
+        JR.siteAnswer.stop(); p.remove(); JR.state.completedHighlights.delete("av-hl");
+        L.locating = real.loc; L.hint = real.hint; JR.site.original = real.orig; JR.site.originalWhy = real.why; JR.enqueueMessage = real.send;
+        done();
+      }, 60);
+    }, 300);
+  }, 400);
+}, 20100); })); // (its own time — 20.1–20.9 s, between the 20 s and 21 s tests: one original is live at a time)
 
 // audit 11-20: a thinking model's stream ends with "resuming" (no "done"): it is no open stream any more — counted
 // open, ChatGPT looked busy for good and every later Popup question waited in the queue

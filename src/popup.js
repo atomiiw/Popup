@@ -991,8 +991,10 @@
       if (idx == null || idx < 0 || idx >= entry.items.length) idx = entry.items.length - 1;
       entry.activeItemIndex = idx;
       var item = entry.items[idx];
-      // A stale pending one failed (no watch running after reload/reopen)
-      if (item.status === "pending" && !st.responseWatchActive && !JR.isQueued(id)) { // (queued: it goes later — A1)
+      // A stale pending one failed: not being sent or answered now (its own availability — not "any send running":
+      // another popup's send kept this one Loading…, audit L3), nor waiting in the queue (A1)
+      var sendingNow = { sending: true, streaming: true }[JR.availability.of(item.id).kind];
+      if (item.status === "pending" && !sendingNow && !JR.isQueued(id)) {
         item.status = "failed";
         updateHighlightFields(item.id, { status: "failed" });
       }
@@ -1002,10 +1004,13 @@
         item.status = "done";
         updateHighlightFields(item.id, { status: "done" });
       }
-      // No Q&A known for it (none in the chat links to it): nothing can ever load it — "failed" with Retry, not
-      // "Loading…" for good (live 2026-11-18, an old item). In memory only: if its Q&A turns up, adoption links it.
-      // (not while the conversation data is still read: adoption may link it in a moment — review: a Retry then sent it twice)
-      if (item.status === "done" && !(item.turnKeys || []).length && JR.qa.apiStatus !== "loading" && JR.qa.apiStatus !== "unused") item.status = "failed";
+      // No Q&A in the chat links to it: nothing to look for — the failed view with its reason (Retry asks again), not
+      // "Loading…" for good (audit L4). Unless ChatGPT's data is still being read: its Q&A may be linked in a moment
+      // (JR.adoptPopupTurn) — then its availability waits for that, up to its deadline (appendResponseWithReply).
+      if (item.status === "done" && !(item.turnKeys || []).length && !readingData()) {
+        item.status = "failed"; // (memory only: stored, it stays done)
+        entry._jrFailReason = UNREACHABLE_TEXT["no-qa"];
+      }
       entry.question = item.question;
     }
 
@@ -1262,6 +1267,63 @@
   }
 
   /**
+   * A done version's "Loading…" says what it waits for (after a moment), and ends as the availability says
+   * (docs/DESIGN-availability.md): unreachable → its reason, with Try again (look again in a fresh hidden copy; nothing
+   * resent) or Ask again (it can't be found by looking: the failed view, whose Retry sends the question again).
+   */
+  var RETRY_SVG = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
+  var WAIT_HINTS = { frame: "Finding the answer in the chat\u2026", data: "Finding the answer in the chat\u2026",
+    older: "Loading earlier messages\u2026", queue: "Waiting for another answer\u2026" };
+  var UNREACHABLE_TEXT = { "no-qa": "This question isn\u2019t in the current version of the chat",
+    branch: "This question isn\u2019t in the current version of the chat" };
+  /** ChatGPT's conversation data is still being read (a Q&A may be linked to an item in a moment). */
+  function readingData() { return JR.site.name === "chatgpt" && (JR.qa.apiStatus === "loading" || JR.qa.apiStatus === "unused"); }
+  function watchAvailability(popup, responseDiv, hlId, entry, item) {
+    var hintTimer = null, stop = null;
+    function render(s) {
+      var wait = responseDiv._jrWait;
+      if (!wait || !wait.isConnected || !responseDiv.isConnected) { if (stop) stop(); clearTimeout(hintTimer); return; }
+      if (s.kind === "locating") {
+        var text = WAIT_HINTS[s.waitingFor] || "", due = s.since + JR.availability.LIMITS.hint - Date.now();
+        var why = wait.querySelector(".jr-popup-wait-why");
+        if (text && due <= 0) {
+          if (!why) { why = document.createElement("div"); why.className = "jr-popup-wait-why"; wait.appendChild(why); }
+          if (why.textContent !== text) why.textContent = text;
+        } else if (why) why.remove();
+        clearTimeout(hintTimer);
+        if (text && due > 0) hintTimer = setTimeout(function () { render(JR.availability.of(item.id)); }, due + 20);
+        if (wait._jrEnded) { wait.textContent = "Loading\u2026"; wait._jrEnded = false; wait.classList.remove("jr-popup-unreachable"); }
+      } else if (s.kind === "unreachable") {
+        clearTimeout(hintTimer);
+        if (s.ask) { // looking again can't help: the failed view (its Retry sends the question again)
+          if (stop) stop();
+          entry._jrFailReason = UNREACHABLE_TEXT[s.reason] || "This answer couldn\u2019t be found in the chat";
+          item.status = "failed"; // (memory only: stored, it stays done)
+          // (not inside the build it may come from: a moment later, if it is still this popup's)
+          setTimeout(function () { if (popup.isConnected && JR.rebuildPopupAfterEdit) JR.rebuildPopupAfterEdit(popup, hlId); }, 0);
+          return;
+        }
+        wait._jrEnded = true;
+        wait.classList.add("jr-popup-unreachable");
+        wait.textContent = "";
+        var msg = document.createElement("div");
+        msg.textContent = "This answer couldn\u2019t be loaded";
+        var again = document.createElement("button");
+        again.type = "button";
+        again.className = "jr-retry-btn";
+        again.innerHTML = RETRY_SVG;
+        again.title = "Try again (looks for the answer again; nothing is sent)";
+        again.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
+        again.addEventListener("click", function (ev) { ev.stopPropagation(); if (responseDiv._jrSiteFollow) responseDiv._jrSiteFollow(true); });
+        wait.appendChild(msg);
+        wait.appendChild(again);
+      }
+    }
+    stop = JR.availability.watch(item.id, render);
+    render(JR.availability.of(item.id));
+  }
+
+  /**
    * The answer area of a finished or failed version, with Popup's own layer (chained highlights, Reply) — into an
    * area already showing it (reuse: the streaming copy), else a new one. Only through showAnswer.
    */
@@ -1290,7 +1352,7 @@
       retryBtn.type = "button";
       retryBtn.className = "jr-retry-btn";
       retryBtn.title = "Try again";
-      retryBtn.innerHTML = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
+      retryBtn.innerHTML = RETRY_SVG;
       retryBtn.addEventListener("click", function (ev) {
         ev.stopPropagation();
         if (extensionWasUpdated(popup)) return;
@@ -1352,8 +1414,15 @@
     restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);
     // Design A (GLOSSARY.md): from now on the copy follows its original — whatever the site draws or changes there
     // shows here; Popup's own layer is put back after each patch. Again when this popup is active again (removePopup).
+    if (activeItem && activeItem.status === "done") watchAvailability(popup, responseDiv, hlId, entry, activeItem);
+    if (activeItem && activeItem.status === "done" && !(activeItem.turnKeys || []).length) {
+      // no Q&A linked to it in the chat: nothing to look for — unless ChatGPT's data is still being read (its Q&A may be
+      // linked in a moment: JR.adoptPopupTurn); then up to the deadline (audit L4: Loading… for good on DeepSeek, claude.ai)
+      JR.availability.on(activeItem.id, { t: "locate", what: "data" });
+      JR.availability.on(activeItem.id, { t: "missing", why: "no-qa", final: !readingData() });
+    }
     if (activeItem && activeItem.turnKeys && activeItem.turnKeys.length && JR.siteAnswer) {
-      responseDiv._jrSiteFollow = function () {
+      responseDiv._jrSiteFollow = function (fresh) { // fresh: Try again — a fresh hidden copy, a deadline of its own
         JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function (el, turn) {
           if (responseDiv._jrWait) { responseDiv._jrWait.remove(); responseDiv._jrWait = null; responseDiv.classList.remove("jr-popup-response--waiting"); }
           // its question isn't stored and the site's data didn't give it (Claude Code has none to read): from the
@@ -1368,7 +1437,7 @@
           processResponseLinks(responseDiv);
           processResponseImages(responseDiv);
           restoreChainedHighlights(responseDiv, hlId, contentContainer, activeItemId);
-        });
+        }, activeItem.id, fresh);
       };
       // (not one under an open child — a capture rebuild of a parent: only the active popup follows; removePopup has it
       // follow again when it is active again)

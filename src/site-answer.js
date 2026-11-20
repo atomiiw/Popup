@@ -105,7 +105,10 @@
     var l = live;
     if (!l) return;
     // the page dropped it (virtual list), the site redrew it, or a page copy stopped being good: find it again
-    if (!l.turn.isConnected || (l.fromPage && !usable(l.turn))) return find(l);
+    if (!l.turn.isConnected || (l.fromPage && !JR.locator.usable(l.turn))) {
+      if (l.id) JR.availability.on(l.id, { t: "lost" });
+      return find(l);
+    }
     // the answer went on in a new row of its own (Claude Code: the reply after a tool step, same key): follow that one
     var later = l.fromPage && JR.site.findTurnByKey(l.key);
     if (later && later !== l.turn) return follow(l, later, l.key, true);
@@ -114,12 +117,15 @@
     else if (l.copyEl.hasAttribute("data-jr-frame")) { // now a page original: the frame's generated (ͼ) rules mean other things here
       l.copyEl.classList.remove("jr-frame-answer"); l.copyEl.removeAttribute("data-jr-frame");
     }
-    if (syncInto(l.copyEl, l.turn) && l.onChange) l.onChange(l.copyEl, l.turn, l.key);
+    if (!syncInto(l.copyEl, l.turn)) return;
+    if (l.id) JR.availability.on(l.id, { t: "found", via: l.via });
+    if (l.onChange) l.onChange(l.copyEl, l.turn, l.key);
   }
 
-  function follow(l, turn, key, fromPage) {
+  function follow(l, turn, key, fromPage, via) {
     if (live !== l) return;
     l.fromPage = fromPage;
+    l.via = fromPage ? "page" : via || "frame";
     l.key = key;
     l.tries = 0; l.finding = false; // (found: a later loss gets its full rounds again)
     if (l.observer) l.observer.disconnect();
@@ -132,58 +138,32 @@
     patch();
   }
 
-  /** A turn on the page is a good original — while it is streaming always (the only live one), after that only if
-   *  the site draws it fully there: claude.ai colours code only on screen (a hidden row's stays black and white),
-   *  ChatGPT draws charts / maps only on screen (blank in a copy) and sometimes shows "couldn't load" instead. */
-  function usable(t) {
-    if (!t) return false;
-    if (JR.site.isGenerating() && newest(t)) return true; // (only the one streaming: the newest turn — review: an older
-    // hidden row followed while anything streamed kept claude.ai's uncoloured code after it ended)
-    if (JR.site.renderFailed && JR.site.renderFailed(t)) return false;
-    if (JR.site.hasUndrawnWidget && JR.site.hasUndrawnWidget(t)) return false;
-    return !JR.site.harvestable || JR.site.harvestable(t);
-  }
-
-  function newest(t) {
-    var all = document.querySelectorAll(JR.SEL.turn);
-    return all.length > 0 && all[all.length - 1] === t;
-  }
-
-  /** The original: the turn on the page, else the site's own place for it (JR.site.original: the render frame,
-   *  DeepSeek's kept item), as long as it takes. */
+  /** The original (JR.locator): the page first, then the site's own place, while the version is being located — its
+   *  availability (JR.availability) says until when; each miss is told there with its reason, and the search stops
+   *  once it is unreachable (Try again: JR.siteAnswer.retry). */
+  function locating(l) { return !l.id || JR.availability.of(l.id).kind === "locating"; }
   function find(l) {
     // the key followed till now first: asking for another one first would wait behind its own hold (review: ChatGPT's
     // legacy question + answer keys — the copy froze after a redraw in the frame)
     // (a local order: l.keys stays as the caller gave it, so its rebuilt popup is still the same Q&A — review)
     var keys = l.key ? [l.key].concat(l.keys.filter(function (k) { return k !== l.key; })) : l.keys;
-    for (var i = 0; i < keys.length; i++) {
-      var t = JR.site.findTurnByKey(keys[i]);
-      // (only one with an answer drawn: ChatGPT's question is a turn of its own, also among the keys)
-      if (usable(t) && JR.site.assistantBodies(t).length) return follow(l, t, keys[i], true);
-    }
+    var hit = JR.locator.onPage(keys);
+    if (hit) return follow(l, hit.turn, hit.key, true);
     // one search at a time: the site redrawing meanwhile asked again for each change (a test: without end)
-    if (!JR.site.original || l.finding) return;
+    if (!JR.site.original || l.finding || !locating(l)) return;
     l.finding = true;
-    (function next(i) { // its keys in turn (2 in ChatGPT's legacy DOM: question and answer turn)
-      if (live !== l) return;
-      if (i >= keys.length) { // none yet: again a little later, then less often, as long as it is live (user: no backup —
-        // "Loading…" meanwhile; review: after 3 rounds it stopped and the popup stayed on "Loading…" for good)
+    keys.forEach(function (k) { if (l.asked.indexOf(k) === -1) l.asked.push(k); });
+    var fresh = l.fresh;
+    l.fresh = false;
+    JR.locator.elsewhere(keys, function (what) { if (live === l && l.id) JR.availability.on(l.id, { t: "waiting", what: what }); }, fresh)
+      .then(function (r) {
         l.finding = false;
-        setTimeout(function () { if (live === l) find(l); }, ++l.tries < 3 ? 1000 : 3000);
-        return;
-      }
-      var key = keys[i];
-      l.asked.push(key);
-      JR.site.original(key).then(function (turn) {
-        // never a detached one (it would loop), and only one with an answer drawn
-        if (!turn || !turn.isConnected || !JR.site.assistantBodies(turn).length) {
-          if (turn && JR.site.releaseOriginal) JR.site.releaseOriginal(key);
-          return next(i + 1);
-        }
-        if (live !== l) return JR.site.releaseOriginal && JR.site.releaseOriginal(key);
-        follow(l, turn, key, false);
+        if (live !== l) { if (r.turn && JR.site.releaseOriginal) JR.site.releaseOriginal(r.key); return; }
+        if (r.turn) return follow(l, r.turn, r.key, false, r.via);
+        if (l.id) JR.availability.on(l.id, { t: "missing", why: r.why });
+        // again a little later, less often after 3 — until its deadline (then unreachable: no more looking)
+        setTimeout(function () { if (live === l && locating(l)) find(l); }, ++l.tries < 3 ? 1000 : 3000);
       });
-    })(0);
   }
 
   /** Popup's own element in a copy (its highlight marks, Reply, gallery…): not in the original. */
@@ -206,16 +186,19 @@
      * onChange(copyEl, turn, key) runs after every patch (Popup's own layer on the copy: its nested highlights).
      * Replaces the one live before.
      */
-    follow: function (copyEl, keys, onChange) {
+    follow: function (copyEl, keys, onChange, id, fresh) {
       keys = [].concat(keys || []).filter(Boolean);
       var l0 = live;
-      if (l0 && l0.keys.join() === keys.join()) { // the same Q&A (its popup rebuilt — its question read back, say):
+      if (l0 && l0.keys.join() === keys.join() && !fresh) { // the same Q&A (its popup rebuilt — its question read back, say):
         l0.copyEl = copyEl; l0.onChange = onChange; // the original found (or being found) goes on, not found again (slow)
+        if (id) l0.id = id;
         return l0.turn ? patch() : undefined;
       }
       JR.siteAnswer.stop();
-      var l = live = { copyEl: copyEl, keys: keys, key: null, turn: null, observer: null,
-        onChange: onChange, fromPage: false, tries: 0, finding: false, asked: [] };
+      var l = live = { copyEl: copyEl, keys: keys, key: null, turn: null, observer: null, id: id || null,
+        onChange: onChange, fromPage: false, tries: 0, finding: false, asked: [], fresh: !!fresh };
+      // (its deadline from now — asked again meanwhile: the first; fresh — Try again: one of its own)
+      if (l.id) JR.availability.on(l.id, { t: "locate", again: !!fresh });
       find(l);
     },
     /**
@@ -247,7 +230,8 @@
     state: function () {
       var l = live;
       return l && { keys: l.keys, key: l.key, turn: !!l.turn, connected: !!(l.turn && l.turn.isConnected),
-        fromPage: l.fromPage, finding: l.finding, tries: l.tries, asked: l.asked.length };
+        fromPage: l.fromPage, finding: l.finding, tries: l.tries, asked: l.asked.length,
+        availability: l.id ? JR.availability.of(l.id) : null };
     },
     /** The copy element live now, or null. */
     current: function () { return live ? live.copyEl : null; },

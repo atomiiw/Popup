@@ -65,9 +65,10 @@
    * drawing). With the conversation's turn order: jump to its estimated place, then step toward it; at the top, wait
    * for earlier turns to load. Without an order (it failed to load): from the bottom up.
    */
-  function findTurn(key) {
+  function findTurn(key, onWaiting) {
     var d = doc(), sc = d && JR.site.frameScroller(d);
-    if (!sc) return Promise.resolve(null);
+    if (!sc) { missWhy[key] = "copy-not-ready"; return Promise.resolve(null); }
+    missWhy[key] = "not-found";
     var order = JR.qa.turnOrderCache || [], target = order.indexOf(key), atTop = 0;
     var below = 0, above = Infinity, height = -1; // scroll positions where it was seen to be further down / up
     var stride = 0.8, lastDir = 0; // a step, in screens: halved each time the direction turns (it went to and fro past it)
@@ -78,12 +79,13 @@
     var steps = target < 0 && order.length ? 8 : 160;
     return (function step(n) {
       var t = JR.site.frameTurn(d, key);
-      if (!t && wanted !== key) return Promise.resolve(null); // let go: stop (it ran 40 s for nobody)
+      if (!t && !wanted.has(key)) return Promise.resolve(null); // let go: stop (it ran 40 s for nobody)
       if (t || n <= 0) return Promise.resolve(t || null);
       var at = placed(d, sc, order), last = at[at.length - 1];
       var down = target >= 0 && at.length && last.i < target;
       if (!down && sc.scrollTop <= 0) {
-        if (++atTop > 20) return Promise.resolve(null); // ~5 s at the top and nothing earlier came
+        if (++atTop > 20) { missWhy[key] = "not-loaded"; return Promise.resolve(null); } // ~5 s at the top and nothing earlier came
+        if (onWaiting) onWaiting("older");
         // (at 0 already, setting 0 again is no scroll: ChatGPT's new front end loads earlier turns on a scroll at the
         // top — live round 5: the frame sat there ~20 s; a step down and back is one)
         sc.scrollTop = 40;
@@ -93,7 +95,7 @@
       var sig = at.map(function (p) { return p.i; }).join();
       still = sig === mounted ? still + 1 : 0;
       mounted = sig;
-      if (still >= 12) return Promise.resolve(null);
+      if (still >= 12) { missWhy[key] = "copy-stuck"; return Promise.resolve(null); }
       if (sc.scrollHeight > height * 1.1) { height = sc.scrollHeight; below = 0; above = Infinity; } // earlier turns came (not: measured heights settling)
       if (target >= 0 && at.length) { if (down) below = Math.max(below, sc.scrollTop); else if (at[0].i > target) above = Math.min(above, sc.scrollTop); }
       var dir = down ? 1 : -1;
@@ -140,7 +142,7 @@
   function revealCode(turn, key) {
     var blocks = Array.prototype.slice.call(turn.querySelectorAll("pre"));
     return blocks.reduce(function (p, pre) {
-      return p.then(function () { if (wanted !== key) return null; pre.scrollIntoView({ block: "start" }); return wait(250); }); // (let go: stop)
+      return p.then(function () { if (!wanted.has(key)) return null; pre.scrollIntoView({ block: "start" }); return wait(250); }); // (let go: stop)
     }, Promise.resolve());
   }
 
@@ -204,9 +206,17 @@
    * The original of the turn with this key in the frame (site-answer.js, design A): the frame's turn, held there —
    * the frame isn't scrolled for anything else — until JR.site.releaseOriginal(key). Null if it isn't found.
    */
-  var holding = null, wanted = null, reloadedFor = new Set(); // { key, release }; the key asked for and not released yet;
+  // holding: { key, release }; wanted: the keys asked for and not released yet (a Set — one wanted key let a second ask
+  // cancel the first: that popup stayed Loading… for good, architecture review 11-20); missWhy: why a key wasn't found
+  var holding = null, wanted = new Set(), missWhy = {}, reloadedFor = new Set();
   // the keys a fresh frame was loaded for once (a Set: two answers asked in turn would reload it for each again)
-  JR.site.original = function (key) {
+  JR.site.originalPlace = "frame";
+  /** Why the last search for key found nothing: copy-not-ready, copy-stuck, not-loaded (earlier turns never came),
+   *  not-found. */
+  JR.site.originalWhy = function (key) { return missWhy[key] || "not-found"; };
+  /** onWaiting(what): "queue" (behind another search), "frame" (looking in the hidden copy), "older" (loading earlier
+   *  turns there). fresh: a new hidden copy first (Try again: the old one may be stuck). */
+  JR.site.original = function (key, onWaiting, fresh) {
     // held already: the site redrew it in the frame (live 2026-11-18: the re-ask then waited behind its own hold) — the
     // frame's turn now, at once
     if (holding && holding.key === key) { // (mid-redraw: a moment; gone for good — the frame scrolled on: found again)
@@ -216,20 +226,23 @@
         return JR.site.original(key);
       });
     }
-    wanted = key;
+    wanted.add(key);
+    if (onWaiting && busy) onWaiting("queue");
     return new Promise(function (give) {
       run(function () {
         var conv = JR.site.conversationId();
         if (!conv || !key) return give(null);
+        if (fresh) { dropFrame(); reloadedFor.delete(key); }
+        if (onWaiting) onWaiting("frame");
         frameFor(conv);
         return frameReady()
           .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
-          .then(function (ready) { return ready ? findTurn(key) : null; })
+          .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; })
           .then(function (turn) {
             // not found: a fresh frame, once — the answer newer than the frame (sent after it loaded), or the frame's list
             // stuck (live 11-20, ChatGPT: after many sends it kept the same 3 turns mounted wherever it scrolled — an older
             // popup stayed Loading… for good)
-            if (turn || wanted !== key || reloadedFor.has(key)) return turn;
+            if (turn || !wanted.has(key) || reloadedFor.has(key)) return turn;
             reloadedFor.add(key);
             // sent after the order and the frame were loaded: both again (review: else the search looks only at the end)
             JR.qa.resetApi();
@@ -237,11 +250,12 @@
             run(loadAll); // (after this one: the next answer asked for is then found at once)
             return frameReady()
               .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
-              .then(function (ready) { return ready ? findTurn(key) : null; });
+              .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; });
           })
-          .then(function (turn) { return turn && wanted === key ? revealCode(turn, key).then(function () { return turn; }) : turn; })
+          .then(function (turn) { return turn && wanted.has(key) ? revealCode(turn, key).then(function () { return turn; }) : turn; })
           .then(function (turn) {
-            if (wanted !== key) turn = null; // released (the popup closed) while it was being found: don't hold it
+            if (!wanted.has(key)) turn = null; // released (the popup closed) while it was being found: don't hold it
+            if (turn) reloadedFor.delete(key); // (found: a later stuck copy may be reloaded for it again — audit)
             give(turn);
             if (!turn) return null;
             return new Promise(function (release) { holding = { key: key, release: release }; });
@@ -251,7 +265,7 @@
     });
   };
   JR.site.releaseOriginal = function (key) {
-    if (wanted === key) wanted = null;
+    wanted.delete(key);
     jobs = jobs.filter(function (j) { if (j.key !== key) return true; j.drop(null); j.done(null); return false; }); // not found for nobody
     if (!holding || holding.key !== key) return;
     var h = holding;
@@ -260,7 +274,7 @@
   };
   /** For JR.diagnose: the frame and its queue. */
   JR.siteRenderState = function () {
-    return { frame: !!(frame && frame.isConnected), busy: busy, jobs: jobs.length, holding: holding && holding.key, wanted: wanted };
+    return { frame: !!(frame && frame.isConnected), busy: busy, jobs: jobs.length, holding: holding && holding.key, wanted: Array.from(wanted) };
   };
   /** A copy of a frame original: scoped to this frame load's generated styles (JR.scopeFrameRules). */
   JR.siteOriginalScope = function (copyEl) {

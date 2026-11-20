@@ -585,13 +585,16 @@
     sendQueued(opts);
   };
 
+  /** Still the chat of url (by conversation: a #hash or ?artifact= is the same chat). */
+  function sameChat(url) { return JR_HOST.convKey(url) === JR_HOST.convKey(location.href); }
+
   function sendQueued(opts) {
     // its highlight deleted while it waited (peer audit A1): not sent
     var qw = opts.waitOpts || {}, qid = qw.editOpts ? qw.editOpts.hlId : qw.preRegisteredHlId;
     if (qid && !st.completedHighlights.has(qid)) { JR.drainQueue(); return; }
     // another chat opened while it waited (the URL check runs every 500 ms, the queue every 300): never sent there
     // (the conversation, not the URL: claude.ai's Settings change the hash)
-    if (opts.url && JR_HOST.convKey(opts.url) !== JR_HOST.convKey(location.href)) { st.messageQueue.length = 0; return; }
+    if (opts.url && !sameChat(opts.url)) { st.messageQueue.length = 0; return; }
     // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
     if (!opts.attached && !opts.aside && JR.site.composerHasAttachments(JR.site.composer())) {
       if (!JR.setAsideUserFiles()) {
@@ -609,7 +612,9 @@
         if (JR.site.composerHasAttachments(JR.site.composer()) && Date.now() - t0 < 3000) { setTimeout(gone, 50); return; }
         setTimeout(function () {
           st.attaching = false;
-          if (location.href === from) sendQueued(opts); // (another chat opened meanwhile: never sent there)
+          // another chat opened meanwhile: never sent there (by conversation, not URL: a hash / ?artifact= is the same
+          // chat — the send was dropped silently and its popup stayed Loading…, audit L5)
+          if (sameChat(from)) sendQueued(opts); else { immediateTimeout(opts.waitOpts); JR.drainQueue(); }
         }, 150);
       })();
       return;
@@ -625,10 +630,12 @@
       JR.attachToComposer(opts.files, function (res) {
         release();
         st.attaching = false;
-        if (location.href !== startUrl) { // the user opened another chat meanwhile: never send there
+        if (!sameChat(startUrl)) { // the user opened another chat meanwhile: never send there (failed, the queue goes on)
           removeComposerAttachments(JR.site.composer(), res.sent);
           endAttaching();
           JR.dropAsideFiles();
+          immediateTimeout(opts.waitOpts);
+          JR.drainQueue();
           return;
         }
         opts.attached = res;
@@ -654,8 +661,11 @@
     var watch = JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll,
       w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId, opts.message,
       w.wholeResponse, w.wholeResponseFull, sentFiles);
+    var vid = w.preRegisteredItemId; // (its availability: sending now, streaming once in — JR.availability)
+    if (vid) JR.availability.on(vid, { t: "send" });
     JR.injectAndSend(opts.message, function (r) {
       endAttaching();
+      if (r.ok && vid) JR.availability.on(vid, { t: "sent" });
       if (!r.ok && watch) watch.failInjection(r);
     });
   }
@@ -665,6 +675,7 @@
    * Mirrors saveTimeoutVersion logic but without needing a waitForResponse context.
    */
   function immediateTimeout(w) {
+    if (w.preRegisteredItemId) JR.availability.on(w.preRegisteredItemId, { t: "failed", reason: "not-sent" });
     JR.unfreezeChat();
     if (w.unlockScroll) w.unlockScroll();
     var hlId = w.editOpts ? w.editOpts.hlId : (w.preRegisteredHlId || null);
@@ -1058,6 +1069,7 @@
     }
 
     function finishWithTimeout() {
+      if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "failed", reason: "no-answer" });
       cleanup();
       saveTimeoutVersion();
       st.cancelResponseWatch = null;
@@ -1186,6 +1198,7 @@
     }
 
     function captureResponse() {
+      if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "done" });
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
 
       var turn = liveResponseTurn();
@@ -1528,6 +1541,7 @@
       /** The injection itself failed: stop watching, undo, and say why in the popup. */
       failInjection: function () {
         injectionFailed = true;
+        if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "failed", reason: "not-sent" });
         if (timerId) clearTimeout(timerId);
         cleanup();
         saveTimeoutVersion();

@@ -102,6 +102,8 @@
       "js": [
         "src/site-adapter.js",
         "src/qa-content.js",
+        "src/availability.js",
+        "src/locator.js",
         "src/site-answer.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",

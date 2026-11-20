@@ -583,6 +583,7 @@
             keys: it ? (it.turnKeys || []).map(function (k) { return String(k).slice(0, 8); }) : null,
             watch: !!st.responseWatchActive, attaching: !!st.attaching, queued: st.messageQueue.length };
         })(),
+        waiting: JR.availability ? JR.availability.waiting() : null, // versions waiting now: for what, how long left
         highlights: JR.state.completedHighlights.size,
         hiddenTurns: JR.state.hiddenTurnKeys ? JR.state.hiddenTurnKeys.size : 0,
         cachedQA: JR.qa ? JR.qa.cacheSize() : 0,

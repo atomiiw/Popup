@@ -421,6 +421,14 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response--waiting { display: none !important; }
 
 /* Retry button inside timeout loading div */
+/* What a "Loading…" waits for, after a moment (popup.js watchAvailability) */
+.jr-popup-wait-why {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--jr-text-muted);
+  opacity: 0.8;
+}
+
 .jr-retry-btn {
   display: flex;
   align-items: center;
