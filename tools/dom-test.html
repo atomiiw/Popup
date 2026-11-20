@@ -1495,6 +1495,21 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var order = JR.navOrderOf(recs);
   check("navigation order: by turn, nested after their parent by place in its answer, Reply last", order.join(",") === "B,A,D,C,E,R", order.join(","));
   check("navigation chain: a nested one opens from the chat down", order.chain("E").map(function (r) { return r.id; }).join(">") === "a1>c1>e1", order.chain("E").map(function (r) { return r.id; }).join(">"));
+  // live round 5 (Claude Code: no conversation read, so never a turn order): roots by when they were made
+  var realHas = JR.qa.hasConversation;
+  JR.qa.turnOrderCache = null; JR.qa.hasConversation = function () { return false; };
+  // B (made last) is on the page at the reader's place, A isn't
+  var bTurn = document.createElement("div"), bSpan = document.createElement("span"), realBodies = JR.site.assistantBodies, realTurnOf2 = JR.site.turnOf;
+  bTurn.textContent = "x"; bSpan.textContent = "beta"; bTurn.appendChild(bSpan); document.body.appendChild(bTurn);
+  JR.site.turnOf = function () { return bTurn; }; JR.site.assistantBodies = function () { return [bTurn]; };
+  var hadB = JR.state.completedHighlights.get("B");
+  JR.state.completedHighlights.set("B", { spans: [bSpan], items: [] });
+  var made = JR.navOrderOf(recs).join(",");
+  if (hadB) JR.state.completedHighlights.set("B", hadB); else JR.state.completedHighlights.delete("B");
+  JR.site.turnOf = realTurnOf2; JR.site.assistantBodies = realBodies; bTurn.remove();
+  check("navigation order with no turn order ever (Claude Code): the top-level ones by when they were made (A before B)",
+    made === "A,D,C,E,R,B", made);
+  JR.qa.hasConversation = realHas;
   JR.qa.turnOrderCache = realOrder; JR.qa.text = realQText; JR.qa.answerText = realText;
 })();
 
