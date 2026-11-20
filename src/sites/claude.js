@@ -57,6 +57,17 @@
   function cardsRoot(composer) { var b = S.composerBox(composer); return b && b.parentElement; } // also holds the file tiles
   function q(k) { return String(k).replace(/["\\]/g, ""); }
   function isAnswerRow(row) { return !!(row && row.querySelector(C.answer)); }
+  /** Claude Code: a row's reply text with the blocks beside it that hold a card or media (a file it made: "HTML
+   *  login.html 6.5 kB", its preview opens from it), not the status line ("Created login.html"); in page order. */
+  function mediaBeside(row, prose) {
+    if (!/^\/code\//.test(location.pathname)) return prose;
+    var status = row.querySelector(C.answer + " [data-cds=TurnStatus]"), box = status && status.parentElement;
+    if (!box) return prose;
+    var media = Array.prototype.filter.call(box.children, function (c) {
+      return c !== status && !c.querySelector(C.answerBody) && !!c.querySelector("button, img, video, audio, iframe, canvas, picture, svg image");
+    });
+    return media.length ? prose.concat(media).sort(function (x, y) { return x.compareDocumentPosition(y) & 4 ? -1 : 1; }) : prose;
+  }
   // A chat's answer is keyed "<question key>-hub-reply"; Claude Code's by its own id, the key itself — and one that used a
   // tool spans rows with that same key: the tool step's row, then the reply's (live 2026-11-19)
   function rowsOf(r, attr) {
@@ -171,11 +182,15 @@
       return (el && el.closest && el.closest(C.answer)) || null;
     },
     hasAssistant: function (turn) { return isAnswerRow(turn); },
-    /** The reply text of the answer, in all its rows (Claude Code: around its tool steps). */
+    /** The reply text of the answer, in all its rows (Claude Code: around its tool steps) — and on Claude Code the
+     *  cards beside it (a file it made, its preview opens from there: user 11-20 "能显示图片和多媒体"), in page order. */
     assistantBodies: function (turn) {
       var a = turn && turn.querySelector(C.answer), k = a && a.getAttribute(KEY);
       var rows = k && turn.parentElement ? rowsOf(turn.parentElement, k) : [turn];
-      return rows.filter(Boolean).reduce(function (all, r) { return all.concat(Array.prototype.slice.call(r.querySelectorAll(C.answer + " " + C.answerBody))); }, []);
+      return rows.filter(Boolean).reduce(function (all, r) {
+        var prose = Array.prototype.slice.call(r.querySelectorAll(C.answer + " " + C.answerBody));
+        return all.concat(mediaBeside(r, prose));
+      }, []);
     },
     hasUndrawnWidget: function () { return false; },
     renderFailed: function () { return false; },
