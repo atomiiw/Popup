@@ -719,14 +719,16 @@
         if (!p || !p.isConnected || !p.parentElement) return;
         var r = p.getBoundingClientRect();
         if (!r.height) return; // (not drawn: being measured)
-        var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null;
-        var off = (above ? r.bottom : r.top) - ay;
+        var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null, top = parseFloat(p.style.top) || 0;
+        // an "above" one by the bottom it is placed to, not as drawn (live: measured the moment Return made it taller,
+        // before its top followed, it was held 50 px low, over its highlight, for the whole send)
+        var off = (above ? r.top - top + p._jrBottomAnchor : r.top) - ay;
         var g = glued.get(p);
         if (!g || resizing) { glued.set(p, { off: off }); return; }
         var d = off - g.off;
         if (Math.abs(d) < 0.5) return;
         if (above) p._jrBottomAnchor -= d;
-        p.style.top = ((parseFloat(p.style.top) || 0) - d) + "px";
+        p.style.top = (top - d) + "px";
       });
     }
     var savedTop = container.scrollTop;
