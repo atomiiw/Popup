@@ -148,6 +148,10 @@ document.addEventListener("jr-net", function (e) { events.push(JSON.parse(e.deta
 var sse = new N.SSE(true), body = "event: ready\ndata: {\"request_message_id\":7,\"response_message_id\":8}\n\ndata: {\"p\":\"response/content\",\"o\":\"APPEND\",\"v\":\"Hi\"}\n";
 sse.feed(body.slice(0, 40)); sse.feed(body);
 check("net: SSE emits turn then text", events.length === 2 && events[0].kind === "turn" && events[0].turnKey === "8" && events[0].userKey === "7" && events[1].text === "Hi", JSON.stringify(events));
+events = [];
+var own = new N.SSE(false); own.feed(body.replace(/7/, "17").replace(/8/, "18"));
+check("net: the user's own send — its ids (temporary keys get real ones: peer audit A4), not its text",
+  events.length === 1 && events[0].kind === "turn" && events[0].turnKey === "18", JSON.stringify(events));
 
 // Freeze (dev.32): new items under temporary keys are hidden from their first frame; older temporary items stay
 (function () {

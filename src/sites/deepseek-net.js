@@ -119,11 +119,13 @@
       if (this.popup && netlog.raw.length < 60) { netlog.raw.push(data.slice(0, 300)); writeLog(); }
       try { this.answer.patch(JSON.parse(data)); } catch (e) { /* not JSON */ }
     }
-    if (!this.popup) return;
+    // the ids for every send, the user's own too: its temporary keys get their real ids (peer audit A4 — a highlight in
+    // an answer to a message sent this session had no turn key: gone once the list unmounted it, and not in ∧ ∨)
     if (this.answer.ids && !this.sentIds) {
       this.sentIds = true;
       emit({ kind: "turn", turnKey: this.answer.ids.response, userKey: this.answer.ids.request });
     }
+    if (!this.popup) return; // (the text only for Popup's own: a CustomEvent per chunk otherwise)
     var t = this.answer.text();
     if (t !== this.lastText) { this.lastText = t; emit({ kind: "text", text: t }); }
   };
