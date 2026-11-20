@@ -1237,22 +1237,31 @@
   /** With no popup open: the index ∨ (direction 1) or ∧ (−1) goes to, from the highlights on the page now; -1: none. */
   function nearestFromView(ids, direction) {
     var band = JR.site.visibleBand(), firstBelow = -1, lastAbove = -1;
-    ids.forEach(function (id, i) {
-      var e = st.completedHighlights.get(id), sp = e && e.spans && e.spans[0];
-      if (!sp || !sp.isConnected || sp.closest(".jr-popup")) return;
-      var r = sp.getBoundingClientRect();
-      if (direction > 0 && firstBelow < 0 && r.top >= band.top) firstBelow = i;
-      if (direction < 0 && r.bottom <= band.bottom) lastAbove = i;
-    });
-    if (direction > 0 ? firstBelow >= 0 : lastAbove >= 0) return direction > 0 ? firstBelow : lastAbove;
-    // None on the page that way (its turns not mounted — a long chat, the review of dev.104): by turn, from the turns
-    // in view — the first highlight in a turn after them, or the last in one before them
-    var pos = turnPosition(JR.qa.turnOrderCache), lo = Infinity, hi = -1, pick = -1;
+    // the turns in view, by their place in the conversation
+    var pos = turnPosition(JR.qa.turnOrderCache), lo = Infinity, hi = -1;
     Array.prototype.forEach.call(document.querySelectorAll(JR.SEL.turn), function (t) {
       var r = t.getBoundingClientRect(), p = pos(JR.site.turnKey(t));
       if (p >= 0 && r.height > 0 && r.bottom > band.top && r.top < band.bottom) { lo = Math.min(lo, p); hi = Math.max(hi, p); }
     });
-    var unknown = hi < 0 || !ids.turnOf;
+    ids.forEach(function (id, i) {
+      var e = st.completedHighlights.get(id), sp = e && e.spans && e.spans[0];
+      if (sp && sp.isConnected && !sp.closest(".jr-popup")) {
+        var r = sp.getBoundingClientRect();
+        if (direction > 0 && firstBelow < 0 && r.top >= band.top) firstBelow = i;
+        if (direction < 0 && r.bottom <= band.bottom) lastAbove = i;
+        return;
+      }
+      // not wrapped (yet): by its turn — one in a turn in view or after it counts as on the way down (live round 4,
+      // claude.ai B17: at the top ∨ went to 5 of 10 — the first four, in turns on screen, weren't wrapped again yet)
+      var p = hi >= 0 && ids.turnOf ? pos(ids.turnOf(id)) : -1;
+      if (p < 0) return;
+      if (direction > 0 && firstBelow < 0 && p >= lo) firstBelow = i;
+      if (direction < 0 && p <= hi) lastAbove = i;
+    });
+    if (direction > 0 ? firstBelow >= 0 : lastAbove >= 0) return direction > 0 ? firstBelow : lastAbove;
+    // None that way (their turns not mounted — a long chat, the review of dev.104): by turn, from the turns in view —
+    // the first highlight in a turn after them, or the last in one before them
+    var pick = -1, unknown = hi < 0 || !ids.turnOf;
     if (!unknown) ids.forEach(function (id, i) {
       var p = pos(ids.turnOf(id));
       if (p < 0) { unknown = true; return; }

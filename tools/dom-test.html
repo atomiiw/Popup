@@ -1520,6 +1520,16 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.navigateHighlight(1);
   check("∨ with the first highlight above the view and the next not mounted: the next by turn (h2)", got.join() === "h2", got.join());
   st.completedHighlights.delete("h0"); sp0.remove();
+  // live round 4 (claude.ai B17): at the top, the first highlights in a turn on screen not wrapped yet, a later one
+  // wrapped below — ∨ starts at the first, not at the wrapped one
+  got = [];
+  var spW = document.createElement("span"); spW.style.cssText = "position:fixed;top:150px"; spW.textContent = "h3"; document.body.appendChild(spW);
+  turnOf.h1 = "vt1"; ids = ["h1", "h2", "h3"]; ids.chain = function (q) { return [{ id: q, quoteId: q }]; }; ids.turnOf = function (q) { return turnOf[q]; };
+  st.completedHighlights.set("h3", { spans: [spW], items: [] });
+  st.navWidget = { _jrIds: ids }; st.activeHighlightId = null;
+  JR.navigateHighlight(1);
+  check("∨ at the top: a highlight in a turn on screen not wrapped yet comes before a wrapped one further down (h1)", got.join() === "h1", got.join());
+  st.completedHighlights.delete("h3"); spW.remove();
   // a new popup inside a level-3 one (its parent listed, not its root): ∨ goes on from level 3
   got = [];
   ids = ["x1", "x2", "y"]; ids.chain = function (q) { return [{ id: q, quoteId: q }]; };

@@ -1100,6 +1100,11 @@ html.jr-tail-hidden [data-testid="chat-extra-space"] {
 /* DeepSeek widens its table area into the page gutters (negative margins from the window width): in a popup
    it stays inside the answer and scrolls sideways (live, dev.34: margin-left -669px, 3 of 5 columns cut off) */
 .jr-popup-response .ds-scroll-area { margin-inline: 0 !important; padding-inline: 0 !important; width: auto !important; max-width: 100% !important; scrollbar-width: thin !important; }
+/* claude.ai's tables (.md-table-scroll): drawn in the render frame at its 420 px, inside a one-column grid, a copy in a
+   narrower popup squeezed six columns into 330 px — a character per line (live round 4, B9 after a reload). Each cell
+   keeps a readable width; the table scrolls sideways, like ChatGPT's and DeepSeek's in a popup. */
+.jr-popup-response .md-table-scroll { max-width: 100% !important; overflow-x: auto !important; }
+.jr-popup-response .md-table-scroll :is(td, th) { min-width: 6em; }
 /* DeepSeek draws its scroll bars with script (gutters sized on its page): in a popup they're a dead copy — a fixed grey
    band (user: "丑"). The browser's thin bar instead. */
 .jr-popup-response .ds-scroll-area__gutters { display: none !important; }
