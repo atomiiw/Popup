@@ -1581,6 +1581,27 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () { // (its 
     done();
   });
 }, 28000); }));
+// live R5b 11-20: Esc while a jump still searches (no popup up yet) — the search stops, nothing scrolls on by itself
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:100px;overflow:auto";
+  sc.innerHTML = "<div style='height:4000px'></div>";
+  document.body.appendChild(sc); sc.scrollTop = 3000;
+  var real = { sc: JR.site.scrollContainer, find: JR.site.findTurnByKey, order: JR.qa.turnOrderCache }, ended = null;
+  JR.site.scrollContainer = function () { return sc; };
+  JR.qa.turnOrderCache = null;
+  JR.site.findTurnByKey = function () { return null; }; // never mounted
+  JR.scrollToTurnKey("esc", function (ok) { ended = ok; });
+  setTimeout(function () {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); // (as from the page)
+    var at = sc.scrollTop;
+    setTimeout(function () {
+      check("Esc while a jump searches: it stops scrolling (live R5b: it went on and opened the popup)",
+        sc.scrollTop === at && at < 3000 && ended === null, at + " → " + sc.scrollTop + " " + ended);
+      JR.site.scrollContainer = real.sc; JR.site.findTurnByKey = real.find; JR.qa.turnOrderCache = real.order; sc.remove();
+      done();
+    }, 400);
+  }, 250);
+}, 27000); }));
 // review of dev.104: with no popup open and no highlight on the page that way (their turns not mounted), ∨ goes to the
 // first highlight in a turn after the ones in view — not the last of the chat (the user's "jumped to the 42nd")
 (function () {

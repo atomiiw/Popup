@@ -1635,6 +1635,11 @@
    * Convenience: close all popups, scroll to a highlight, and open its popup.
    */
   var navGen = 0; // a jump still scrolling to its highlight is dropped once another jump starts or popups are closed
+  // ...or Esc while it searches (live R5b 11-20: Esc right after ∧ — the search went on screen by screen and opened the
+  // popup by itself). (Not the wheel: a trackpad's momentum after a flick would drop the jump just asked for. Esc with a
+  // popup up comes as "jr-escape": escape-guard.js.)
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape") navGen++; }, true);
+  document.addEventListener("jr-escape", function () { navGen++; }, true);
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
     var gen = navGen;
