@@ -427,6 +427,9 @@
       if (sendBtn && !sendBtn.disabled) {
         if (scrollParent) scrollParent.scrollTop = savedScrollTop;
         sendBtn.click();
+        // the site's send runs in this click — on ChatGPT ~0.4 s, its list re-laid, before any frame of ours: the hold
+        // corrects now and after the site's queued updates, before that frame is drawn (live 11-20: 52 px off ~0.4 s)
+        if (JR.holdNow) { JR.holdNow(); Promise.resolve().then(function () { if (JR.holdNow) JR.holdNow(); }); }
         afterSubmit("send button");
         return;
       }
@@ -918,10 +921,12 @@
     }
     function frame() { correct(); rafId = requestAnimationFrame(frame); }
     rafId = requestAnimationFrame(frame);
+    JR.holdNow = correct; // (injectAndSend: right after the site's send)
 
     addListeners(container);
 
     return function unlock() {
+      if (JR.holdNow === correct) JR.holdNow = null;
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();
