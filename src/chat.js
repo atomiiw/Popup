@@ -720,6 +720,10 @@
     }
     var savedTop = container.scrollTop;
     var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+    // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
+    // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
+    var startAnchor = liveAnchor();
+    if (startAnchor) glue(startAnchor);
     var userScrolling = false;
     var wheelTimer = null;
     var rafId = null;

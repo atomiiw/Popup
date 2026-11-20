@@ -1095,6 +1095,33 @@ asyncChecks.push(new Promise(function (done) {
   unlock(); sc.remove(); JR.state.activePopup = savedActive; JR.state.popupStack = savedStack;
 })();
 
+// ...and when the anchor's turn is unmounted and comes back elsewhere in a list the site laid out anew (live N1d): the
+// popups' places are taken at the start of the send, not at the anchor's first sight later (it went 2658 px off)
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='list' style='height:4000px;position:relative'><div class='sp' style='height:1000px'></div>" +
+    "<div class='a' data-turn-key='glue-a' style='height:50px'>x</div><div class='jr-popup' style='position:absolute;top:1060px;height:80px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var list = sc.querySelector(".list"), a = sc.querySelector(".a"), pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame;
+  var savedActive = JR.state.activePopup, savedStack = JR.state.popupStack;
+  JR.state.activePopup = pop; JR.state.popupStack = [];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  var gap0 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  a.remove(); sc.querySelector(".sp").style.height = "300px"; run(2); // collapsed, the turn unmounted
+  var b = document.createElement("div"); b.className = "a"; b.setAttribute("data-turn-key", "glue-a"); b.style.height = "50px"; b.textContent = "x";
+  list.insertBefore(b, pop); run(4);                                      // back, 700 px higher in the list
+  var gap1 = pop.getBoundingClientRect().top - b.getBoundingClientRect().top;
+  check("a send's hold: its turn unmounted and back elsewhere — the popup is still where it was to it", Math.abs(gap1 - gap0) <= 1, gap0 + " -> " + gap1);
+  unlock(); sc.remove(); JR.state.activePopup = savedActive; JR.state.popupStack = savedStack;
+})();
+
 // R33: Return in a popup's question (or a click on its send arrow) is not the user scrolling the chat:
 // ChatGPT re-lays the chat ~0.5 s after the send, and the lock must still keep the highlight in place.
 ["keydown", "pointerdown"].forEach(function (type) {
