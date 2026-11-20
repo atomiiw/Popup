@@ -706,22 +706,27 @@
     // anew, the hold kept the anchor in place by scrolling, so the list — and the popups placed in it — moved on screen:
     // a popup stood 464 px off its highlight for ~5 s, until its highlight was wrapped again). They keep where they were
     // to the anchor; placed again by anyone else (its highlight back): from there. An "above" popup by its bottom.
+    // Measured on screen, not in the popup's parent: ChatGPT's new front end re-lays and moves the list a popup sits
+    // in during a send (live 2026-11-20 05:00, Chrome Beta: the anchor held still, the popup moved +2490 then −2490 px
+    // with its list and was off screen ~4 s; a placement by someone else in that list was taken as the new place).
+    // Only a drag of its edge (jr-resizing) gives it a new place. A "below" popup keeps its top, an "above" its bottom.
     var glued = new Map();
     function glue(anchor) {
       var pops = st.popupStack.map(function (e) { return e.popup; });
       if (st.activePopup) pops.push(st.activePopup);
+      var ay = anchor.getBoundingClientRect().top, resizing = document.documentElement.classList.contains("jr-resizing");
       pops.forEach(function (p) {
         if (!p || !p.isConnected || !p.parentElement) return;
+        var r = p.getBoundingClientRect();
+        if (!r.height) return; // (not drawn: being measured)
         var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null;
-        var base = above ? p._jrBottomAnchor : parseFloat(p.style.top) || 0;
-        var y = anchor.getBoundingClientRect().top - p.parentElement.getBoundingClientRect().top; // the anchor in its list
+        var off = (above ? r.bottom : r.top) - ay;
         var g = glued.get(p);
-        if (!g || g.set !== base) { glued.set(p, { base: base, y: y, set: base }); return; }
-        var d = y - g.y;
-        if (Math.abs(d) < 0.5 || Math.abs(base - (g.base + d)) < 0.5) return;
-        g.set = g.base + d;
-        if (above) { p._jrBottomAnchor = g.set; p.style.top = (g.set - p.offsetHeight) + "px"; }
-        else p.style.top = g.set + "px";
+        if (!g || resizing) { glued.set(p, { off: off }); return; }
+        var d = off - g.off;
+        if (Math.abs(d) < 0.5) return;
+        if (above) p._jrBottomAnchor -= d;
+        p.style.top = ((parseFloat(p.style.top) || 0) - d) + "px";
       });
     }
     var savedTop = container.scrollTop;
