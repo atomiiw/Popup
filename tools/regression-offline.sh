@@ -28,7 +28,7 @@ for h in chatgpt.com chat.deepseek.com claude.ai; do
 done
 
 # Headless Chrome now and then quits before the page finishes: up to 3 tries, judged by the page title.
-for t in dom-test dom-test-deepseek dom-test-claude scroll-guard-test; do
+for t in dom-test dom-test-deepseek dom-test-claude scroll-guard-test net-tap-page-test; do
   res=""
   for try in 1 2 3; do
     dom=$("$CHROME" --headless=new --user-data-dir="$(mktemp -d)" --allow-file-access-from-files \

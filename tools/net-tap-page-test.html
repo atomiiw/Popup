@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RUNNING</title></head>
+<body>
+<pre id="out"></pre>
+<script>window.onerror = function (m, u, l) { document.title = "FAIL"; document.getElementById("out").textContent = "FAIL error: " + m + " (line " + l + ")"; };</script>
+<script>
+// net-tap.js in a page, with ChatGPT's server faked (fetch stubbed before it loads): its history pages.
+var calls = [];
+var P = 'Regarding this part of your response:\n"x"\n\nwhy\n\n(For this response only: brief)';
+function msg(id, role, text, ex) { return { id: id, author: { role: role }, content: { parts: [text] }, metadata: { turn_exchange_id: ex }, create_time: 1 }; }
+function popupPair(n) { return [msg("pu" + n, "user", P, "e" + n), msg("pa" + n, "assistant", "a", "e" + n)]; }
+var CONV = "6afbb274-2044-83e9-8e7d-12b5a352465b";
+var pages = {
+  A: { messages: popupPair(5).concat(popupPair(6)), page_info: { has_previous_page: true, has_next_page: true } },
+  pu5: { messages: popupPair(3).concat(popupPair(4)), page_info: { has_previous_page: true, has_next_page: true } },       // before pu5
+  pu3: { messages: [msg("u1", "user", "hello", "x1"), msg("a1", "assistant", "hi", "x1")].concat(popupPair(2)), page_info: { has_previous_page: true, has_next_page: true } }, // before pu3
+  V: { messages: [msg("u9", "user", "q", "x9"), msg("a9", "assistant", "y", "x9")].concat(popupPair(10)), page_info: { has_previous_page: true, has_next_page: false } },
+  E: { messages: popupPair(20), page_info: { has_previous_page: false, has_next_page: true } },
+};
+window.fetch = function (input, init) {
+  var url = String(typeof input === "string" ? input : input.url);
+  calls.push({ url: url, headers: init && init.headers });
+  var m = /before=([^&]+)/.exec(url), key = /page=([A-Z])/.exec(url);
+  var page = key ? pages[key[1]] : m ? pages[decodeURIComponent(m[1])] : null;
+  return Promise.resolve(new Response(JSON.stringify(page || { messages: [] }), { status: 200, headers: { "content-type": "application/json" } }));
+};
+</script>
+<script src="../src/net-tap.js"></script>
+<script>
+var out = [], failed = 0;
+function check(name, ok, got) { if (!ok) failed++; out.push((ok ? "PASS " : "FAIL ") + name + (ok ? "" : "  got " + got)); }
+function ask(page) {
+  calls = [];
+  return window.fetch("https://chatgpt.com/backend-api/conversations/" + CONV + "/messages?page=" + page + "&num_turns=10", { method: "GET", headers: { Authorization: "Bearer t" } })
+    .then(function (r) { return r.json(); });
+}
+ask("A").then(function (j) {
+  var ids = j.messages.map(function (m) { return m.id; }).join();
+  check("a page of only Popup Q&As: the pages before it are fetched until one keeps a message, given as that page",
+    ids === "u1,a1" && j.page_info.has_previous_page === true && j.page_info.has_next_page === true, ids + " " + JSON.stringify(j.page_info));
+  check("...asked before the oldest message of each, with the page's own login",
+    calls.length === 3 && /before=pu5/.test(calls[1].url) && /before=pu3/.test(calls[2].url) && calls[1].headers && calls[1].headers.Authorization === "Bearer t",
+    JSON.stringify(calls.map(function (c) { return c.url.replace(/^.*messages\?/, ""); })));
+  return ask("V");
+}).then(function (j) {
+  check("a page keeping a message: as it is, nothing more fetched", j.messages.map(function (m) { return m.id; }).join() === "u9,a9" && calls.length === 1, calls.length);
+  return ask("E");
+}).then(function (j) {
+  check("a page of only Popup Q&As at the start of the chat: empty, nothing more fetched", j.messages.length === 0 && calls.length === 1, j.messages.length + " " + calls.length);
+}).catch(function (e) { check("no error", false, e && e.message); }).then(function () {
+  out.push(failed ? failed + " FAILED" : "all passed");
+  document.getElementById("out").textContent = out.join("\n");
+  document.title = failed ? "FAIL" : "PASS";
+});
+</script>
+</body></html>

@@ -248,6 +248,30 @@
   }
 
   /**
+   * filterPage, but no empty page while older ones exist. A page of only Popup Q&As came out empty: ChatGPT's next
+   * request starts before the oldest message it has — still the same one — so it asked for the same page again and
+   * showed "Couldn't load earlier messages" (live 2026-11-20: its new front end pages the history 10 turns at a time,
+   * and the test chat had pages of 20 Popup messages). The pages before it are fetched here (fetchOlder(id): the page
+   * before message id, as JSON) until one keeps a message, or there is none before, and given as that one page.
+   */
+  function filled(convId, j, firstScreen, fetchOlder, depth) {
+    var out = filterPage(convId, j, firstScreen);
+    var msgs = out ? out.messages : (j && j.messages) || [];
+    var more = j && j.page_info && j.page_info.has_previous_page;
+    var oldest = j && j.messages && j.messages.length && j.messages[0] && j.messages[0].id;
+    if (msgs.length || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
+    return fetchOlder(oldest).then(function (older) {
+      if (!older || !Array.isArray(older.messages)) return out;
+      return filled(convId, older, false, fetchOlder, (depth || 0) + 1).then(function (o) {
+        var page = o || older, res = Object.assign({}, j);
+        res.messages = page.messages;
+        res.page_info = Object.assign({}, page.page_info, { has_next_page: j.page_info.has_next_page });
+        return res;
+      });
+    }).catch(function () { return out; });
+  }
+
+  /**
    * The parent a message request should use. Returns null when the page's
    * choice is right: only when removed Popup messages come right after the
    * page's parent (before the next visible message) does it move to the last of them.
@@ -295,12 +319,18 @@
     // and /conversations/<id>/messages (older pages while scrolling up).
     var conv = /\/backend-api\/conversations\/([0-9a-f-]{36})(?:\/messages)?(?:[?#]|$)/.exec(url);
     if (method === "GET" && conv && filterOn()) {
+      var reqInit = init || (input && typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
+      var fetchOlder = function (before) { // (the page's own request headers: its login)
+        return origFetch.call(window, "/backend-api/conversations/" + conv[1] + "/messages?before=" + encodeURIComponent(before) +
+          "&num_turns=10&include_has_versions=true", reqInit).then(function (r) { return r.ok ? r.json() : null; });
+      };
       return origFetch.apply(this, arguments).then(function (res) {
         if (!res.ok) return res;
         return res.clone().json().then(function (j) {
-          var filtered = filterPage(conv[1], j, url.indexOf("/messages") === -1);
-          if (!filtered) return res;
-          return new Response(JSON.stringify(filtered), { status: res.status, statusText: res.statusText, headers: res.headers });
+          return filled(conv[1], j, url.indexOf("/messages") === -1, fetchOlder).then(function (filtered) {
+            if (!filtered) return res;
+            return new Response(JSON.stringify(filtered), { status: res.status, statusText: res.statusText, headers: res.headers });
+          });
         }).catch(function () { return res; }); // unexpected body: give the page the original
       });
     }
