@@ -28,8 +28,13 @@
       // (design B); its result comes back through the copy. Not an image's button: Popup's lightbox (the site's viewer
       // would open in the unseen frame, review; a citation's favicon is no image of the answer; one not loaded yet: its
       // declared width, else an image — review) ---
-      var siteEl = e.target.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
-      if (siteEl && (!responseDiv.contains(siteEl) || siteEl._jrReplyAnchor || siteEl.classList.contains("jr-reply-whole-btn"))) siteEl = null;
+      // (e.target is a shadow root's host for a control the site drew inside one — Claude Code's code blocks: the
+      // control itself, from the event's path)
+      var inner = e.composedPath()[0], from = inner && inner.nodeType === 1 && inner.closest ? inner : e.target;
+      var siteEl = from.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
+      if (!siteEl && from !== e.target) siteEl = e.target.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
+      var inside = siteEl && (responseDiv.contains(siteEl) || (siteEl.getRootNode() !== document && responseDiv.contains(siteEl.getRootNode().host)));
+      if (siteEl && (!inside || siteEl._jrReplyAnchor || siteEl.classList.contains("jr-reply-whole-btn"))) siteEl = null;
       var pic = siteEl && siteEl.querySelector("img");
       if (pic && pic.src && (pic.getBoundingClientRect().width || pic.width || 48) >= 48) {
         e.stopPropagation();

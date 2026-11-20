@@ -30,6 +30,37 @@
   /** The first of Popup's own elements at the end (Reply): new nodes go before it, not after. */
   function tailKept(p) { var t = null; for (var n = p.lastChild; kept(n); n = n.previousSibling) t = n; return t; }
 
+  /** An element the site draws into its own shadow root (Claude Code's code blocks: <diffs-container>): a copy has it
+   *  only as an empty box (cloneNode leaves shadow roots out — live round 5: no code, no Copy in the popup). Its
+   *  content and style sheets go into the copy's own root; changes in there are followed too. */
+  function syncShadow(s, d) {
+    var sr = s.shadowRoot;
+    if (!sr) return;
+    var dr = d.shadowRoot;
+    if (!dr) { try { dr = d.attachShadow({ mode: "open" }); } catch (e) { return; } }
+    var sheets = sr.adoptedStyleSheets || [];
+    if (sheets.length && dr.adoptedStyleSheets.length !== sheets.length) {
+      try { dr.adoptedStyleSheets = sheets; } catch (e) { // (another document's: the frame's) — rebuilt here
+        dr.adoptedStyleSheets = sheets.map(function (x) {
+          var c = new CSSStyleSheet();
+          try { c.replaceSync(Array.prototype.map.call(x.cssRules, function (r) { return r.cssText; }).join("\n")); } catch (e2) { /* unreadable */ }
+          return c;
+        });
+      }
+    }
+    if (live && live.observer && live.watched.indexOf(sr) === -1) {
+      live.watched.push(sr);
+      live.observer.observe(sr, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
+    syncChildren(Array.prototype.slice.call(sr.childNodes), dr);
+  }
+  /** syncShadow for every element of a fresh clone, pairwise with its source. */
+  function shadowsIn(s, d) {
+    if (s.nodeType !== 1) return;
+    syncShadow(s, d);
+    for (var a = s.firstChild, b = d.firstChild; a && b; a = a.nextSibling, b = b.nextSibling) shadowsIn(a, b);
+  }
+
   /** Make dstParent's children match srcNodes (an array), reusing matching nodes. */
   function syncChildren(srcNodes, dstParent) {
     var d = skipKept(dstParent.firstChild);
@@ -42,10 +73,13 @@
         } else if (s.nodeType === 1) {
           syncAttrs(s, d);
           syncChildren(Array.prototype.slice.call(s.childNodes), d);
+          syncShadow(s, d);
         }
         d = d.nextSibling;
       } else {
-        dstParent.insertBefore(s.cloneNode(true), d || tailKept(dstParent)); // (live dev.145: Reply above the answer)
+        var c = s.cloneNode(true);
+        dstParent.insertBefore(c, d || tailKept(dstParent)); // (live dev.145: Reply above the answer)
+        shadowsIn(s, c);
       }
     }
     while (d) {
@@ -90,6 +124,7 @@
     l.tries = 0; l.finding = false; // (found: a later loss gets its full rounds again)
     if (l.observer) l.observer.disconnect();
     l.turn = turn;
+    l.watched = []; // shadow roots inside it also observed (syncShadow)
     l.observer = new MutationObserver(function () { if (live === l) patch(); }); // (it batches the changes already)
     l.observer.observe(turn, { subtree: true, childList: true, characterData: true, attributes: true });
     // the site replacing the whole turn (ChatGPT redraws one in the frame) changes nothing inside the old one
@@ -192,14 +227,19 @@
       var l = live;
       // (not one the site has replaced: a click there does nothing — live B6, ChatGPT redrew the frame's turn just after
       // it was found again; it is being found again now)
-      if (!l || !l.turn || !l.turn.isConnected || !l.copyEl.contains(el) || el === l.copyEl) return null;
+      if (!l || !l.turn || !l.turn.isConnected || el === l.copyEl) return null;
+      // (across a shadow root: an element the site draws into its own — its host, then on inside the original's root)
       var path = [];
-      for (var n = el; n && n !== l.copyEl; n = n.parentElement) if (!own(n)) path.unshift(n);
+      for (var n = el; n && n !== l.copyEl; n = n.parentElement || (n.parentNode && n.parentNode.host)) {
+        if (!own(n)) path.unshift(n);
+      }
+      if (!n) return null;
       var cur = null, list = JR.site.assistantBodies(l.turn);
       for (var i = 0; i < path.length; i++) {
         cur = list[place(path[i])];
         if (!cur || cur.tagName !== path[i].tagName) return null; // the copy is ahead of / behind the original
-        list = siteChildren(cur);
+        var into = path[i + 1] && path[i + 1].getRootNode() !== path[i].getRootNode(); // the next is in its shadow root
+        list = into ? (cur.shadowRoot ? Array.prototype.filter.call(cur.shadowRoot.children, function (c) { return !own(c); }) : []) : siteChildren(cur);
       }
       return cur;
     },

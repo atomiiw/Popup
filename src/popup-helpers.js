@@ -1237,7 +1237,7 @@
     }
     // no turn order ever (Claude Code: no conversation read): by when they were made — a place on the page for the
     // ones mounted and creation time for the rest put the ones at the reader's place first (live round 5: ∧ → 1/15)
-    var noOrder = !JR.qa.turnOrderCache && JR.qa.hasConversation && !JR.qa.hasConversation();
+    var noOrder = !(JR.qa.turnOrderCache && JR.qa.turnOrderCache.length) && JR.qa.hasConversation && !JR.qa.hasConversation();
     emit(shownRecs.filter(function (r) { return !r.parentId && !r.wholeResponse; }), function (r) {
       if (noOrder) return [0, r.createdAt || 0];
       var t = r.sourceTurnKey ? tpos(r.sourceTurnKey) : -1;
@@ -1401,17 +1401,17 @@
       };
       (scrollParent === window ? window : scrollParent)
         .addEventListener("scroll", scrollHandler, { passive: true });
-      // a place inside the chat's right edge (Claude Code): again when the chat is laid out anew (live round 5: drawn
-      // before the chat had its width, the arrows sat in the right panel until the next update)
-      var sideRo = JR.site.navRight && typeof ResizeObserver !== "undefined" && scrollParent !== window ? new ResizeObserver(function () {
+      // a place inside the chat's right edge (Claude Code): checked each second (live round 5: drawn on the page's
+      // skeleton, before the chat had its place, the arrows sat in the right panel until the next update; the chat
+      // element itself is replaced then, an observer on it saw nothing)
+      var side = JR.site.navRight ? setInterval(function () {
         var r = JR.site.navRight();
         if (st.navWidget && r != null && st.navWidget.style.right !== r + "px") st.navWidget.style.right = r + "px";
-      }) : null;
-      if (sideRo) sideRo.observe(scrollParent);
+      }, 1000) : 0;
       st.navWidget._jrScrollCleanup = function () {
         (scrollParent === window ? window : scrollParent)
           .removeEventListener("scroll", scrollHandler);
-        if (sideRo) sideRo.disconnect();
+        if (side) clearInterval(side);
       };
     }
 

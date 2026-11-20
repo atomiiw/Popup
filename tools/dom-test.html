@@ -1674,6 +1674,30 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 50);
 }, 1300); }));
 
+// live round 5 (Claude Code): a code block drawn in the site's own shadow root (<diffs-container>) — in the copy too,
+// its Copy clicked in the original, a change in there followed
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var orig = document.createElement("div"); orig.setAttribute("data-turn-key", "sh-1");
+  orig.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>code:</p><div class="hostx"></div></div></div>';
+  document.body.appendChild(orig);
+  var root = orig.querySelector(".hostx").attachShadow({ mode: "open" }), ran = [];
+  root.innerHTML = '<pre>import ctypes</pre><div><button aria-label="Copy">Copy</button></div>';
+  root.querySelector("button").addEventListener("click", function () { ran.push("copy"); });
+  var copy = document.createElement("div"); copy.className = "jr-popup-response"; document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["sh-1"], null);
+  var cr = copy.querySelector(".hostx") && copy.querySelector(".hostx").shadowRoot;
+  var shown = !!cr && cr.textContent.indexOf("import ctypes") !== -1;
+  if (cr) cr.querySelector("button").click();
+  root.querySelector("pre").textContent = "import ctypes, sys";
+  setTimeout(function () {
+    check("a code block in the site's shadow root: in the copy, its Copy clicked in the original, a change followed",
+      shown && ran.join() === "copy" && cr.textContent.indexOf("ctypes, sys") !== -1, JSON.stringify([shown, ran, cr && cr.textContent]));
+    JR.siteAnswer.stop(); orig.remove(); copy.remove();
+    done();
+  }, 60);
+}, 1400); })); // (between the code-block test and the next: one original is live at a time)
+
 // user 2026-11-18 ("no backup, go all in") + architecture candidate 1 (2026-11-19): a finished popup shows only the
 // site answer — "Loading…" until its original is found (looked for again when none is), never a drawing of Popup's
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
