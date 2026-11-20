@@ -1,4 +1,4 @@
-**2026-11-20 11:55: 1.2.15 re-zipped after the audit = commit 672d1b1, `dist/popup-1.2.15.zip` (sha256 2b85a7d5…) — the store upload is the user's (docs/TODO-2026H2.md "1.2.15 audit").**
+**2026-11-20 12:27: 1.2.15 re-zipped after the audit and the real-user-path fixes = commit 4412958, `dist/popup-1.2.15.zip` (sha256 efc70717…) — the store upload is the user's (docs/TODO-2026H2.md "1.2.15 real-user paths", "1.2.15 audit").**
 
 **2026-11-20 06:35 (replaced): 1.2.15 = commit "1.2.15" (dev.33), zipped (sha256 4ca15084…).** Overnight: dev.1–33 (docs/TODO-2026H2.md "Current status": what was fixed, round 5 results, known costs, what was left on purpose). Live round 5 PASS on both Chromes, all three sites and Claude Code (docs/REGRESSION-LOG.md first row). From now on the user browses in Chrome Beta; Codex uses the old Chrome only (memory: two-chromes).
 
