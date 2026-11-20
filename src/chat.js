@@ -383,6 +383,8 @@
       // (min too: the draft set aside, a box of several lines got shorter and the chat moved — live round 5, claude.ai)
       "\n:has(> [data-jr-injecting]) { max-height: " + composerH + "px !important; min-height: " + composerH + "px !important; overflow: hidden !important; }" +
       (boxH ? "\n[data-jr-injecting-box] { max-height: " + boxH + "px !important; min-height: " + boxH + "px !important; overflow: hidden !important; }" : "") +
+      // (the input itself too: it grew a line with Popup's text and its row of buttons moved 8 px — drawn record)
+      "\n[data-jr-injecting] { max-height: " + chatInput.offsetHeight + "px !important; overflow: hidden !important; }" +
       "\n[data-jr-injecting-hold] { max-height: var(--jr-ih) !important; min-height: var(--jr-ih) !important; overflow: hidden !important; }";
     document.head.appendChild(hideStyle);
     function unhideComposer() {

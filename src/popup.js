@@ -1249,7 +1249,11 @@
    */
   function showAnswer(popup, hlId, entry, item, contentContainer) {
     var keys = (item.turnKeys || []).join(), keep = null, oldH = 0;
-    if (item.status === "done" && keys) {
+    // the area following its original right now (the one that streamed) stays — whatever the version's keys say yet
+    // (drawn record 11-20: at the end of an answer one frame showed a new empty area — its keys not in yet)
+    var live = JR.siteAnswer && JR.siteAnswer.current();
+    if (item.status === "done" && live && live.parentNode === popup && live.classList.contains("jr-popup-response")) keep = live;
+    if (item.status === "done" && keys && !keep) {
       // (the same Q&A: a key in common — the streaming area had the turn's key, the done version its keys: equal strings
       // only, the area was dropped and a new one empty ~0.5 s until its copy came — the flash at the end, drawn record 11-20)
       var mine = keys.split(",");
