@@ -189,6 +189,11 @@
   document.addEventListener("mousedown", function (e) {
     // Ignore clicks on the trigger button
     if (e.target.closest(".jr-highlight-trigger-btn")) return;
+    // ...and the second click of a double-click (on the button: it closed the popup it had just opened — peer audit
+    // A6; elsewhere the first click already did), and a press on a scrollbar (scrolling, not leaving the popup)
+    if (e.detail > 1) return;
+    var tg = e.target;
+    if (tg.clientWidth && (e.offsetX > tg.clientWidth || e.offsetY > tg.clientHeight)) return;
     // Dismiss trigger button on click outside
     if (triggerBtn && !triggerBtn.contains(e.target)) {
       removeTriggerBtn();
