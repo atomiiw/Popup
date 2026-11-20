@@ -26,6 +26,8 @@
     var stride = noOrder ? 1 : 0.8, lastDir = 0; // a step, in screens: halved each time the direction turns (it went to and fro past it)
     var from = list.top(), dir0 = -1; // no order: up from here (loading earlier turns), then down from here
     function scroll(v) { if (list.before) list.before(); list.setTop(Math.max(0, v)); }
+    var here = list.find(key);
+    if (here) return Promise.resolve({ turn: here }); // (mounted already — the copy opened at it: no scroll away from it)
     if (target >= 0 && order.length) scroll(list.height() * target / order.length - list.view() / 2);
     else if (!noOrder && target < 0) scroll(list.height()); // not in the order: newer than it (sent since) — at the end
     // (a place but no order — DeepSeek's ids: from where the reader is, not thrown to the end first — ponytail review)

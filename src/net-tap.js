@@ -22,8 +22,30 @@
   if (window !== window.top) {
     var render = false;
     try { render = !!window.frameElement && window.frameElement.classList.contains("jr-render-frame"); } catch (e) { /* another origin */ }
+    // A copy opened at an answer (site-render.js: #jr-before=<the next question's id>): the history's first page is the
+    // page that ends with that answer — ChatGPT draws it last, mounted at once, no scrolling to it (live 11-20: the
+    // copy's list mounted the same 3 turns wherever it was scrolled; a search took 20–40 s or never ended).
+    var before = render && /[#&]jr-before=([0-9a-f-]{36})/.exec(location.hash);
     if (render) window.fetch = function (input, init) {
       var url = typeof input === "string" ? input : input && input.url;
+      var first = before && url && /\/backend-api\/conversations\/([0-9a-f-]{36})\?/.exec(url);
+      if (first && (!init || !init.method || init.method === "GET")) {
+        var id = first[1], reqInit = init || (typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
+        return origFetch.call(this, input, init).then(function (res) {
+          if (!res.ok) return res;
+          return res.clone().json().then(function (j) {
+            return origFetch.call(window, "/backend-api/conversations/" + id + "/messages?before=" + encodeURIComponent(before[1]) +
+              "&num_turns=100&include_has_versions=true", reqInit).then(function (r) { return r.ok ? r.json() : null; }).then(function (older) {
+              var msgs = older && older.messages;
+              if (!msgs || !msgs.length || !j.messages) return res;
+              j.messages = msgs;
+              if (older.page_info) j.page_info = Object.assign({}, older.page_info, { has_next_page: false });
+              j.current_node = msgs[msgs.length - 1].id; // (its leaf: the answer, as the last message)
+              return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
+            });
+          }).catch(function () { return res; });
+        });
+      }
       // (the first page too: conversations/<id>?num_turns=10 — live, old Chrome: the frame had 3 turns and stopped there)
       if (url && /\/backend-api\/conversations\/[0-9a-f-]{36}(\/messages)?\?/.test(url) && /[?&]num_turns=10(&|$)/.test(url)) {
         var more = url.replace(/([?&]num_turns=)10(&|$)/, "$1100$2");

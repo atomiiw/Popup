@@ -32,14 +32,18 @@
     frame = null; frameConv = null;
   }
 
-  function frameFor(conv) {
-    if (frame && frameConv === conv && frame.isConnected) return frame;
+  // at: the id of the question after the answer looked for — the copy opens at that answer (net-tap.js: its first page
+  // ends there); null: at the end, as the chat is
+  var frameAt = null;
+  function frameFor(conv, at) {
+    if (frame && frameConv === conv && frame.isConnected && (at === undefined || frameAt === (at || null))) return frame;
+    frameAt = at || null;
     dropFrame();
     frame = document.createElement("iframe");
     frame.className = "jr-render-frame"; // unseen, laid out at a popup's width (styles.css)
     frame.setAttribute("aria-hidden", "true");
     frame.tabIndex = -1;
-    frame.src = JR.site.chatUrl(conv);
+    frame.src = JR.site.chatUrl(conv) + (frameAt ? "#jr-before=" + frameAt : "");
     frame.addEventListener("load", function () { guardFocus(doc()); }); // the site focusing its composer in there
     frameConv = conv;
     frameId++;
@@ -189,9 +193,19 @@
         if (!conv || !key) return give(null);
         if (fresh) { dropFrame(); reloadedFor.delete(key); }
         if (onWaiting) onWaiting("frame");
-        frameFor(conv);
-        return frameReady()
-          .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
+        return (JR.qa.turnOrder ? JR.qa.turnOrder() : Promise.resolve([])).then(function (order) {
+          // ChatGPT: the copy opened at the answer (its network tap there, net-tap.js) — the answer drawn last, at once;
+          // no scrolling the copy to it (its list didn't follow a scroll: 20–40 s, or never — live 11-20). One already
+          // drawn in the copy open now: that copy.
+          var i = (order || []).indexOf(key), d0 = doc();
+          var at = JR.site.name === "chatgpt" && i >= 0 && i < order.length - 1 ? order[i + 1] : null;
+          if (at && !/^[0-9a-f-]{36}$/.test(at)) at = null; // (a ChatGPT message id, as net-tap.js reads it from the URL)
+          if (!(frame && frameConv === conv && d0 && JR.site.frameTurn(d0, key))) frameFor(conv, at);
+          return frameReady().then(function (ready) {
+            if (!ready || !at) return ready;
+            return until(function () { var d = doc(); return d && JR.site.frameTurn(d, key); }, 200, 15).then(function () { return ready; });
+          });
+        })
           .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; })
           .then(function (turn) {
             // not found: a fresh frame, once — the answer newer than the frame (sent after it loaded), or the frame's list

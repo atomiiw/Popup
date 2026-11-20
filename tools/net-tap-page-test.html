@@ -79,6 +79,26 @@ ask("A").then(function (j) {
     return inFrame("");
   }).then(function (seen) {
     check("another frame of the site: untouched", /num_turns=10&/.test(seen[0]), JSON.stringify(seen));
+    // a copy opened at an answer (#jr-before=<the next question>): its first page is the page that ends with that answer
+    return new Promise(function (done) {
+      var f = document.createElement("iframe");
+      f.className = "jr-render-frame";
+      var B = "aaaaaaaa-1111-2222-3333-444444444444";
+      f.srcdoc = '<script>location.hash = "jr-before=' + B + '"; window.fetch = function (u) { u = String(typeof u === "string" ? u : u.url);' +
+        ' var body = /before=/.test(u) ? { messages: [{ id: "q5" }, { id: "a5" }], page_info: { has_previous_page: true, has_next_page: true } }' +
+        ' : { title: "T", messages: [{ id: "q9" }, { id: "a9" }], current_node: "a9", page_info: { has_previous_page: true, has_next_page: false } };' +
+        ' return Promise.resolve(new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })); };<\/script>' +
+        '<script src="../src/net-tap.js"><\/script>';
+      f.onload = function () {
+        f.contentWindow.fetch("/backend-api/conversations/" + CONV + "?num_turns=10").then(function (r) { return r.json(); }).then(function (j) {
+          check("a copy opened at an answer: its first page ends with that answer (drawn last, no scrolling to it)",
+            j.messages.map(function (m) { return m.id; }).join() === "q5,a5" && j.current_node === "a5" && j.title === "T" && j.page_info.has_next_page === false,
+            JSON.stringify(j));
+          f.remove(); done();
+        });
+      };
+      document.body.appendChild(f);
+    });
   });
 }).catch(function (e) { check("no error", false, e && e.message); }).then(function () {
   out.push(failed ? failed + " FAILED" : "all passed");
