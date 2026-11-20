@@ -142,6 +142,16 @@
    *  availability (JR.availability) says until when; each miss is told there with its reason, and the search stops
    *  once it is unreachable (Try again: JR.siteAnswer.retry). */
   function locating(l) { return !l.id || JR.availability.of(l.id).kind === "locating"; }
+  /** Unreachable: what it asked for is let go — the hidden copy's search stops (it scrolled on for nobody, then a Try
+   *  again lost its fresh copy to the old search's release — ponytail review). */
+  function watchUnreachable(l) {
+    if (l.unwatch) l.unwatch();
+    l.unwatch = l.id ? JR.availability.watch(l.id, function (s) {
+      if (s.kind !== "unreachable" || live !== l) return;
+      if (JR.site.releaseOriginal) l.asked.forEach(JR.site.releaseOriginal);
+      l.asked = [];
+    }) : null;
+  }
   function find(l) {
     // the key followed till now first: asking for another one first would wait behind its own hold (review: ChatGPT's
     // legacy question + answer keys — the copy froze after a redraw in the frame)
@@ -191,13 +201,16 @@
       var l0 = live;
       if (l0 && l0.keys.join() === keys.join() && !fresh) { // the same Q&A (its popup rebuilt — its question read back, say):
         l0.copyEl = copyEl; l0.onChange = onChange; // the original found (or being found) goes on, not found again (slow)
-        if (id) l0.id = id;
+        // a version taking over the streaming follow (its send just done): located from here — done is no wait, and
+        // looking stopped (ponytail review: a frozen uncoloured copy, or Loading… with no deadline)
+        if (id && l0.id !== id) { l0.id = id; watchUnreachable(l0); JR.availability.on(id, { t: "locate" }); }
         return l0.turn ? patch() : undefined;
       }
       JR.siteAnswer.stop();
       var l = live = { copyEl: copyEl, keys: keys, key: null, turn: null, observer: null, id: id || null,
         onChange: onChange, fromPage: false, tries: 0, finding: false, asked: [], fresh: !!fresh };
       // (its deadline from now — asked again meanwhile: the first; fresh — Try again: one of its own)
+      watchUnreachable(l);
       if (l.id) JR.availability.on(l.id, { t: "locate", again: !!fresh });
       find(l);
     },
@@ -240,6 +253,7 @@
       var l = live;
       live = null;
       if (!l) return;
+      if (l.unwatch) l.unwatch();
       if (l.observer) l.observer.disconnect();
       // every one asked for: one still being found is let go too (else the frame would keep it for good)
       if (JR.site.releaseOriginal) l.asked.forEach(JR.site.releaseOriginal);

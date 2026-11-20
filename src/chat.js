@@ -595,6 +595,10 @@
     // another chat opened while it waited (the URL check runs every 500 ms, the queue every 300): never sent there
     // (the conversation, not the URL: claude.ai's Settings change the hash)
     if (opts.url && !sameChat(opts.url)) { st.messageQueue.length = 0; return; }
+    // its availability: sending from here — its files' upload included (a reopen meanwhile saw idle and stored it
+    // failed — ponytail review); once per send (sendQueued comes back here after the files)
+    var avId = qw.preRegisteredItemId;
+    if (avId && !opts.availSent) { opts.availSent = true; JR.availability.on(avId, { t: "send", files: !!(opts.files && opts.files.length) }); }
     // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
     if (!opts.attached && !opts.aside && JR.site.composerHasAttachments(JR.site.composer())) {
       if (!JR.setAsideUserFiles()) {
@@ -614,7 +618,7 @@
           st.attaching = false;
           // another chat opened meanwhile: never sent there (by conversation, not URL: a hash / ?artifact= is the same
           // chat — the send was dropped silently and its popup stayed Loading…, audit L5)
-          if (sameChat(from)) sendQueued(opts); else { immediateTimeout(opts.waitOpts); JR.drainQueue(); }
+          if (sameChat(from)) sendQueued(opts); else { immediateTimeout(opts.waitOpts, from); JR.drainQueue(); }
         }, 150);
       })();
       return;
@@ -634,7 +638,7 @@
           removeComposerAttachments(JR.site.composer(), res.sent);
           endAttaching();
           JR.dropAsideFiles();
-          immediateTimeout(opts.waitOpts);
+          immediateTimeout(opts.waitOpts, startUrl);
           JR.drainQueue();
           return;
         }
@@ -661,8 +665,7 @@
     var watch = JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll,
       w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId, opts.message,
       w.wholeResponse, w.wholeResponseFull, sentFiles);
-    var vid = w.preRegisteredItemId; // (its availability: sending now, streaming once in — JR.availability)
-    if (vid) JR.availability.on(vid, { t: "send" });
+    var vid = w.preRegisteredItemId; // (its availability: sending since sendQueued began, streaming once in)
     JR.injectAndSend(opts.message, function (r) {
       endAttaching();
       if (r.ok && vid) JR.availability.on(vid, { t: "sent" });
@@ -674,7 +677,8 @@
    * Mark "failed" at once for a message that was never sent (e.g. offline).
    * Mirrors saveTimeoutVersion logic but without needing a waitForResponse context.
    */
-  function immediateTimeout(w) {
+  function immediateTimeout(w, url) { // url: the chat it was asked in (another may be open now — ponytail review)
+    url = url || location.href;
     if (w.preRegisteredItemId) JR.availability.on(w.preRegisteredItemId, { t: "failed", reason: "not-sent" });
     JR.unfreezeChat();
     if (w.unlockScroll) w.unlockScroll();
@@ -691,7 +695,7 @@
       memEntry.question = w.question;
       saveHighlight({
         id: newItemId, quoteId: hlId, text: memEntry.text, status: "failed",
-        url: location.href, parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
+        url: url, parentId: memEntry.parentId || null, parentItemId: memEntry.parentItemId || null,
         sourceTurnKey: memEntry.sourceTurnKey || null, turnKeys: [], active: true,
         wholeResponse: !!memEntry.wholeResponse, attachments: (memEntry._editFiles || []).length,
       });
@@ -702,7 +706,7 @@
       }
       var updateId = w.preRegisteredItemId || (memEntry.items && memEntry.items[itemIdx] ? memEntry.items[itemIdx].id : null);
       if (updateId) {
-        updateHighlightFields(updateId, { status: "failed" });
+        updateHighlightFields(updateId, { status: "failed" }, url);
       }
     }
 
@@ -878,6 +882,10 @@
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
     var startAnchor = liveAnchor();
     anchorPopups();
+    // the window resized during the send: placing is the placer's again (its highlight may wrap otherwise — an anchored
+    // popup kept its old offset and covered the highlight's last line — ponytail review)
+    function onResize() { openPopups().forEach(unanchor); }
+    window.addEventListener("resize", onResize);
     if (startAnchor) glue(startAnchor);
     var userScrolling = false;
     var wheelTimer = null;
@@ -964,6 +972,7 @@
     addListeners(container);
 
     return function unlock() {
+      window.removeEventListener("resize", onResize);
       openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(unanchor);
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
@@ -1450,6 +1459,7 @@
     var lastContentSnapshot = "";
     var lastNetLength = 0;
     var lastProgress = Date.now();     // last time the answer grew (DOM or network)
+    var told = {}; // when the answer's growth was last told to its availability
     var STALE_THRESHOLD = 60000; // generating flag stuck: answer unchanged this long → capture what is there
     var savedKeys = false;
 
@@ -1510,6 +1520,8 @@
       if (currentContent !== lastContentSnapshot || net.text.length !== lastNetLength) {
         lastContentSnapshot = currentContent;
         lastNetLength = net.text.length;
+        // (its availability: the deadline moves on as it grows — told at most every 5 s)
+        if (preRegisteredItemId && Date.now() - (told.progress || 0) > 5000) { told.progress = Date.now(); JR.availability.on(preRegisteredItemId, { t: "progress" }); }
         lastProgress = Date.now();
       }
 

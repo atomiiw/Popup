@@ -58,7 +58,7 @@
    * drawing). With the conversation's turn order: jump to its estimated place, then step toward it; at the top, wait
    * for earlier turns to load. Without an order (it failed to load): from the bottom up.
    */
-  function findTurn(key, onWaiting) {
+  function findTurn(key, onWaiting, fresh) {
     var d = doc(), sc = d && JR.site.frameScroller(d);
     if (!sc) { missWhy[key] = "copy-not-ready"; return Promise.resolve(null); }
     var list = JR.reachTurn.listOf(sc, function () { return Array.prototype.slice.call(d.querySelectorAll(JR.SEL.turn)); },
@@ -69,7 +69,9 @@
       wait: wait,
     }).then(function (r) {
       if (r.turn) return r.turn;
-      missWhy[key] = { stuck: "copy-stuck", "not-loaded": "not-loaded" }[r.why] || "not-found";
+      // (not in the order of a fresh copy and a fresh read: on another branch than the one shown — looking again can't
+      // help: Ask again — ponytail review)
+      missWhy[key] = fresh && r.why === "not-in-order" ? "branch" : { stuck: "copy-stuck", "not-loaded": "not-loaded" }[r.why] || "not-found";
       return null;
     });
   }
@@ -203,7 +205,7 @@
             run(loadAll); // (after this one: the next answer asked for is then found at once)
             return frameReady()
               .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
-              .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; });
+              .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting, true) : null; });
           })
           .then(function (turn) { return turn && wanted.has(key) ? revealCode(turn, key).then(function () { return turn; }) : turn; })
           .then(function (turn) {

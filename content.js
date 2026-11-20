@@ -470,6 +470,7 @@
     JR.clearHiddenTurnKeys();
     JR.qa.clear();
     JR.qa.resetApi();
+    if (JR.availability) JR.availability.clear(); // (another chat: nothing waits on from here)
     resetStorageCache();
     var early = document.getElementById("jr-early-hide");
     if (early) early.remove();

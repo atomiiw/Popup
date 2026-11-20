@@ -2020,6 +2020,19 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 400);
 }, 20100); })); // (its own time — 20.1–20.9 s, between the 20 s and 21 s tests: one original is live at a time)
 
+// ponytail review of the redesign: the done version taking over the streaming follow (same keys) is located from
+// there — with a deadline — not left "done" (no wait: the copy froze, or Loading… with no end)
+(function () {
+  var real = JR.site.original, copy = document.createElement("div");
+  JR.site.original = function () { return new Promise(function () {}); }; // (still looking)
+  JR.siteAnswer.follow(copy, ["to-1"], null); // the streaming mirror: no version id
+  JR.availability.on("to-v", { t: "done" });
+  JR.siteAnswer.follow(copy, ["to-1"], null, "to-v"); // the popup rebuilt as the send ends
+  var s = JR.availability.of("to-v");
+  check("send done: the version taking over its follow is locating, with a deadline", s.kind === "locating" && s.deadline > Date.now(), JSON.stringify(s));
+  JR.siteAnswer.stop(); JR.site.original = real; JR.availability.on("to-v", { t: "reset" });
+})();
+
 // audit 11-20: a thinking model's stream ends with "resuming" (no "done"): it is no open stream any more — counted
 // open, ChatGPT looked busy for good and every later Popup question waited in the queue
 (function () {

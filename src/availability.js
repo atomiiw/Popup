@@ -7,7 +7,7 @@
 
   /** Every limit in one place (design decision 3). streaming: the send's watch ends it first (its own idle and
    *  generating limits, chat.js — they read these); this is the backstop. */
-  var LIMITS = { sending: 10000, streamingIdle: 100000, streamingGenerating: 600000, locating: 30000, hint: 3000 };
+  var LIMITS = { sending: 10000, upload: 60000, streamingIdle: 100000, streamingGenerating: 600000, locating: 30000, hint: 3000 };
 
   var WAITS = { sending: true, streaming: true, locating: true };
   /** Reasons looking again can't help with (Ask again, not Try again): no Q&A linked in the chat; not on the branch shown. */
@@ -24,12 +24,16 @@
       return Object.assign({ kind: kind, waitingFor: what, since: now, deadline: now + limit }, extra || {});
     }
     switch (ev.t) {
-      case "send": return waitFor("sending", "send", LIMITS.sending);
+      // (files: their upload first — up to a minute)
+      case "send": return waitFor("sending", ev.files ? "files" : "send", LIMITS.sending + (ev.files ? LIMITS.upload : 0));
+      // the answer grew: its deadline moves on (a thinking model can write for longer than any fixed limit)
+      case "progress": return s.kind === "streaming" ? Object.assign({}, s, { deadline: now + LIMITS.streamingGenerating + LIMITS.streamingIdle }) : s;
       case "sent": return waitFor("streaming", "answer", LIMITS.streamingGenerating + LIMITS.streamingIdle);
       case "done": return { kind: "done" };
       case "locate":
-        // (asked again while it is being located: the deadline counts from the first ask — decision 2/Q2)
-        if (s.kind === "locating" && !ev.again) return s;
+        // (asked again while it is being located: the deadline counts from the first ask — decision 2/Q2 — but a final
+        // reason from before no longer holds: its Q&A was linked meanwhile — ponytail review)
+        if (s.kind === "locating" && !ev.again) return FINAL[s.lastWhy] ? Object.assign({}, s, { lastWhy: null }) : s;
         return waitFor("locating", ev.what || "page", LIMITS.locating, { lastWhy: null });
       case "waiting":
         return WAITS[s.kind] && s.waitingFor !== ev.what ? Object.assign({}, s, { waitingFor: ev.what }) : s;
@@ -39,7 +43,7 @@
         if (s.kind !== "locating") return s;
         if (ev.final) return { kind: "unreachable", reason: ev.why, ask: true };
         return s.lastWhy === ev.why ? s : Object.assign({}, s, { lastWhy: ev.why });
-      case "lost": return s.kind === "shown" ? waitFor("locating", "page", LIMITS.locating, { lastWhy: null }) : s;
+      case "lost": return s.kind === "shown" || s.kind === "done" || s.kind === "idle" ? waitFor("locating", "page", LIMITS.locating, { lastWhy: null }) : s;
       case "failed": return { kind: "failed", reason: ev.reason || "no-answer" };
       case "tick":
         if (!WAITS[s.kind] || !(now >= s.deadline)) return s;

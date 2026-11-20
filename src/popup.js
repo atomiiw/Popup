@@ -598,6 +598,9 @@
           updateHighlightFields(sendItemId, { attachments: res.sent.length }, location.href);
         },
       });
+      // its "Loading…" says what it waits for after a moment (sending / answering), and fails at its deadline
+      loadingDiv._jrWait = loadingDiv;
+      watchAvailability(popup, loadingDiv, sendHlId, pendingEntry, pendingEntry.items[0]);
     }
 
     // Click send arrow → send with current default mode
@@ -1255,7 +1258,11 @@
       el.remove();
     });
     var wait = null;
-    if (item.status === "pending") wait = popup.appendChild(JR.createLoadingDiv());
+    if (item.status === "pending") { // (sending / answering: says so after a moment, and fails at its deadline)
+      wait = popup.appendChild(JR.createLoadingDiv());
+      wait._jrWait = wait;
+      watchAvailability(popup, wait, hlId, entry, item);
+    }
     else {
       appendResponseWithReply(popup, hlId, entry, contentContainer, item.id, keep); // (follows its original)
       if (!keep && item.status === "done") wait = popup.querySelector(":scope > .jr-popup-loading");
@@ -1272,7 +1279,8 @@
    * resent) or Ask again (it can't be found by looking: the failed view, whose Retry sends the question again).
    */
   var RETRY_SVG = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
-  var WAIT_HINTS = { frame: "Finding the answer in the chat\u2026", data: "Finding the answer in the chat\u2026",
+  var WAIT_HINTS = { send: "Sending\u2026", files: "Sending\u2026",
+    frame: "Finding the answer in the chat\u2026", data: "Finding the answer in the chat\u2026",
     older: "Loading earlier messages\u2026", queue: "Waiting for another answer\u2026" };
   var UNREACHABLE_TEXT = { "no-qa": "This question isn\u2019t in the current version of the chat",
     branch: "This question isn\u2019t in the current version of the chat" };
@@ -1283,8 +1291,15 @@
     function render(s) {
       var wait = responseDiv._jrWait;
       if (!wait || !wait.isConnected || !responseDiv.isConnected) { if (stop) stop(); clearTimeout(hintTimer); return; }
-      if (s.kind === "locating") {
-        var text = WAIT_HINTS[s.waitingFor] || "", due = s.since + JR.availability.LIMITS.hint - Date.now();
+      if (s.kind === "shown") { if (stop) stop(); clearTimeout(hintTimer); return; } // (its copy is in: done watching)
+      if (s.kind === "failed" && item.status === "pending") { // (a send's deadline passed: the failed view, Retry)
+        if (stop) stop(); clearTimeout(hintTimer);
+        setTimeout(function () { if (popup.isConnected && JR.rebuildPopupAfterEdit) JR.rebuildPopupAfterEdit(popup, hlId); }, 0);
+        return;
+      }
+      if (s.kind === "locating" || s.kind === "sending" || s.kind === "streaming") {
+        var text = s.waitingFor === "answer" ? JR.site.label + " is answering\u2026" : WAIT_HINTS[s.waitingFor] || "";
+        var due = s.since + JR.availability.LIMITS.hint - Date.now();
         var why = wait.querySelector(".jr-popup-wait-why");
         if (text && due <= 0) {
           if (!why) { why = document.createElement("div"); why.className = "jr-popup-wait-why"; wait.appendChild(why); }

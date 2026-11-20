@@ -42,6 +42,18 @@ check("Try again: locating again with a deadline of its own", s.kind === "locati
 s = run([[0, { t: "locate" }], [10, { t: "found", via: "frame" }], [5000, { t: "lost" }]]);
 check("shown, original lost: locating again with a deadline", s.kind === "locating" && s.deadline === 5000 + L.locating, s);
 
+// ponytail review: a final reason from before its Q&A was linked doesn't end it as "not in the chat"
+s = run([[0, { t: "locate", what: "data" }], [10, { t: "missing", why: "no-qa" }], [2000, { t: "locate" }], [L.locating, { t: "tick" }]]);
+check("linked meanwhile: the old no-Q&A reason is dropped — unreachable as not found, Try again (no resend)", s.kind === "unreachable" && s.reason === "not-found" && s.ask === false, s);
+// ...a long answer's deadline moves on as it grows; a send with files gets the upload's time
+s = run([[0, { t: "send" }], [100, { t: "sent" }], [650000, { t: "progress" }], [760000, { t: "tick" }]]);
+check("streaming that keeps growing: not failed at the first deadline", s.kind === "streaming", s);
+s = run([[0, { t: "send", files: true }], [L.sending + 1000, { t: "tick" }]]);
+check("a send with files: still sending past 10 s (their upload)", s.kind === "sending" && s.waitingFor === "files", s);
+// ...a done version taking over a follow whose original went: locating (with a deadline), not left as done
+s = run([[0, { t: "done" }], [10, { t: "lost" }]]);
+check("done, its original lost: locating with a deadline", s.kind === "locating" && s.deadline === 10 + L.locating, s);
+
 // the store: watchers hear every change, ticks move a past deadline on
 const seen = [];
 A.watch("v1", (st) => seen.push(st.kind));

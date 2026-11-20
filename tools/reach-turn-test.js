@@ -68,6 +68,15 @@ function fakeList(heights, opts) {
   r = await reach(L, "new-key", L.order, { wait: fast });
   check("a key not in the order (sent since): looked for at the end only, says so", r.why === "not-in-order", r);
 
+  // DeepSeek: a place for each key (its ids), no order — from where the reader is, not thrown to the end first
+  L = fakeList(hs);
+  L.setTop(60000);
+  const tops = [];
+  const realSet = L.setTop;
+  L.setTop = (v) => { tops.push(Math.round(v)); realSet(v); };
+  r = await reach(L, "k40", [], { wait: fast, position: (k) => Number(k.slice(1)) });
+  check("a place but no order (DeepSeek): reached, never scrolled to the end first", r.turn && r.turn.key === "k40" && !tops.some((t) => t > 60000), r.why || tops.slice(0, 5));
+
   console.log(failed ? failed + " FAILED" : "all passed");
   process.exit(failed ? 1 : 0);
 })();
