@@ -23,8 +23,9 @@
   var PREFIX_WHOLE_ABOVE = "Regarding your entire response above:\n\n";
   var SUFFIX_MARK = "(For this response only:";
   // Claude Code (user 2026-11-20): a Popup question is a question — its tool steps would be hidden with the Q&A, so
-  // the agent is asked not to act. In the same "(For this response only: …)" part: parsed off with it.
-  var ANSWER_ONLY = SUFFIX_MARK + " answer in text only — don't run tools or commands and don't change any files;";
+  // the agent is asked not to change anything; a preview or image to show is fine (user: "图片还是得支持").
+  // In the same "(For this response only: …)" part: parsed off with it.
+  var ANSWER_ONLY = SUFFIX_MARK + " don't change the project's files or run commands that change anything (making a preview or an image to show here is fine);";
 
   /**
    * Build the message Popup injects into ChatGPT.

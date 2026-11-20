@@ -37,9 +37,9 @@ check("recognised as Popup message", JR.isPopupMessage(JR.buildMessage({ questio
   const m = JR.buildMessage({ question: "Why?", text: "the cat", sentence: "I saw the cat today.", mode: "concise" });
   delete JR.site.answerOnly;
   const p = JR.parsePopupMessage(m);
-  check("Claude Code: the message asks for text only, the question parses as before",
-    /don't run tools or commands and don't change any files; please keep it brief/.test(m) && p && p.question === "Why?" && p.text === "the cat"
-      && !/run tools/.test(JR.buildMessage({ question: "Why?", text: "the cat", mode: "concise" })), [m, p]);
+  check("Claude Code: the message asks to change nothing (a preview is fine), the question parses as before",
+    /don't change the project's files or run commands that change anything \(making a preview or an image to show here is fine\); please keep it brief/.test(m) && p && p.question === "Why?" && p.text === "the cat"
+      && !/project's files/.test(JR.buildMessage({ question: "Why?", text: "the cat", mode: "concise" })), [m, p]);
 }
 check("user's own message not recognised", !JR.isPopupMessage("Regarding this part of your response, I disagree."));
 
