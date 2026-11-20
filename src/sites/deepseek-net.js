@@ -307,8 +307,13 @@
         // list, ~0.7 s, on every send)
         var hiddenNow = hiddenIds();
         if (hiddenNow.size && m.allFor !== hidSig && m.el.querySelector("[data-virtual-list-item-key]")) {
-          var seen = m.allKeys || new Set();
-          hiddenNow.forEach(function (k) { if (!stale && !seen.has(k) && !m.el.querySelector('[data-virtual-list-item-key="' + k + '"]')) stale = true; });
+          // (a send's turn may be hidden before DeepSeek draws it — the stream names it first: it is kept drawn by
+          // data-jr-ds-need, its question too (key − 1), and new, so never counted at an old height)
+          var seen = m.allKeys || new Set(), needs = (document.documentElement.getAttribute("data-jr-ds-need") || "").split(" ").filter(Boolean).map(Number);
+          hiddenNow.forEach(function (k) {
+            if (stale || seen.has(k) || needs.indexOf(k) !== -1 || needs.indexOf(k + 1) !== -1) return;
+            if (!m.el.querySelector('[data-virtual-list-item-key="' + k + '"]')) stale = true;
+          });
           m.allFor = hidSig;
           m.allKeys = new Set(hiddenNow);
         }

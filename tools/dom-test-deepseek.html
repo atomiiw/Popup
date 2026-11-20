@@ -232,11 +232,21 @@ function allCheck() {
         N.again();
         setTimeout(function () {
           var sent = calls.slice(n0);
+          // ...a send's turn hidden before DeepSeek drew it (the stream names it first): kept drawn by the need, no pass
+          var n1 = calls.length;
+          document.documentElement.setAttribute("data-jr-ds-need", "21");
+          rules.textContent += ' [data-virtual-list-item-key="20"], [data-virtual-list-item-key="21"] { height: 0 }';
+          N.again();
+          var early = calls.slice(n1);
+          document.documentElement.removeAttribute("data-jr-ds-need");
+          check("list window: a send's question + answer hidden before they're drawn (kept by the need) → no whole-list pass",
+            early.indexOf("all") === -1, JSON.stringify(early));
+          var n2 = calls.length;
           // ...one hidden that isn't on the page (a reload's self-heal): the whole list again
           rules.textContent += ' [data-virtual-list-item-key="9"] { height: 0 }';
           N.again();
           setTimeout(function () {
-            var healed = calls.slice(n0 + sent.length);
+            var healed = calls.slice(n2);
             check("list window: a newly hidden item on the page → no whole-list pass; one not on the page → the whole list",
               sent.indexOf("all") === -1 && healed[0] === "all", JSON.stringify([sent, healed]));
             list.remove(); rules.remove(); done();
