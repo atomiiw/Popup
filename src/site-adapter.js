@@ -580,7 +580,7 @@
           var st = JR.state, e = st.activeHighlightId && st.completedHighlights.get(st.activeHighlightId);
           var it = e && e.items && e.items[e.activeItemIndex || 0];
           return { id: st.activeHighlightId ? String(st.activeHighlightId).slice(0, 8) : null, status: it ? it.status : null,
-            keys: it ? (it.turnKeys || []).map(function (k) { return String(k).slice(0, 8); }) : null,
+            keys: it ? (it.turnKeys || []).map(function (k) { return String(k).slice(0, 8) + "@" + (JR.qa.turnOrderCache || []).indexOf(k); }) : null,
             watch: !!st.responseWatchActive, attaching: !!st.attaching, queued: st.messageQueue.length };
         })(),
         waiting: JR.availability ? JR.availability.waiting() : null, // versions waiting now: for what, how long left

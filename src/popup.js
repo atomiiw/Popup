@@ -1290,7 +1290,9 @@
     var hintTimer = null, stop = null;
     function render(s) {
       var wait = responseDiv._jrWait;
-      if (!wait || !wait.isConnected || !responseDiv.isConnected) { if (stop) stop(); clearTimeout(hintTimer); return; }
+      // (its Loading… taken out of the popup — the copy is in, or another answer area — ends the watch; not "not in the
+      // document": a popup is built before it is placed — live C4: the watch ended at once, Loading… with no end)
+      if (!wait || !wait.parentNode) { if (stop) stop(); clearTimeout(hintTimer); return; }
       if (s.kind === "shown") { if (stop) stop(); clearTimeout(hintTimer); return; } // (its copy is in: done watching)
       if (s.kind === "failed" && item.status === "pending") { // (a send's deadline passed: the failed view, Retry)
         if (stop) stop(); clearTimeout(hintTimer);

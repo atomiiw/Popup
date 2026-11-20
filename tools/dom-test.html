@@ -1996,9 +1996,10 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.enqueueMessage = function () { sent++; };
   var p = document.createElement("div"); p.className = "jr-popup";
   p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
-  document.body.appendChild(p);
+  // (built before it is placed, as createPopup does — live C4: the watch ended at once there)
   JR.state.completedHighlights.set("av-hl", { question: "Q", spans: [], items: [{ id: "av-1", question: "Q", status: "done", turnKeys: ["av-key"] }], activeItemIndex: 0 });
   JR.rebuildPopupAfterEdit(p, "av-hl");
+  document.body.appendChild(p);
   setTimeout(function () {
     var why = p.querySelector(".jr-popup-wait-why");
     check("availability: after a moment, Loading… says what it waits for", why && /Finding the answer/.test(why.textContent), why && why.textContent);
