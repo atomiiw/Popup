@@ -1,3 +1,5 @@
+**2026-11-20 evening: REDESIGN built and offline-tested (docs/DESIGN-availability.md; TODO "REDESIGN") — the live round is owed before 1.2.15 is zipped; the user reloads Chrome Beta only when told.**
+
 **2026-11-20 15:45: NOT released — the ChatGPT popup jump after a send is open (docs/TODO-2026H2.md "OPEN — ChatGPT: the popup jumps"); user: fix another day, don't release yet. main = f789649's code + glue diagnostics (#jr-poslog only).**
 
 **2026-11-20 14:28: 1.2.15 re-zipped = commit f789649, `dist/popup-1.2.15.zip` (sha256 40b063ba…) — the store upload is the user's (docs/TODO-2026H2.md "1.2.15 images, cards, ChatGPT thinking models", "real-user paths", "audit"). Display 2 was disconnected: Codex tested on the user's screen.**
