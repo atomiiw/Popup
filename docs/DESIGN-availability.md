@@ -14,7 +14,8 @@ candidates 1+2 (then 3, then 5), agreed with the user in three grilling rounds (
    Q&A linked in the chat): **Ask again**, which says it sends the question again.
 3. Every wait has a deadline, all in one table: sending 10 s; streaming as today (100 s with nothing new, 600 s while the
    site says it is generating); locating 30 s, counted from when the popup asked (a queued search's wait counts).
-4. After 3 s of waiting a grey line under Loading says what it waits for: "Sending…", "<Site> is answering…",
+4. (Withdrawn — user 11-20: "我不喜欢那个 loading 时候的两行文字": only "Loading…"; waitingFor stays in JR.diagnose.)
+   Was: after 3 s of waiting a grey line under Loading says what it waits for: "Sending…", "<Site> is answering…",
    "Finding the answer in the chat…", "Loading earlier messages…", "Waiting for another answer…" (the page: none).
    Unreachable shows its reason ("This answer couldn't be loaded", "This question isn't in the current version of the
    chat", …).

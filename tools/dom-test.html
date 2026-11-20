@@ -2001,8 +2001,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   JR.rebuildPopupAfterEdit(p, "av-hl");
   document.body.appendChild(p);
   setTimeout(function () {
-    var why = p.querySelector(".jr-popup-wait-why");
-    check("availability: after a moment, Loading… says what it waits for", why && /Finding the answer/.test(why.textContent), why && why.textContent);
+    var wait = p.querySelector(".jr-popup-loading");
+    check("availability: while it waits, one line — Loading… (no second line: user 11-20)", wait && wait.textContent === "Loading\u2026", wait && wait.textContent);
     setTimeout(function () {
       JR.availability.on("av-1", { t: "tick" }); // (its deadline passed: the 1 s ticker's job, done here at once)
       var s1 = JR.availability.of("av-1"), btn = p.querySelector(".jr-popup-unreachable .jr-retry-btn");

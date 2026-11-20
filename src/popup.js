@@ -1283,44 +1283,31 @@
   }
 
   /**
-   * A done version's "Loading…" says what it waits for (after a moment), and ends as the availability says
+   * A version's "Loading…" (one line: no second line of what it waits for — user 11-20) ends as the availability says
    * (docs/DESIGN-availability.md): unreachable → its reason, with Try again (look again in a fresh hidden copy; nothing
    * resent) or Ask again (it can't be found by looking: the failed view, whose Retry sends the question again).
    */
   var RETRY_SVG = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244,56v48a12,12,0,0,1-12,12H184a12,12,0,1,1,0-24H201.1l-19-17.38c-.13-.12-.26-.24-.38-.37A76,76,0,1,0,127,204h1a75.53,75.53,0,0,0,52.15-20.72,12,12,0,0,1,16.49,17.45A99.45,99.45,0,0,1,128,228h-1.37A100,100,0,1,1,198.51,57.06L220,76.72V56a12,12,0,0,1,24,0Z"/></svg>';
-  var WAIT_HINTS = { send: "Sending\u2026", files: "Sending\u2026",
-    frame: "Finding the answer in the chat\u2026", data: "Finding the answer in the chat\u2026",
-    older: "Loading earlier messages\u2026", queue: "Waiting for another answer\u2026" };
   var UNREACHABLE_TEXT = { "no-qa": "This question isn\u2019t in the current version of the chat",
     branch: "This question isn\u2019t in the current version of the chat" };
   /** ChatGPT's conversation data is still being read (a Q&A may be linked to an item in a moment). */
   function readingData() { return JR.site.name === "chatgpt" && (JR.qa.apiStatus === "loading" || JR.qa.apiStatus === "unused"); }
   function watchAvailability(popup, responseDiv, hlId, entry, item) {
-    var hintTimer = null, stop = null;
+    var stop = null;
     function render(s) {
       var wait = responseDiv._jrWait;
       // (its Loading… taken out of the popup — the copy is in, or another answer area — ends the watch; not "not in the
       // document": a popup is built before it is placed — live C4: the watch ended at once, Loading… with no end)
-      if (!wait || !wait.parentNode) { if (stop) stop(); clearTimeout(hintTimer); return; }
-      if (s.kind === "shown") { if (stop) stop(); clearTimeout(hintTimer); return; } // (its copy is in: done watching)
+      if (!wait || !wait.parentNode) { if (stop) stop(); return; }
+      if (s.kind === "shown") { if (stop) stop(); return; } // (its copy is in: done watching)
       if (s.kind === "failed" && item.status === "pending") { // (a send's deadline passed: the failed view, Retry)
-        if (stop) stop(); clearTimeout(hintTimer);
+        if (stop) stop();
         setTimeout(function () { if (popup.isConnected && JR.rebuildPopupAfterEdit) JR.rebuildPopupAfterEdit(popup, hlId); }, 0);
         return;
       }
       if (s.kind === "locating" || s.kind === "sending" || s.kind === "streaming") {
-        var text = s.waitingFor === "answer" ? JR.site.label + " is answering\u2026" : WAIT_HINTS[s.waitingFor] || "";
-        var due = s.since + JR.availability.LIMITS.hint - Date.now();
-        var why = wait.querySelector(".jr-popup-wait-why");
-        if (text && due <= 0) {
-          if (!why) { why = document.createElement("div"); why.className = "jr-popup-wait-why"; wait.appendChild(why); }
-          if (why.textContent !== text) why.textContent = text;
-        } else if (why) why.remove();
-        clearTimeout(hintTimer);
-        if (text && due > 0) hintTimer = setTimeout(function () { render(JR.availability.of(item.id)); }, due + 20);
         if (wait._jrEnded) { wait.textContent = "Loading\u2026"; wait._jrEnded = false; wait.classList.remove("jr-popup-unreachable"); }
       } else if (s.kind === "unreachable") {
-        clearTimeout(hintTimer);
         if (s.ask) { // looking again can't help: the failed view (its Retry sends the question again)
           if (stop) stop();
           entry._jrFailReason = UNREACHABLE_TEXT[s.reason] || "This answer couldn\u2019t be found in the chat";
