@@ -750,6 +750,7 @@
    * of the anchor (ChatGPT's own scroll calls are blocked by scroll-guard.js).
    * Returns an unlock function.
    */
+  var anchorSeq = 0; // CSS anchor names of the send's popups (lockScroll)
   JR.lockScroll = function (container, anchorEl) {
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
@@ -786,12 +787,71 @@
     // with its list and was off screen ~4 s; a placement by someone else in that list was taken as the new place).
     // Only the user (a drag of its edge, scrolling) gives it a new place. A "below" popup keeps its top, an "above" its bottom.
     var glued = new Map();
+    function openPopups() {
+      return st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []).filter(Boolean);
+    }
+    // A "below" popup is tied to its highlight with CSS anchor positioning while the send runs: the browser places it as
+    // it lays out each frame (live 11-20, ChatGPT: the list moved after the hold's last look in that frame — the popup
+    // sat 52 px off its highlight ~0.4 s, drawn; no look can be in time). The glue below is for the rest ("above"
+    // popups, a browser without anchors, a highlight gone).
+    var canAnchor = typeof CSS !== "undefined" && CSS.supports && CSS.supports("top", "anchor(--jr-x top, 0px)");
+    function sourceOf(p) {
+      if (p === st.activePopup) return st.activeSourceHighlights[0];
+      var e = st.popupStack.filter(function (x) { return x.popup === p; })[0];
+      return e && e.sourceHighlights && e.sourceHighlights[0];
+    }
+    function anchorPopups() {
+      if (!canAnchor) return;
+      openPopups().forEach(function (p) {
+        if (!p || !p.isConnected || p._jrAnchorHl || p._jrLockedDirection === "above") return;
+        var hl = sourceOf(p);
+        if (!hl || !hl.isConnected || !hl.getBoundingClientRect().height) return;
+        var name = "--jr-a" + (++anchorSeq), dy = p.getBoundingClientRect().top - hl.getBoundingClientRect().top;
+        hl.style.setProperty("--jr-anchor-name", name);
+        hl.classList.add("jr-anchor-src");
+        p.style.setProperty("--jr-anchor", name);
+        p.style.setProperty("--jr-anchor-dy", dy + "px");
+        p.style.setProperty("--jr-anchor-fb", ((parseFloat(p.style.top) || 0) - dy) + "px"); // (no anchor: where it is)
+        var want = p.getBoundingClientRect().top;
+        p.classList.add("jr-anchored");
+        // (CSS takes an inline highlight's top a few px off from its client rect — live dom-test: 4 px — set to the place)
+        var off = want - p.getBoundingClientRect().top;
+        if (Math.abs(off) >= 0.5) {
+          p.style.setProperty("--jr-anchor-dy", (dy + off) + "px");
+          p.style.setProperty("--jr-anchor-fb", ((parseFloat(p.style.top) || 0) - dy - off) + "px"); // (no anchor: still there)
+        }
+        p._jrAnchorHl = hl;
+      });
+    }
+    /** Back to a plain top where it is now (the send's end, or its highlight gone). */
+    function unanchor(p) {
+      if (!p._jrAnchorHl) return;
+      if (p.isConnected) p.style.top = p.offsetTop + "px"; // (same place: then the class goes)
+      p.classList.remove("jr-anchored");
+      ["--jr-anchor", "--jr-anchor-dy", "--jr-anchor-fb"].forEach(function (v) { p.style.removeProperty(v); });
+      var hl = p._jrAnchorHl;
+      p._jrAnchorHl = null;
+      if (hl && !openPopups().some(function (q) { return q._jrAnchorHl === hl; })) {
+        hl.classList.remove("jr-anchor-src"); hl.style.removeProperty("--jr-anchor-name");
+      }
+      glued.delete(p); // (the glue takes it as it is from here)
+    }
     function glue(anchor) {
-      var pops = st.popupStack.map(function (e) { return e.popup; });
-      if (st.activePopup) pops.push(st.activePopup);
+      var pops = openPopups();
       var ay = anchor.getBoundingClientRect().top, resizing = document.documentElement.classList.contains("jr-resizing");
       pops.forEach(function (p) {
         if (!p || !p.isConnected || !p.parentElement) return;
+        if (p._jrAnchorHl) { // tied by CSS: only its highlight must still be there (re-wrapped: the new one)
+          if (p._jrAnchorHl.isConnected) return;
+          var id = p._jrAnchorHl.getAttribute("data-jr-highlight-id"), now = id && document.querySelector('[data-jr-highlight-id="' + id + '"]');
+          if (now && now.getBoundingClientRect().height) {
+            now.style.setProperty("--jr-anchor-name", p.style.getPropertyValue("--jr-anchor"));
+            now.classList.add("jr-anchor-src");
+            p._jrAnchorHl = now;
+            return;
+          }
+          unanchor(p);
+        }
         var r = p.getBoundingClientRect();
         if (!r.height) return; // (not drawn: being measured)
         var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null, top = parseFloat(p.style.top) || 0;
@@ -817,6 +877,7 @@
     // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
     var startAnchor = liveAnchor();
+    anchorPopups();
     if (startAnchor) glue(startAnchor);
     var userScrolling = false;
     var wheelTimer = null;
@@ -903,6 +964,7 @@
     addListeners(container);
 
     return function unlock() {
+      openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(unanchor);
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();

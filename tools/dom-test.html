@@ -1099,6 +1099,34 @@ asyncChecks.push(new Promise(function (done) {
   unlock(); sc.remove(); JR.state.activePopup = savedActive; JR.state.popupStack = savedStack;
 })();
 
+// redesign 5 (live 11-20, ChatGPT: the list moved after the hold's last look in a frame — the popup drawn 52 px off its
+// highlight ~0.4 s): during a send a "below" popup is tied to its highlight by CSS anchor positioning — the browser places
+// it in the same layout, with no look of the hold (no frame run here); after the send it stays where it is, a plain top
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='host' style='height:4000px;position:relative'><div class='row' style='height:56px'></div><div class='sp' style='height:1000px'></div>" +
+    "<div class='a' data-turn-key='anc-a' style='height:50px'>x <span class='jr-source-highlight' data-jr-highlight-id='anc-hl'>hl</span></div>" +
+    "<div class='jr-popup' style='position:absolute;top:1090px;height:80px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var span = sc.querySelector(".jr-source-highlight"), pop = sc.querySelector(".jr-popup"), raf = window.requestAnimationFrame;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [span];
+  var gap0 = pop.getBoundingClientRect().top - span.getBoundingClientRect().top;
+  window.requestAnimationFrame = function () { return 0; }; // (no frame runs: only the browser's layout can keep it)
+  var unlock = JR.lockScroll(sc, span);
+  var gapA = pop.getBoundingClientRect().top - span.getBoundingClientRect().top;
+  sc.querySelector(".row").style.height = "4px"; // the row above collapses (52 px)
+  var gap1 = pop.getBoundingClientRect().top - span.getBoundingClientRect().top, anchored = pop.classList.contains("jr-anchored");
+  var at = pop.getBoundingClientRect().top;
+  unlock();
+  window.requestAnimationFrame = raf;
+  var after = pop.getBoundingClientRect().top;
+  check("send: a below popup stays on its highlight in the same layout (CSS anchor), then a plain top where it is",
+    anchored && Math.abs(gap1 - gap0) <= 1 && Math.abs(after - at) <= 1 && !pop.classList.contains("jr-anchored") && !span.classList.contains("jr-anchor-src"),
+    [anchored, gap0, gapA, gap1, at, after, getComputedStyle(pop).top, pop.style.getPropertyValue("--jr-anchor-dy")].join(" "));
+  sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
 // ...and when the anchor's turn is unmounted and comes back elsewhere in a list the site laid out anew (live N1d): the
 // popups' places are taken at the start of the send, not at the anchor's first sight later (it went 2658 px off)
 (function () {

@@ -421,6 +421,14 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response--waiting { display: none !important; }
 
 /* Retry button inside timeout loading div */
+/* During a send a "below" popup is tied to its highlight with CSS anchor positioning (chat.js lockScroll): the browser
+   places it as it lays out each frame — the site moving its list can't leave it off its highlight for a frame */
+.jr-anchor-src { anchor-name: var(--jr-anchor-name); }
+.jr-popup.jr-anchored {
+  position-anchor: var(--jr-anchor);
+  top: calc(anchor(top, var(--jr-anchor-fb)) + var(--jr-anchor-dy)) !important;
+}
+
 /* What a "Loading…" waits for, after a moment (popup.js watchAvailability) */
 .jr-popup-wait-why {
   margin-top: 4px;
