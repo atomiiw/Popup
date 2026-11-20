@@ -1460,6 +1460,35 @@
   };
 
   /** The stored items (versions) to open, from the chat's highlight down to the one that asked p; null if none. */
+  // This conversation's stored items, to tell a deleted popup (its messages stay at the site) from a kept one (a site's
+  // own list of the messages: DeepSeek's outline — architecture #6, moved out of sites/deepseek.js); read again when
+  // storage changes (the outline is marked every 500 ms, so a late read corrects itself)
+  var msgRecords = null, msgRecordsUrl = null, msgKept = new WeakMap(); // records → messages that have a stored item
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function () { msgRecords = null; });
+  }
+  function storedItems() {
+    if (msgRecordsUrl !== location.pathname) { msgRecords = null; msgRecordsUrl = location.pathname; }
+    if (msgRecords === null && typeof getHighlightsByUrl === "function") {
+      msgRecords = false; // loading
+      getHighlightsByUrl().then(function (r) { msgRecords = r; }, function () { msgRecords = null; });
+    }
+    return msgRecords || null;
+  }
+  /** A Popup message (parsed p) deleted in Popup: no stored item for it — only once the questions of the stored items
+   *  it could be are read back (before that a Reply can't be told apart: not "deleted" yet). False while loading. */
+  JR.popupMessageDeleted = function (msg, p) {
+    var recs = storedItems();
+    if (!recs) return false;
+    var set = msgKept.get(recs);
+    if (!set) msgKept.set(recs, set = new Set());
+    if (set.has(msg)) return false;
+    if (JR.chainForMessage(recs, p)) { set.add(msg); return false; }
+    var norm = function (t) { return String(t || "").replace(/\s+/g, " ").trim(); };
+    return recs.filter(function (r) { return p.text == null ? r.wholeResponse : norm(r.text) === norm(p.text); })
+      .every(function (r) { return JR.qa.question(r.turnKeys || []) != null; }); // every one it could be is known and isn't it
+  };
+
   JR.chainForMessage = function (records, p) {
     function norm(t) { return String(t || "").replace(/\s+/g, " ").trim(); }
     // a Reply's message carries no quote (its record's text is the answer's start): any Reply, told apart by question

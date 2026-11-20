@@ -248,6 +248,20 @@ var origDone = roDone.then(function () {
     });
   });
 });
+// architecture #8 (2026-11-20): a copy's code blocks take the page's theme when DeepSeek switches it
+(function () {
+  var r = document.createElement("div"); r.className = "jr-popup-response";
+  r.innerHTML = '<div class="md-code-block md-code-block-light">code</div>';
+  document.body.appendChild(r);
+  var wasDark = document.body.classList.contains("dark");
+  document.body.classList.add("dark"); S.syncCodeTheme();
+  var toDark = r.firstChild.classList.contains("md-code-block-dark") && !r.firstChild.classList.contains("md-code-block-light");
+  document.body.classList.remove("dark"); S.syncCodeTheme();
+  var toLight = r.firstChild.classList.contains("md-code-block-light") && !r.firstChild.classList.contains("md-code-block-dark");
+  check("theme: a popup's code blocks follow DeepSeek's light / dark switch", toDark && toLight, toDark + " " + toLight);
+  if (wasDark) document.body.classList.add("dark");
+  r.remove();
+})();
 origDone.then(allCheck).then(function () {
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");

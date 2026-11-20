@@ -370,41 +370,25 @@
     S.keepMounted(null, "popup");
   };
 
+  // DeepSeek's code blocks carry their theme in a class (md-code-block-light / -dark, B3); a copy keeps the one it was
+  // copied with — the live one follows its original, the others (a parent under its child) stayed in the old theme
+  // after a switch (docs/DEEPSEEK.md "not done"). On a switch, every copy's blocks take the theme of the page.
+  S.syncCodeTheme = function () {
+    var dark = !!(document.body && (document.body.classList.contains("dark") || document.body.getAttribute("data-ds-dark-theme") === "dark"));
+    Array.prototype.forEach.call(document.querySelectorAll(".jr-popup-response .md-code-block-light, .jr-popup-response .md-code-block-dark"), function (b) {
+      b.classList.toggle("md-code-block-dark", dark);
+      b.classList.toggle("md-code-block-light", !dark);
+    });
+  };
+  if (document.body) new MutationObserver(S.syncCodeTheme).observe(document.body, { attributes: true, attributeFilter: ["class", "data-ds-dark-theme"] });
+
   var outlineSeen = new WeakSet();
-  // This conversation's stored items, to tell a deleted popup (its messages stay at DeepSeek) from a kept one;
-  // read again when storage changes (markOutline runs every 500 ms, so a late read corrects itself)
-  var outlineRecords = null, recordsUrl = null;
-  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener(function () { outlineRecords = null; });
-  }
-  function records() {
-    if (recordsUrl !== location.pathname) { outlineRecords = null; recordsUrl = location.pathname; }
-    if (outlineRecords === null && typeof getHighlightsByUrl === "function") {
-      outlineRecords = false; // loading
-      getHighlightsByUrl().then(function (r) { outlineRecords = r; }, function () { outlineRecords = null; });
-    }
-    return outlineRecords || null;
-  }
-  var found = new WeakMap(); // records → Set of messages that have a stored item (a kept popup; computed once)
-  /** Deleted in Popup: no stored item for it — only once the questions of the stored items it could be are read
-   *  back (before that a Reply can't be told apart: not "deleted" yet). */
-  function deleted(recs, msg, p) {
-    if (!recs || !JR.chainForMessage) return false;
-    var set = found.get(recs);
-    if (!set) found.set(recs, set = new Set());
-    if (set.has(msg)) return false;
-    if (JR.chainForMessage(recs, p)) { set.add(msg); return false; }
-    var norm = function (t) { return String(t || "").replace(/\s+/g, " ").trim(); };
-    return recs.filter(function (r) { return p.text == null ? r.wholeResponse : norm(r.text) === norm(p.text); })
-      .every(function (r) { return JR.qa.question(r.turnKeys || []) != null; }); // every one it could be is known and isn't it
-  }
   function markOutline(box) {
     if (box.querySelector(C.item)) return;
-    var recs = records();
     Array.prototype.forEach.call(box.children, function (row) {
       var text = row.firstElementChild || row, msg = text.textContent || "";
       var p = JR.isPopupMessage(msg) ? JR.parsePopupMessage(msg) : null;
-      var gone = !!p && deleted(recs, msg, p);
+      var gone = !!p && !!JR.popupMessageDeleted && JR.popupMessageDeleted(msg, p);
       var label = !p ? null : gone ? "\u00b7 deleted" : p.question ? "\u00b7 " + p.question.replace(/\s+/g, " ").trim() : null;
       if (row.classList.contains("jr-outline-popup") !== !!label) row.classList.toggle("jr-outline-popup", !!label);
       if (row.classList.contains("jr-outline-gone") !== gone) row.classList.toggle("jr-outline-gone", gone);

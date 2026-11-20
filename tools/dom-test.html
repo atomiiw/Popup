@@ -1312,6 +1312,19 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   check("outline chain: nested under a Reply under version 1", ids(JR.chainForMessage(recs, { text: "inner", question: "N" })) === "a1>b1>c1", ids(JR.chainForMessage(recs, { text: "inner", question: "N" })));
   check("outline chain: unknown message", JR.chainForMessage(recs, { text: "zzz", question: "?" }) === null, "found");
   check("outline chain: a Reply (its message has no quote) found by its question", ids(JR.chainForMessage(recs, { text: null, question: "R", wholeResponse: true })) === "a1>b1", ids(JR.chainForMessage(recs, { text: null, question: "R", wholeResponse: true })));
+  // architecture #6 (2026-11-20, moved from sites/deepseek.js): deleted = no stored item for it, once known
+  (function () {
+    var realGet = window.getHighlightsByUrl;
+    window.getHighlightsByUrl = function () { return Promise.resolve(recs); };
+    var p = { text: "zzz", question: "?" };
+    var first = JR.popupMessageDeleted("m-zzz", p); // (loading: never "deleted" yet)
+    asyncChecks.push(new Promise(function (r) { setTimeout(r, 200); }).then(function () { // (after the Step 2c check's JR.qa stand-in)
+      var kept = JR.popupMessageDeleted("m-inner", { text: "inner", question: "N" });
+      check("outline status: not 'deleted' while the items load; a message with its item kept; one with none deleted",
+        first === false && kept === false && JR.popupMessageDeleted("m-zzz", p) === true, [first, kept].join());
+      if (realGet) window.getHighlightsByUrl = realGet; else delete window.getHighlightsByUrl;
+    }));
+  })();
   JR.qa.question = realQuestion;
 })();
 
@@ -2304,6 +2317,11 @@ asyncChecks.push(new Promise(function (done) {
     renewed && idleKept && cleared && !html.hasAttribute("data-jr-scroll-lock"), [renewed, idleKept, cleared, html.getAttribute("data-jr-scroll-lock")].join());
 })();
 
+// (an async check that throws must show, not leave the page without a result)
+window.addEventListener("unhandledrejection", function (e) {
+  document.title = "FAIL";
+  document.getElementById("out").textContent = "FAIL async error: " + (e.reason && (e.reason.stack || e.reason.message) || e.reason);
+});
 Promise.all(asyncChecks).then(function () {
   JR.siteAnswer.stop(); // (one a test left live keeps looking for its original)
   fakeForm.remove();
