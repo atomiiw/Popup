@@ -71,6 +71,7 @@
     var order = JR.qa.turnOrderCache || [], target = order.indexOf(key), atTop = 0;
     var below = 0, above = Infinity, height = -1; // scroll positions where it was seen to be further down / up
     var stride = 0.8, lastDir = 0; // a step, in screens: halved each time the direction turns (it went to and fro past it)
+    var mounted = "", still = 0; // the turns the frame has mounted, and for how many steps they didn't change
     if (target >= 0) sc.scrollTop = sc.scrollHeight * target / order.length - sc.clientHeight / 2;
     else sc.scrollTop = sc.scrollHeight;
     // not in the order: newer than it (sent since) — at the end if anywhere; look there only (it was a 40 s search)
@@ -88,6 +89,11 @@
         sc.scrollTop = 40;
         return wait(50).then(function () { sc.scrollTop = 0; return wait(200); }).then(function () { return step(n - 1); });
       } else atTop = 0;
+      // scrolled far, the same turns mounted step after step: the frame's list is stuck (live 11-20) — a fresh frame
+      var sig = at.map(function (p) { return p.i; }).join();
+      still = sig === mounted ? still + 1 : 0;
+      mounted = sig;
+      if (still >= 12) return Promise.resolve(null);
       if (sc.scrollHeight > height * 1.1) { height = sc.scrollHeight; below = 0; above = Infinity; } // earlier turns came (not: measured heights settling)
       if (target >= 0 && at.length) { if (down) below = Math.max(below, sc.scrollTop); else if (at[0].i > target) above = Math.min(above, sc.scrollTop); }
       var dir = down ? 1 : -1;
@@ -220,8 +226,10 @@
           .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
           .then(function (ready) { return ready ? findTurn(key) : null; })
           .then(function (turn) {
-            // an answer newer than the frame (sent after it loaded): a fresh frame has it — once
-            if (turn || wanted !== key || (JR.qa.turnOrderCache || []).indexOf(key) >= 0 || reloadedFor.has(key)) return turn;
+            // not found: a fresh frame, once — the answer newer than the frame (sent after it loaded), or the frame's list
+            // stuck (live 11-20, ChatGPT: after many sends it kept the same 3 turns mounted wherever it scrolled — an older
+            // popup stayed Loading… for good)
+            if (turn || wanted !== key || reloadedFor.has(key)) return turn;
             reloadedFor.add(key);
             // sent after the order and the frame were loaded: both again (review: else the search looks only at the end)
             JR.qa.resetApi();
