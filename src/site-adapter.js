@@ -505,7 +505,7 @@
 
     /** Conversation id from the URL (/c/<id> or /g/<gpt>/c/<id>), or null on a new chat. */
     conversationId: function (url) {
-      var m = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.pathname);
+      var m = JR_HOST.all.chatgpt.conv.exec(url || location.pathname); // (the one rule: site-hosts.js)
       return m ? m[1] : null;
     },
 

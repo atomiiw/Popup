@@ -278,7 +278,7 @@
     // --- Pages ---
     /** /a/chat/s/<uuid> */
     conversationId: function (url) {
-      var m = /\/chat\/s\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url || location.pathname);
+      var m = JR_HOST.all.deepseek.conv.exec(url || location.pathname); // (the one rule: site-hosts.js)
       return m ? m[1] : null;
     },
     isChatPage: function (path) { return !!S.conversationId(path); },

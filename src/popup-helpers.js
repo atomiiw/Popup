@@ -453,10 +453,12 @@
    * Which side of the highlight a popup of height popupH opens on (user, 2026-11-20, again after ChatGPT): first the side
    * where it can be seen whole — the chat can scroll far enough to show it, not left behind the composer; only one does →
    * that one. Both do → the side with more room on screen now (high on screen → below, low → above; 2026-11-18). Neither →
-   * the side with more room (the popup is then no taller than that: capBelow). Below fits always when the popup makes the
-   * page longer (growsBelow: claude.ai chat; not ChatGPT / DeepSeek, which clip it); unknown (tests) counts as longer.
+   * below, no taller than the room there (capBelow). Below counts as fitting with room for at least the popup's least
+   * height (40vh, the drag limit) — it is then no taller than that room; a popup that would make the page longer counts
+   * no more room: past the chat's end it stays under the composer (Claude Code, 2026-11-20). The chat's reach is
+   * measured without the popup in it (positionPopup).
    */
-  JR.bestDirection = function (highlightRect, popupH, gap, growsBelow) {
+  JR.bestDirection = function (highlightRect, popupH, gap) {
     if (!highlightRect) return "below";
     var band = JR.site.visibleBand();
     var sc = JR.site.scrollContainer();
@@ -464,10 +466,10 @@
     var spaceBelow = band.bottom - highlightRect.bottom - gap;
     var reachAbove = spaceAbove + (sc ? sc.scrollTop : 0);
     var reachBelow = spaceBelow + (sc ? Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight) : 0);
-    var fitsAbove = reachAbove >= popupH, fitsBelow = growsBelow !== false || reachBelow >= popupH;
+    var fitsAbove = reachAbove >= popupH, fitsBelow = reachBelow >= Math.min(popupH, 40 * window.innerHeight / 100);
     if (fitsAbove !== fitsBelow) return fitsBelow ? "below" : "above";
     if (fitsAbove) return spaceBelow >= spaceAbove ? "below" : "above";
-    return reachBelow >= reachAbove ? "below" : "above";
+    return "below";
   };
 
   /**
@@ -575,41 +577,35 @@
 
     contentContainer.appendChild(popup);
     JR.watchUpper(popup); // before measuring: on a tiny window the height limit depends on it
-    var grows = null;
-    if (forceDirection !== "above" && forceDirection !== "below") {
-      popup._jrLockedDirection = "below"; // placed there for a moment (never painted): does it make the page longer?
-      placeAt(popup, rect, spans, containerRect);
-      grows = growsBelow(popup);
+    if (forceDirection === "above" || forceDirection === "below") popup._jrLockedDirection = forceDirection;
+    else {
+      var popupH = Math.max(popup.offsetHeight, answerH(popup));
+      popup._jrLockedDirection = withoutPopup(popup, function () { return JR.bestDirection(rect, popupH, gap); });
     }
-    popup._jrLockedDirection = forceDirection === "above" || forceDirection === "below"
-      ? forceDirection
-      : JR.bestDirection(rect, Math.max(popup.offsetHeight, answerH(popup)), gap, grows);
     placeAt(popup, rect, spans, containerRect);
-    capBelow(popup, gap, grows);
+    capBelow(popup, gap);
     JR.posLog("position", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, cTop: containerRect.top, popupH: popup.offsetHeight });
   };
 
   /** A popup below a highlight near the end of a short chat: ChatGPT and DeepSeek clip what hangs past the end of their
    *  list, so the page can't scroll to it — its end sat behind the composer and its bottom edge (resize) was out of reach
    *  (user, 2026-11-20, DeepSeek's first sentence). It is no taller than the chat can still scroll to; it scrolls inside. */
-  function capBelow(popup, gap, grows) {
+  function capBelow(popup, gap) {
     popup.style.removeProperty("--jr-popup-cap");
     var sc = JR.site.scrollContainer();
-    if (popup._jrLockedDirection !== "below" || !sc || (grows === null ? growsBelow(popup) : grows)) return;
-    var reach = JR.site.visibleBand().bottom + Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight);
+    if (popup._jrLockedDirection !== "below" || !sc) return;
+    var reach = withoutPopup(popup, function () {
+      return JR.site.visibleBand().bottom + Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight);
+    });
     popup.style.setProperty("--jr-popup-cap", Math.floor(reach - popup.getBoundingClientRect().top - gap) + "px");
   }
 
-  /** Does a taller popup, where it is now, make the chat longer? (claude.ai chat: yes) — measured, never painted. */
-  function growsBelow(popup) {
-    var sc = JR.site.scrollContainer();
-    if (!sc) return true;
-    var before = sc.scrollHeight;
-    popup.classList.add("jr-popup--probe");
-    var grows = sc.scrollHeight > before + window.innerHeight;
-    popup.classList.remove("jr-popup--probe");
-    return grows;
+  /** fn() measured with this popup out of the layout (never painted): the chat's own length, not one it makes longer. */
+  function withoutPopup(popup, fn) {
+    popup.classList.add("jr-popup--measure");
+    try { return fn(); } finally { popup.classList.remove("jr-popup--measure"); }
   }
+
 
 
 

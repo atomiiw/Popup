@@ -652,7 +652,7 @@ check("R18: short chat, neither side reachable → below", dir3(W3 + 50, 50 + 0.
 
 // R16/R26: a popup with an answer is as tall as the answer, up to 70vh; a longer answer scrolls inside; never capped lower
 var p16 = popup3("short");
-JR.positionPopup(p16, place3(C3, C3 - 0.55 * W3, C3 - W3), host3, null, []);
+JR.positionPopup(p16, place3(C3, 1500, 1500 - 0.2 * W3), host3, null, []); // (mid-chat: room to grow below)
 var resp16 = p16.querySelector(".jr-popup-response"), upper16 = p16.querySelector(".jr-popup-upper");
 check("R26: a short answer gets a short popup (as tall as its content)", p16.offsetHeight < H70 - 50 && Math.abs(p16.offsetHeight - upper16.offsetHeight - resp16.scrollHeight - 1) <= 2, p16.offsetHeight + " upper " + upper16.offsetHeight + " answer " + resp16.scrollHeight);
 // streaming: the popup grows with the answer until it reaches 70vh, then the answer scrolls
@@ -697,22 +697,29 @@ check("short chat, list clips: a popup below stops where the chat ends (its end 
 pcap.remove(); host3.style.overflow = "";
 var pfree = popup3(new Array(200).join("<p>line</p>"));
 JR.positionPopup(pfree, place3(W3 + 50, 0.5 * W3, 0), host3, null, []);
-check("short chat, list doesn't clip (the popup makes the page longer): full 70vh", Math.abs(pfree.offsetHeight - H70) <= 1 && !pfree.style.getPropertyValue("--jr-popup-cap"), pfree.offsetHeight + " vs " + H70);
+var reachFree = JR.site.visibleBand().bottom + (sc3.scrollHeight - sc3.scrollTop - sc3.clientHeight);
+check("short chat where the popup would make the page longer: capped the same (past the end it sits under the composer)",
+  pfree.getBoundingClientRect().bottom <= reachFree + 1 - 7 && !!pfree.style.getPropertyValue("--jr-popup-cap"), Math.round(pfree.getBoundingClientRect().bottom) + " vs " + Math.round(reachFree));
 pfree.remove();
 
-// 2026-11-20 (user, Claude Code: middle-upper highlight at the end of the chat opened below, behind the composer): the
+// 2026-11-20 (user, Claude Code: a middle-upper highlight at the end of the chat opened below, behind the composer): the
 // side where it can be seen whole comes first; only when both can, high on screen → below
-host3.style.overflow = "clip";
-var pdir = popup3(new Array(200).join("<p>line</p>"));
-JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.4 * W3, 400), host3, null, []);
-check("end of the chat, list clips, middle-upper highlight: below would sit behind the composer → above",
-  pdir._jrLockedDirection === "above", pdir._jrLockedDirection);
-pdir.remove(); host3.style.overflow = "";
-var pdir2 = popup3(new Array(200).join("<p>line</p>"));
-JR.positionPopup(pdir2, place3(W3 + 400, 400 + 0.4 * W3, 400), host3, null, []);
-check("...the same where the popup makes the page longer: both sides fit → high on screen → below",
-  pdir2._jrLockedDirection === "below", pdir2._jrLockedDirection);
-pdir2.remove();
+(function () {
+  var realBand = JR.site.visibleBand;
+  var box = sc3.getBoundingClientRect();
+  JR.site.visibleBand = function () { return { top: box.top, bottom: box.top + 0.6 * W3 }; }; // the composer over the lower 40 %
+  var pdir = popup3(new Array(200).join("<p>line</p>"));
+  JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.2 * W3, 400), host3, null, []);
+  check("end of the chat, composer over the lower part, a high highlight: below can't hold 40vh (even though the popup makes the page longer) → above",
+    pdir._jrLockedDirection === "above", pdir._jrLockedDirection);
+  pdir.remove();
+  var pdir2 = popup3(new Array(200).join("<p>line</p>"));
+  JR.positionPopup(pdir2, place3(C3, 400 + 0.15 * W3, 400), host3, null, []);
+  check("...a highlight high in what is left on screen, the chat going on below it: both sides fit → below",
+    pdir2._jrLockedDirection === "below", pdir2._jrLockedDirection);
+  pdir2.remove();
+  JR.site.visibleBand = realBand;
+})();
 
 // 2026-11-20: while an edge is dragged the resize cursor is on the whole page (past the popup too), gone after
 (function () {
