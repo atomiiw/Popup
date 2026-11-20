@@ -866,7 +866,9 @@
       el.removeEventListener("pointerdown", markUser);
     }
 
+    var nCorrect = 0, diag = location.hash.indexOf("jr-poslog") !== -1;
     function correct() {
+      if (diag) html.setAttribute("data-jr-correct-n", ++nCorrect); // (#jr-poslog: how often the hold looks)
       if (!container.isConnected) {
         var fresh = JR.site.scrollContainer();
         if (!fresh) return;
