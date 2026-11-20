@@ -32,6 +32,15 @@ function check(name, ok, got) { if (!ok) failed++; console.log((ok ? "PASS " : "
 }
 check("empty question refused", (() => { try { JR.buildMessage({ question: "  ", text: "x" }); return false; } catch (e) { return true; } })());
 check("recognised as Popup message", JR.isPopupMessage(JR.buildMessage({ question: "Q", text: "t", mode: "concise" })));
+{ // Claude Code (user 11-20): answer in text only — in the suffix, parsed off with it
+  JR.site.answerOnly = () => true;
+  const m = JR.buildMessage({ question: "Why?", text: "the cat", sentence: "I saw the cat today.", mode: "concise" });
+  delete JR.site.answerOnly;
+  const p = JR.parsePopupMessage(m);
+  check("Claude Code: the message asks for text only, the question parses as before",
+    /don't run tools or commands and don't change any files; please keep it brief/.test(m) && p && p.question === "Why?" && p.text === "the cat"
+      && !/run tools/.test(JR.buildMessage({ question: "Why?", text: "the cat", mode: "concise" })), [m, p]);
+}
 check("user's own message not recognised", !JR.isPopupMessage("Regarding this part of your response, I disagree."));
 
 // Reply to the whole response

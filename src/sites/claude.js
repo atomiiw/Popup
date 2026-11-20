@@ -271,6 +271,8 @@
     /** Claude Code on the web keeps a panel on the right for good (environment, context): Popup's ∧ ∨ go inside the chat's
      *  right edge there, not hidden as for a sidebar that was opened (live round 4, B17: no arrows on Claude Code at all).
      *  Px from the window's right edge; null elsewhere. */
+    /** Claude Code: a Popup question asks the agent to answer in text only (qa-content.js buildMessage). */
+    answerOnly: function () { return /^\/code\//.test(location.pathname); },
     navRight: function () {
       if (!/^\/code\//.test(location.pathname)) return null;
       var sc = scroller();
