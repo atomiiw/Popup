@@ -8,7 +8,8 @@ function run(argv) {
     "var location = { hash: '' }; var document = { getElementById: function () { return null; }, body: null };",
     cut("  var POPUP_PREFIXES", "  function emit("),
     cut("  function filterOn()", "  window.fetch ="),
-    "return { filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, questionFromBody: questionFromBody, status: function () { return filterStatus; } };",
+    cut("  function Accumulator()", "  async function tap("),
+    "return { Accumulator: Accumulator, filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, questionFromBody: questionFromBody, status: function () { return filterStatus; } };",
   ].join("\n");
   var api = (new Function(code))();
 
@@ -26,6 +27,16 @@ function run(argv) {
     { content_type: "image_asset_pointer", asset_pointer: "file-service://file-abc" }, P] } }] });
   check("Popup question with an image is recognised", api.questionFromBody(withImage) === P, true);
   check("plain Popup question still recognised", api.questionFromBody(JSON.stringify({ messages: [{ content: { parts: [P] } }] })) === P, true);
+
+  // An image it made (live 11-20, gpt-6-thinking): a tool message with an image pointer, the reply text empty
+  var acc = new api.Accumulator();
+  [{ o: "add", v: { message: { author: { role: "tool" }, content: { content_type: "multimodal_text", parts: [{ content_type: "image_asset_pointer", asset_pointer: "sediment://file_1" }] } } } },
+   { v: { message: { author: { role: "assistant" }, content: { content_type: "text", parts: [""] } } } },
+   { type: "resume_conversation_token", token: "t" }].forEach(function (e) { acc.event(e); });
+  check("stream: an image it made is the answer (no text), and the resume token is seen", acc.media === true && acc.resume === true && acc.text === "", true);
+  var plain = new api.Accumulator();
+  plain.event({ v: { message: { author: { role: "assistant" }, content: { content_type: "text", parts: ["hi"] } } } });
+  check("stream: a text answer is no image", !!plain.media + " " + plain.text, "false hi");
 
   // First screen: u1 a1, two Popup turns (one with a system message), u3 a3.
   var first = { messages: [

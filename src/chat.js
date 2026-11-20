@@ -965,7 +965,7 @@
         return;
       }
       net.text = d.text || net.text; // (to tell when it is done, never drawn: the popup shows the site answer only)
-      if (d.kind === "done") net.done = true;
+      if (d.kind === "done") { net.done = true; net.media = !!d.media; } // (media: an image it made, no text)
     }
     document.addEventListener("jr-net", onNet);
 
@@ -1410,7 +1410,7 @@
       }
       // Done per the network stream while the DOM answer isn't usable
       // (turn never mounted, or ChatGPT's "couldn't load").
-      if (net.done && net.text.trim() && !domAnswerUsable()) {
+      if (net.done && (net.text.trim() || net.media) && !domAnswerUsable()) {
         setTimeout(captureResponse, 300);
         return;
       }
@@ -1482,7 +1482,7 @@
 
       // Hard 10-second timeout: no answer text and ChatGPT isn't working on it.
       if (Date.now() - startTime >= 10000) {
-        var hasRealContent = (turn && JR.site.assistantText(turn).trim().length >= 1) || net.text.trim().length >= 1;
+        var hasRealContent = (turn && JR.site.assistantText(turn).trim().length >= 1) || net.text.trim().length >= 1 || net.media;
         if (!hasRealContent && !generating && !(net.matched && !net.done)) {
           finishWithTimeout();
           return;

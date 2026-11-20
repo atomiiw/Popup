@@ -257,6 +257,11 @@
         bodies = bodies.concat(all("assistantBody", units[i]));
       }
       if (bodies.length === 0 && units.length === 0) bodies = all("assistantBody", turn);
+      // an image it made: its gallery, beside the reply text, not in it (live 11-20: a popup asked for a picture
+      // showed none) — part of the answer, in page order
+      var made = Array.prototype.filter.call(turn.querySelectorAll('[data-testid="generated-image-gallery"]'),
+        function (g) { return !bodies.some(function (b) { return b.contains(g); }); });
+      if (made.length) bodies = bodies.concat(made).sort(function (x, y) { return x.compareDocumentPosition(y) & 4 ? -1 : 1; });
       return bodies;
     },
 

@@ -106,6 +106,10 @@
   }
   Accumulator.prototype.message = function (m) {
     if (!m || !m.author) return;
+    // an image it made (live 11-20: a tool message, multimodal_text with an image_asset_pointer; the reply text is
+    // empty): that is the answer
+    var ps = (m.content && m.content.parts) || [];
+    if (ps.some(function (x) { return x && typeof x === "object" && /image_asset_pointer/.test(x.content_type || ""); })) this.media = true;
     this.assistant = m.author.role === "assistant";
     var parts = m.content && m.content.parts;
     if (this.assistant && parts && typeof parts[0] === "string") this.text = parts.join("");
@@ -170,8 +174,8 @@
     }
     // ChatGPT's thinking models (live 2026-11-20, "gpt-6-thinking"): the send's stream carries the thoughts and a
     // resume token, then ends; the answer comes on the next stream — not done yet: that one is followed
-    if (acc.resume && !acc.text.trim()) { following = { question: question, until: Date.now() + 180000 }; logRaw(url, "resuming"); return; }
-    emit({ kind: "done", text: acc.text });
+    if (acc.resume && !acc.text.trim() && !acc.media) { following = { question: question, until: Date.now() + 180000 }; logRaw(url, "resuming"); return; }
+    emit({ kind: "done", text: acc.text, media: !!acc.media });
   }
   var following = null; // { question, until }: the next event stream of the site carries this Popup question's answer
 
