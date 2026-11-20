@@ -805,15 +805,20 @@
         if (!g && !above && !resizing && !userScrolling && p._jrGlueAt && Date.now() - p._jrGlueAt.t < 2000) {
           g = { off: p._jrGlueAt.off };
           glued.set(p, g);
+          JR.posLog("glue-base", p, { at: "return", off: Math.round(g.off), now: Math.round(off) });
         }
         p._jrGlueAt = null;
         // (the user scrolling — the chat or inside a parent popup, where a nested one follows its highlight — or
         // dragging an edge places it: taken as it is)
-        if (!g || resizing || userScrolling) { glued.set(p, { off: off }); return; }
+        if (!g || resizing || userScrolling) {
+          if (!g || Math.abs(off - g.off) >= 0.5) JR.posLog("glue-base", p, { at: !g ? "first" : resizing ? "resizing" : "user", off: Math.round(off), above: above });
+          glued.set(p, { off: off }); return;
+        }
         var d = off - g.off;
         if (Math.abs(d) < 0.5) return;
         if (above) p._jrBottomAnchor -= d;
         p.style.top = (top - d) + "px";
+        JR.posLog("glue", p, { d: Math.round(d) });
       });
     }
     var savedTop = container.scrollTop;
