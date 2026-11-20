@@ -63,10 +63,14 @@
     if (!/^\/code\//.test(location.pathname)) return prose;
     var status = row.querySelector(C.answer + " [data-cds=TurnStatus]"), box = status && status.parentElement;
     if (!box) return prose;
+    // (a card's block holds its title as reply text too: the whole block, and that text not twice — live T-e4)
     var media = Array.prototype.filter.call(box.children, function (c) {
-      return c !== status && !c.querySelector(C.answerBody) && !!c.querySelector("button, img, video, audio, iframe, canvas, picture, svg image");
+      return c !== status && Array.prototype.some.call(c.querySelectorAll("button, img, video, audio, iframe, canvas, picture"),
+        function (m) { return !m.closest(C.answerBody); });
     });
-    return media.length ? prose.concat(media).sort(function (x, y) { return x.compareDocumentPosition(y) & 4 ? -1 : 1; }) : prose;
+    if (!media.length) return prose;
+    return prose.filter(function (p) { return !media.some(function (m) { return m.contains(p); }); }).concat(media)
+      .sort(function (x, y) { return x.compareDocumentPosition(y) & 4 ? -1 : 1; });
   }
   // A chat's answer is keyed "<question key>-hub-reply"; Claude Code's by its own id, the key itself — and one that used a
   // tool spans rows with that same key: the tool step's row, then the reply's (live 2026-11-19)
