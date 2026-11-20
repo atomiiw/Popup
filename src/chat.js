@@ -717,7 +717,7 @@
     // Measured on screen, not in the popup's parent: ChatGPT's new front end re-lays and moves the list a popup sits
     // in during a send (live 2026-11-20 05:00, Chrome Beta: the anchor held still, the popup moved +2490 then −2490 px
     // with its list and was off screen ~4 s; a placement by someone else in that list was taken as the new place).
-    // Only a drag of its edge (jr-resizing) gives it a new place. A "below" popup keeps its top, an "above" its bottom.
+    // Only the user (a drag of its edge, scrolling) gives it a new place. A "below" popup keeps its top, an "above" its bottom.
     var glued = new Map();
     function glue(anchor) {
       var pops = st.popupStack.map(function (e) { return e.popup; });
@@ -732,7 +732,9 @@
         // before its top followed, it was held 50 px low, over its highlight, for the whole send)
         var off = (above ? r.top - top + p._jrBottomAnchor : r.top) - ay;
         var g = glued.get(p);
-        if (!g || resizing) { glued.set(p, { off: off }); return; }
+        // (the user scrolling — the chat or inside a parent popup, where a nested one follows its highlight — or
+        // dragging an edge places it: taken as it is)
+        if (!g || resizing || userScrolling) { glued.set(p, { off: off }); return; }
         var d = off - g.off;
         if (Math.abs(d) < 0.5) return;
         if (above) p._jrBottomAnchor -= d;
