@@ -16,6 +16,23 @@
   var origFetch = window.fetch;
   if (typeof origFetch !== "function") return;
 
+  // In a frame (manifest all_frames): only Popup's render frame (site-render.js — a hidden copy of the chat where
+  // ChatGPT draws an answer that isn't on the page; nothing filtered there). Its new front end loads the history 10
+  // turns per request as the frame scrolls up: an old popup took 16–18 s+ (live round 5, Chrome Beta) — 100 per request.
+  if (window !== window.top) {
+    var render = false;
+    try { render = !!window.frameElement && window.frameElement.classList.contains("jr-render-frame"); } catch (e) { /* another origin */ }
+    if (render) window.fetch = function (input, init) {
+      var url = typeof input === "string" ? input : input && input.url;
+      if (url && /\/backend-api\/conversations\/[0-9a-f-]+\/messages\?/.test(url) && /[?&]num_turns=10(&|$)/.test(url)) {
+        var more = url.replace(/([?&]num_turns=)10(&|$)/, "$1100$2");
+        input = typeof input === "string" ? more : new Request(more, input);
+      }
+      return origFetch.call(this, input, init);
+    };
+    return;
+  }
+
   var POPUP_PREFIXES = ["Regarding this part of your response:", "Regarding your entire response below:", "Regarding your entire response above:"];
   var POPUP_SUFFIX = "(For this response only:";
 

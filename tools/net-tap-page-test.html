@@ -47,6 +47,30 @@ ask("A").then(function (j) {
   return ask("E");
 }).then(function (j) {
   check("a page of only Popup Q&As at the start of the chat: empty, nothing more fetched", j.messages.length === 0 && calls.length === 1, j.messages.length + " " + calls.length);
+}).then(function () {
+  // in Popup's render frame: ChatGPT's 10-turn history pages asked 100 at a time, nothing else; another frame: untouched
+  function inFrame(cls) {
+    return new Promise(function (done) {
+      var f = document.createElement("iframe");
+      if (cls) f.className = cls;
+      f.srcdoc = '<script>window.seen=[];window.fetch=function(u){seen.push(String(typeof u==="string"?u:u.url));return Promise.resolve(new Response("{}"));};<\/script>' +
+        '<script src="../src/net-tap.js"><\/script>';
+      f.onload = function () {
+        var w = f.contentWindow;
+        w.fetch("/backend-api/conversations/" + CONV + "/messages?before=x&num_turns=10&include_has_versions=true");
+        w.fetch("/backend-api/conversation/" + CONV);
+        var seen = w.seen.slice(); f.remove(); done(seen);
+      };
+      document.body.appendChild(f);
+    });
+  }
+  return inFrame("jr-render-frame").then(function (seen) {
+    check("render frame: a 10-turn history page is asked 100 at a time, other requests as they are",
+      /num_turns=100&include_has_versions=true$/.test(seen[0]) && seen[1] === "/backend-api/conversation/" + CONV, JSON.stringify(seen));
+    return inFrame("");
+  }).then(function (seen) {
+    check("another frame of the site: untouched", /num_turns=10&/.test(seen[0]), JSON.stringify(seen));
+  });
 }).catch(function (e) { check("no error", false, e && e.message); }).then(function () {
   out.push(failed ? failed + " FAILED" : "all passed");
   document.getElementById("out").textContent = out.join("\n");
