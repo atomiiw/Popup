@@ -467,7 +467,6 @@
       if (JR.blockedByComposerAttachments(questionDiv)) return; // text and attachments stay
 
       st.responseMode = mode;
-      JR.noteGluePlaces(); // (before the popup grows: the hold keeps it where it is now)
 
       var message = JR.buildMessage({
         question: question, text: text, sentence: sentence,
@@ -933,7 +932,6 @@
     entry._editFiles = files; // the new version's files (chat.js stores their count with it)
     entry._editFailed = null;
     if (extensionWasUpdated(popup)) return;
-    JR.noteGluePlaces(); // (before the popup grows: the hold keeps it where it is now)
     // Exit edit mode, enter generating state
     popup.classList.add("jr-popup--generating");
     var questionDiv = popup.querySelector(".jr-popup-question");

@@ -1041,9 +1041,6 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
    gets its code turned around (lightness inverted, hues kept) — user's dark-mode run, 2026-11-18 */
 html[data-mode="dark"] .jr-popup-response [data-jr-theme="light"] pre code,
 html[data-mode="light"] .jr-popup-response [data-jr-theme="dark"] pre code { filter: invert(1) hue-rotate(180deg); }
-/* A send's hold keeps the reader's place itself (chat.js lockScroll): the browser's own scroll anchoring off meanwhile —
-   it moved the chat after the hold's last look, the popup with it (ChatGPT, live 2026-11-20: 52 px for ~0.4 s) */
-.jr-holding { overflow-anchor: none !important; }
 /* claude.ai: the same reserved space is div[data-testid=chat-extra-space] with an inline min-height */
 html.jr-tail-hidden [data-testid="chat-extra-space"] {
   min-height: 0 !important;

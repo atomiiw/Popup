@@ -321,9 +321,6 @@
   // a tab in the background runs no animation frames (peer audit A2: a queued send there never pressed send; the
   // refusal check saw it in the box, cleared it, sent again — "Couldn't get a response")
   function nextFrame(cb) { return document.hidden ? setTimeout(cb, 16) : requestAnimationFrame(cb); }
-  // The send's hold corrects now and after the site's queued updates — before the frame is drawn: what the site does
-  // in reply to Popup typing or clicking runs right there, on ChatGPT ~0.4 s with no frame of ours (live 11-20)
-  function holdNow() { if (JR.holdNow) { JR.holdNow(); Promise.resolve().then(function () { if (JR.holdNow) JR.holdNow(); }); } }
   function readDraft(composer) {
     var t = composer.tagName === "TEXTAREA" ? composer.value : composer.innerText || ""; // (innerText: its line breaks)
     return t.trim() ? t.replace(/\n+$/, "") : "";
@@ -391,7 +388,6 @@
     }
     var inserted = insertIntoComposer(chatInput, message);
     if (scrollParent) scrollParent.scrollTop = savedScrollTop;
-    holdNow(); // (the site re-lays as its box changes — live 11-20: here, not at the click, the popup moved 52 px)
     submitting = inserted;
     if (!inserted) {
       putDraftBack(chatInput, draft);
@@ -431,9 +427,6 @@
       if (sendBtn && !sendBtn.disabled) {
         if (scrollParent) scrollParent.scrollTop = savedScrollTop;
         sendBtn.click();
-        // the site's send runs in this click — on ChatGPT ~0.4 s, its list re-laid, before any frame of ours: the hold
-        // corrects now and after the site's queued updates, before that frame is drawn (live 11-20: 52 px off ~0.4 s)
-        holdNow();
         afterSubmit("send button");
         return;
       }
@@ -744,21 +737,6 @@
    * of the anchor (ChatGPT's own scroll calls are blocked by scroll-guard.js).
    * Returns an unlock function.
    */
-  /**
-   * Where each open popup is to the reader's anchor now — at Return, before the popup grows (its question goes up,
-   * Loading shows) — for the hold of the send to start from (live 11-20, ChatGPT: the popup grew 50 px inside the
-   * list, ChatGPT re-laid it and the popup's place moved 52 px; the hold, starting a moment later, kept it there ~0.4 s).
-   */
-  JR.noteGluePlaces = function () {
-    var a = JR.viewAnchor(), k = a ? JR.getTurnKey(a) : null;
-    a = (k && JR.site.findTurnByKey(k)) || a;
-    if (!a) return;
-    var ay = a.getBoundingClientRect().top;
-    st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []).forEach(function (p) {
-      if (p && p.isConnected) p._jrGlueAt = { t: Date.now(), off: p.getBoundingClientRect().top - ay };
-    });
-  };
-
   JR.lockScroll = function (container, anchorEl) {
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
@@ -808,13 +786,6 @@
         // before its top followed, it was held 50 px low, over its highlight, for the whole send)
         var off = (above ? r.top - top + p._jrBottomAnchor : r.top) - ay;
         var g = glued.get(p);
-        // its place at Return (JR.noteGluePlaces), if just taken: not one the popup's own growth since moved
-        if (!g && !above && !resizing && !userScrolling && p._jrGlueAt && Date.now() - p._jrGlueAt.t < 2000) {
-          g = { off: p._jrGlueAt.off };
-          glued.set(p, g);
-          JR.posLog("glue-base", p, { at: "return", off: Math.round(g.off), now: Math.round(off) });
-        }
-        p._jrGlueAt = null;
         // (the user scrolling — the chat or inside a parent popup, where a nested one follows its highlight — or
         // dragging an edge places it: taken as it is)
         if (!g || resizing || userScrolling) {
@@ -842,22 +813,12 @@
     // drawn in the wrong place; the frame loop is only the fallback (R33).
     var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(function () { correct(); }) : null;
     var observed = [];
-    // what a send changes the size of: the chat's content and its footer (the site's box), the anchor turn, the open
-    // popups (one grows at Return) — any of them: a correction before the frame is drawn
-    function watched(anchor) {
-      var pops = st.popupStack.map(function (e) { return e.popup; }).concat(st.activePopup ? [st.activePopup] : []);
-      return [container].concat(Array.prototype.slice.call(container.children), [anchor], pops).filter(Boolean);
-    }
     function observe(els) {
-      if (!ro || (els.length === observed.length && els.every(function (el, i) { return el === observed[i]; }))) return;
+      if (!ro || (els[0] === observed[0] && els[1] === observed[1])) return;
       ro.disconnect();
       observed = els;
-      els.forEach(function (el) { ro.observe(el); });
+      els.forEach(function (el) { if (el) ro.observe(el); });
     }
-    // from the start, not from the first frame (live 11-20, ChatGPT: the list re-laid as the send began moved the popup
-    // 52 px, then a ~0.4 s long task of the site's: no frame ran, that frame stayed on screen — the observer corrects
-    // before it is drawn)
-    observe(watched(startAnchor));
 
     function markUser(e) {
       // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
@@ -890,15 +851,13 @@
         var fresh = JR.site.scrollContainer();
         if (!fresh) return;
         removeListeners(container);
-        container.classList.remove("jr-holding");
         container = fresh;
-        container.classList.add("jr-holding");
         savedTop = container.scrollTop;
         addListeners(container);
       }
 
       var anchor = liveAnchor();
-      observe(watched(anchor));
+      observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
       if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
@@ -919,7 +878,6 @@
             // savedTop stays where the user was: ChatGPT re-creates every turn after a send, and a correction made
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
-            glue(anchor); // (the popups moved with the list just scrolled: back to their places, in the same pass)
           }
         } else if (container.scrollTop !== savedTop) {
           container.scrollTop = savedTop;
@@ -928,17 +886,10 @@
     }
     function frame() { correct(); rafId = requestAnimationFrame(frame); }
     rafId = requestAnimationFrame(frame);
-    JR.holdNow = correct; // (injectAndSend: right after the site's send)
-    // The browser's own scroll anchoring off while the hold keeps the place (live 11-20, ChatGPT: a turn above
-    // shrank 52 px as the send began; the browser moved the scroll after every look of the hold — the list and the
-    // popup in it 52 px down, drawn for ~0.4 s). The hold does the same for the reader's turn, and puts the popups back.
-    container.classList.add("jr-holding"); // (styles.css: overflow-anchor none)
 
     addListeners(container);
 
     return function unlock() {
-      if (JR.holdNow === correct) JR.holdNow = null;
-      container.classList.remove("jr-holding");
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();

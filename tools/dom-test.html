@@ -1123,34 +1123,6 @@ asyncChecks.push(new Promise(function (done) {
   unlock(); sc.remove(); JR.state.activePopup = savedActive; JR.state.popupStack = savedStack;
 })();
 
-// live 11-20 (ChatGPT): at Return the popup grows inside the list, the site re-lays it and the popup's place moves
-// 52 px before the hold starts — the hold keeps it where it was at Return, not where it landed (it stayed there ~0.4 s)
-(function () {
-  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
-  sc.innerHTML = "<div class='list' style='height:4000px;position:relative'><div class='sp' style='height:1000px'></div>" +
-    "<div class='a' style='height:50px'>x</div><div class='jr-popup' style='position:absolute;top:1060px;height:80px'></div></div>";
-  document.body.appendChild(sc); sc.scrollTop = 950;
-  var a = sc.querySelector(".a"), pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame;
-  var savedActive = JR.state.activePopup, savedStack = JR.state.popupStack, realAnchor = JR.viewAnchor;
-  JR.state.activePopup = pop; JR.state.popupStack = []; JR.viewAnchor = function () { return a; };
-  function run(n) {
-    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
-    while (n--) frames.splice(0).forEach(function (f) { f(); });
-    window.requestAnimationFrame = raf;
-  }
-  var gap0 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
-  JR.noteGluePlaces();             // Return
-  pop.style.top = "1112px";        // the popup grew, the site re-laid its list: its place moved 52 px
-  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
-  var unlock = JR.lockScroll(sc, a);
-  window.requestAnimationFrame = raf;
-  run(3);
-  var gap1 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
-  check("a send's hold: from the popup's place at Return (it moved 52 px as it grew, before the hold started)",
-    Math.abs(gap1 - gap0) <= 1, gap0 + " -> " + gap1);
-  unlock(); sc.remove(); JR.state.activePopup = savedActive; JR.state.popupStack = savedStack; JR.viewAnchor = realAnchor;
-})();
-
 // ...and when the list the popup sits in moves under it, or something else places it there, while the anchor holds
 // (live 2026-11-20 05:00, Chrome Beta: the popup went +2490 then −2490 px with its list, off screen ~4 s)
 (function () {
