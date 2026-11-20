@@ -331,9 +331,11 @@ function setActiveItem(quoteId, itemId) {
 }
 
 /** Keep these Q&A turns hidden in this conversation (orphaned / deleted Q&A). */
-function addDeletedTurns(url, turnKeys) {
+function addDeletedTurns(url, turnKeys, link) { // link: { id, turnKeys } — that item's turns, set in the same write
   return modifyDoc(convKeyForUrl(url), function (doc) {
     (turnKeys || []).forEach(function (k) { if (k && doc.hidden.indexOf(k) === -1) doc.hidden.push(k); });
+    var rec = link && doc.items.find(function (it) { return it.id === link.id; });
+    if (rec) rec.turnKeys = link.turnKeys.filter(Boolean);
   });
 }
 

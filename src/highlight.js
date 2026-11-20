@@ -659,15 +659,16 @@
     // Entries we already know, whose spans ChatGPT threw away, then highlights
     // from storage not restored yet (shorter/inner ones first so a longer/outer
     // one can wrap around them). Only those whose turn is in the DOM now.
-    var work = [];
+    var work = [], mounted = {}; // turn key → on the page (looked up once a pass: many highlights share a turn)
+    var onPage = function (k) { return k in mounted ? mounted[k] : (mounted[k] = !!JR.site.findTurnByKey(k)); };
     st.completedHighlights.forEach(function (entry) {
       if (entry.parentId || entry.wholeResponse || !entry.sourceTurnKey) return;
       if (entry.spans.length && entry.spans[0].isConnected) return;
-      if (JR.site.findTurnByKey(entry.sourceTurnKey)) work.push(entry);
+      if (onPage(entry.sourceTurnKey)) work.push(entry);
     });
     pendingL1.sort(function (a, b) { return (a.text || "").length - (b.text || "").length; });
     pendingL1.forEach(function (q) {
-      if (!q.sourceTurnKey || JR.site.findTurnByKey(q.sourceTurnKey)) work.push(q);
+      if (!q.sourceTurnKey || onPage(q.sourceTurnKey)) work.push(q);
     });
 
     var changed = false, tried = 0;

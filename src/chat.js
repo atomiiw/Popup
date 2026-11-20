@@ -97,7 +97,7 @@
     if (e._jrOwn || !list || !list.length) return; // (Popup's own paste into the box: attachToComposer)
     if (e.target && e.target.closest && e.target.closest(".jr-popup")) return; // a popup's own files
     Array.prototype.forEach.call(list, function (f) { userFiles.push(f); });
-    if (userFiles.length > 50) userFiles = userFiles.slice(-50);
+    if (userFiles.length > 10) userFiles = userFiles.slice(-10); // (held in memory: screenshots are MBs each)
   }
   document.addEventListener("paste", function (e) { noteUserFiles(e.clipboardData && e.clipboardData.files, e); }, true);
   document.addEventListener("drop", function (e) { noteUserFiles(e.dataTransfer && e.dataTransfer.files, e); }, true);
@@ -108,7 +108,7 @@
     var composer = JR.site.composer();
     if (!composer || !JR.site.composerCardCount) return false;
     var count = JR.site.composerCardCount(composer);
-    if (!count) return true;
+    if (!count) { userFiles = []; return true; } // (none in the box: the ones noted were taken out)
     var cards = cardsFor(composer, userFiles.slice().reverse(), []); // (the newest copy of a name first)
     if (cards.size !== count) return false;
     var moved = [];
@@ -219,6 +219,12 @@
       if (JR.site.freezeRow) records.forEach(function (r) {
         for (var n = 0; n < r.addedNodes.length; n++) if (r.addedNodes[n].nodeType === 1) JR.site.freezeRow(r.addedNodes[n]);
       });
+      // only changes inside turns already hidden (the hidden answer streaming in): no new turn to look for (perf audit:
+      // every streamed token scanned all the turns)
+      if (!records.some(function (r) {
+        var t = JR.site.turnOf(r.target), k = t && JR.site.turnKey(t);
+        return !k || !(st.hiddenTurnKeys.has(k) || _freeze.keys.indexOf(k) !== -1);
+      })) return;
       var fresh = JR.findNewTurns(snap);
       var keys = [];
       for (var i = 0; i < fresh.length; i++) {
@@ -882,8 +888,8 @@
           st.watchingTurnKey = d.turnKey;
           if (JR.site.keepMounted) JR.site.keepMounted(d.turnKey); // DeepSeek: draw it (unseen) to mirror its own rendering
           JR.hideTurnKeys([d.turnKey]);
-          addDeletedTurns(convUrl, [d.turnKey]);
-          if (!editOpts && preRegisteredItemId) updateHighlightFields(preRegisteredItemId, { turnKeys: qaKeys.slice() }, convUrl);
+          // (one write: kept hidden even if the item wasn't stored, and linked to the item)
+          addDeletedTurns(convUrl, [d.turnKey], !editOpts && preRegisteredItemId ? { id: preRegisteredItemId, turnKeys: qaKeys.slice() } : null);
         }
         return;
       }
@@ -1298,8 +1304,7 @@
           st.watchingTurnKey = qaKeys[qaKeys.length - 1];
           // Persist right away so a reload mid-answer still hides the Q&A and
           // can read the answer back (the item loads instead of "failed").
-          addDeletedTurns(convUrl, added);
-          if (!editOpts && preRegisteredItemId) updateHighlightFields(preRegisteredItemId, { turnKeys: qaKeys.slice() }, convUrl);
+          addDeletedTurns(convUrl, added, !editOpts && preRegisteredItemId ? { id: preRegisteredItemId, turnKeys: qaKeys.slice() } : null);
           if (!savedKeys) { savedKeys = true; JR.repositionPopup(); }
         }
         if (!responseKey) {

@@ -79,7 +79,7 @@ window.getSelection().removeAllRanges();
 var hl = JR.highlightRange(JR.findTextRange(math, "Z", 0));
 var quote = document.createElement("div");
 JR.renderSentenceContext(quote, "You do not use \\(Z_0=50\\) here.", "Z", null, true);
-JR.site.turnOf = function () { return math; };
+var realTurnOf = JR.site.turnOf; JR.site.turnOf = function () { return math; };
 JR.renderQuoteMath(quote, hl, "Z");
 check("quote shows the rendered formula", !!quote.querySelector(".katex") && quote.textContent.indexOf("\\(") === -1, quote.innerHTML.slice(0, 80));
 check("quote marks exactly the selected letter", quote.querySelectorAll(".jr-popup-mark").length === 1 && quote.querySelector(".jr-popup-mark").textContent === "Z", quote.innerHTML.slice(0, 120));
@@ -101,6 +101,7 @@ JR.renderSentenceContext(q2, "You do not use \\(Z_0=50\\) here.", "50 here", nul
 JR.renderQuoteMath(q2, mine, "50 here");
 var marks2 = Array.prototype.map.call(q2.querySelectorAll(".jr-popup-mark"), function (m) { return m.textContent; }).join("|");
 check("quote marks the formula part and the words, not other highlights", marks2 === "50| here", marks2);
+JR.site.turnOf = realTurnOf; // (left in place, it made every later turnOf the formula's box)
 math.innerHTML = mathHTML0; // drop the test highlights
 var spans = JR.highlightRange(JR.findTextRange(math, "\\(Z_0=50\\)", 0));
 check("highlight never wraps the hidden MathML copy", spans.length > 0 && spans.every(function (sp) { return !JR.isHiddenMath(sp); }), spans.length);
@@ -2330,7 +2331,28 @@ asyncChecks.push(new Promise(function (done) {
         seen.indexOf(added) !== -1 && marked && !added.hasAttribute("data-jr-freeze"), seen.length + " " + marked + " " + added.hasAttribute("data-jr-freeze"));
       added.remove();
       if (realFR) JR.site.freezeRow = realFR; else delete JR.site.freezeRow;
-      done();
+      // perf audit: the hidden answer streaming in (changes only inside a hidden turn) → no scan for new turns
+      var realFind = JR.findNewTurns, scans = 0, turn = document.createElement("div");
+      turn.setAttribute("data-turn-key", "perf-hidden"); turn.setAttribute("data-testid", "conversation-turn-99");
+      (JR.site.scrollContainer() || document.body).appendChild(turn);
+      var hiddenWas = JR.state.hiddenTurnKeys.has("perf-hidden");
+      JR.state.hiddenTurnKeys.add("perf-hidden");
+      JR.findNewTurns = function (snap) { scans++; return realFind(snap); };
+      JR.freezeChat();
+      var hiddenKeyOk = JR.site.turnKey(JR.site.turnOf(turn)) === "perf-hidden";
+      turn.appendChild(document.createTextNode("token"));
+      setTimeout(function () {
+        var inside = scans;
+        (JR.site.scrollContainer() || document.body).appendChild(document.createElement("div"));
+        setTimeout(function () {
+          JR.unfreezeChat();
+          check("freeze: a change only inside a hidden turn (its answer streaming) → no scan; one outside → a scan",
+            hiddenKeyOk && inside === 0 && scans === 1, hiddenKeyOk + " " + inside + " " + scans);
+          JR.findNewTurns = realFind; turn.remove();
+          if (!hiddenWas) JR.state.hiddenTurnKeys.delete("perf-hidden");
+          done();
+        }, 0);
+      }, 0);
     }, 0);
   }, 24300);
 }));
