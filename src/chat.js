@@ -328,7 +328,7 @@
     onDone = onDone || function () {};
     var chatInput = JR.site.composer();
     if (!chatInput) {
-      onDone(report(false, "composer", "ChatGPT's input box was not found"));
+      onDone(report(false, "composer", JR.site.label + "'s input box was not found"));
       return;
     }
 
@@ -366,7 +366,7 @@
       putDraftBack(chatInput, draft);
       unhideComposer();
       handBackFiles();
-      onDone(report(false, "insert", "the text did not appear in ChatGPT's input box"));
+      onDone(report(false, "insert", "the text did not appear in " + JR.site.label + "'s input box"));
       return;
     }
 

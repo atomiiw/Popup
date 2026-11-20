@@ -23,47 +23,23 @@
     if (responseDiv._jrClickWired) return;
     responseDiv._jrClickWired = true;
     responseDiv.addEventListener("click", function (e) {
-      // --- Any control the site drew (a code block's Run / Copy / wrap / Download, whatever it adds): the site's own,
-      // clicked at the same place in the original (design B); its result comes back through the copy ---
-      var siteBtn = e.target.closest("button, [role=button]");
-      // (not an image's button: Popup's lightbox below — the site's viewer would open in the unseen frame, review; a
-      // citation's favicon is no image of the answer; one not loaded yet: its declared width, else an image — review)
-      var pic = siteBtn && siteBtn.querySelector("img");
-      if (siteBtn && responseDiv.contains(siteBtn) && !siteBtn._jrReplyAnchor && !(pic && (pic.getBoundingClientRect().width || pic.width || 48) >= 48)) {
-        var orig = JR.siteAnswer && JR.siteAnswer.counterpart(siteBtn);
-        // its original is still being found (a parent active again after its child closed — live B6: the click went
-        // nowhere): it goes there once it is, for up to 4 s (the site's Copy needs the click's activation: 5 s)
-        var finding = !orig && JR.siteAnswer && JR.siteAnswer.current() === responseDiv;
-        if (orig || finding) {
-          e.preventDefault();
-          e.stopPropagation();
-          (function forward(tries) {
-            var o = orig || (JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(siteBtn));
-            if (!o) { if (tries > 0) setTimeout(function () { forward(tries - 1); }, 100); return; }
-            // an original in the render frame: the site's Copy writes the clipboard only from a focused document (live
-            // 2026-11-18: ChatGPT's Copy in a popup copied nothing) — the frame has it for the click, then the page again
-            var w = o.ownerDocument.defaultView;
-            if (w && w !== window) {
-              if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
-              // the control itself, not the frame's own focused composer: a key meanwhile goes nowhere (review)
-              try { o.focus({ preventScroll: true }); } catch (er) {}
-              var fd = o.ownerDocument;
-              if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
-            }
-            o.click();
-          })(40);
-          return;
-        }
+      // --- Whatever the site handles — a control it drew (a code block's Run / Copy / wrap / Download, whatever it adds),
+      // a button, ChatGPT's entity links: one rule (P0-7 #4), the site's own, clicked at the same place in the original
+      // (design B); its result comes back through the copy. Not an image's button: Popup's lightbox (the site's viewer
+      // would open in the unseen frame, review; a citation's favicon is no image of the answer; one not loaded yet: its
+      // declared width, else an image — review) ---
+      var siteEl = e.target.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
+      if (siteEl && (!responseDiv.contains(siteEl) || siteEl._jrReplyAnchor || siteEl.classList.contains("jr-reply-whole-btn"))) siteEl = null;
+      var pic = siteEl && siteEl.querySelector("img");
+      if (pic && pic.src && (pic.getBoundingClientRect().width || pic.width || 48) >= 48) {
+        e.stopPropagation();
+        openLightbox(responseDiv, [pic.src], 0);
+        return;
       }
-
-      // --- ChatGPT entity spans (sidebar links) ---
-      // These are <span class="...entity-underline...cursor-pointer..."> with React handlers.
-      // Proxy the click to the matching element in the original hidden turn.
-      var entitySpan = e.target.closest(ENTITY_SELECTOR);
-      if (entitySpan && responseDiv.contains(entitySpan)) {
+      if (siteEl) {
         e.preventDefault();
         e.stopPropagation();
-        proxyClickToHiddenTurn(entitySpan, responseDiv);
+        forwardToOriginal(siteEl, responseDiv);
         return;
       }
 
@@ -80,24 +56,6 @@
         }
       }
 
-      // --- ChatGPT buttons (citations, etc.) — proxy to hidden turn ---
-      var btn = e.target.closest("button");
-      if (btn && responseDiv.contains(btn)
-          && !btn.classList.contains("jr-reply-whole-btn")
-          && !btn._jrReplyAnchor) {
-        var btnImg = btn.querySelector("img");
-        if (btnImg && btnImg.src) {
-          e.stopPropagation();
-          openLightbox(responseDiv, [btnImg.src], 0);
-          return;
-        }
-        // Non-image button — proxy click to hidden turn
-        e.preventDefault();
-        e.stopPropagation();
-        proxyClickToHiddenTurn(btn, responseDiv);
-        return;
-      }
-
       // --- Lightbox images ---
       var img = e.target.closest("img");
       if (img && img.src) {
@@ -110,13 +68,29 @@
   }
 
   /**
-   * Find the matching element in the original hidden response turn and click it,
-   * triggering ChatGPT's React handlers (e.g., open sidebar panel).
+   * A click on something of the site's in a copy, on the same element of the original. Its original still being found
+   * (a parent active again after its child closed — live B6: the click went nowhere): there once it is, for up to 4 s
+   * (the site's Copy needs the click's activation: 5 s). An original in the render frame: the site's Copy writes the
+   * clipboard only from a focused document (live 2026-11-18: ChatGPT's Copy in a popup copied nothing) — the frame has
+   * it for the click, then the page again.
    */
-  /** A click on something in the copy that the site handles (an entity link): on the same element of the original. */
-  function proxyClickToHiddenTurn(popupEl) {
-    var orig = JR.siteAnswer && JR.siteAnswer.counterpart(popupEl);
-    if (orig) orig.click();
+  function forwardToOriginal(el, responseDiv) {
+    (function forward(tries) {
+      var o = JR.siteAnswer && JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
+      if (!o) {
+        if (tries > 0 && JR.siteAnswer && JR.siteAnswer.current() === responseDiv) setTimeout(function () { forward(tries - 1); }, 100);
+        return;
+      }
+      var w = o.ownerDocument.defaultView;
+      if (w && w !== window) {
+        if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
+        // the control itself, not the frame's own focused composer: a key meanwhile goes nowhere (review)
+        try { o.focus({ preventScroll: true }); } catch (er) {}
+        var fd = o.ownerDocument;
+        if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
+      }
+      o.click();
+    })(40);
   }
 
 
@@ -588,7 +562,6 @@
         status: "pending",
         question: question,
         url: location.href,
-        site: JR.site.name,
         parentId: parentId || null,
         parentItemId: sendParentItemId,
         sourceTurnKey: sourceTurnKey,

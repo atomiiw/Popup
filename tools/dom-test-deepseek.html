@@ -214,7 +214,9 @@ function allCheck() {
     var calls = [];
     var ro = new ResizeObserver(function () { calls.push(list.scrollTop === 0 && list.offsetHeight > 100000 ? "all" : "window"); });
     ro.observe(list);
-    setTimeout(function () {
+    // (an observer's first report comes with a frame: headless Chrome draws one when it can — wait for it, up to 2 s)
+    (function first(n) { if (calls.length || n <= 0) go(); else setTimeout(function () { first(n - 1); }, 50); })(40);
+    function go() {
       var before = calls.length;
       var rules = document.createElement("style"); rules.id = "jr-hide-turns";
       rules.textContent = '[data-virtual-list-item-key="7"] { height: 0 }';
@@ -229,7 +231,7 @@ function allCheck() {
           ro.disconnect(); list.remove(); rules.remove(); done();
         }, 300);
       }, 400);
-    }, 200);
+    }
   });
 }
 // design A (2026-11-18): an original is kept drawn in DeepSeek's list while it is live, let go on release

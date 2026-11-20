@@ -1836,6 +1836,29 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 800);
 }, 9500); }));
 
+// P0-7 #4 (2026-11-20): one rule for whatever the site handles — ChatGPT's entity links too go to the original, and
+// also when it is still being found
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var real = { o: JR.siteOriginal, r: JR.siteOriginalRelease }, ran = 0;
+  var far = document.createElement("div"); far.hidden = true;
+  far.innerHTML = '<div data-turn-key="en-1-in-frame"><div data-message-author-role="assistant"><div class="markdown"><p>see <span data-inline-mention-interactive="">Paris</span></p></div></div></div>';
+  document.body.appendChild(far);
+  far.querySelector("span").addEventListener("click", function () { ran++; });
+  JR.siteOriginal = function () { return new Promise(function (r) { setTimeout(function () { r(far.firstChild); }, 300); }); };
+  JR.siteOriginalRelease = function () {};
+  var copy = document.createElement("div"); copy.className = "jr-popup-response";
+  copy.innerHTML = '<div class="markdown"><p>see <span data-inline-mention-interactive="">Paris</span></p></div>';
+  document.body.appendChild(copy);
+  JR.wireResponseClicks(copy);
+  JR.siteAnswer.follow(copy, ["en-1"], null);
+  copy.querySelector("span").click(); // before the original is found
+  setTimeout(function () {
+    check("an entity link in a popup: clicked in the original, also while it is still being found", ran === 1, ran);
+    JR.siteAnswer.stop(); JR.siteOriginal = real.o; JR.siteOriginalRelease = real.r; far.remove(); copy.remove();
+    done();
+  }, 800);
+}, 27000); })); // (its own time: one popup is live at a time)
+
 // live 2026-11-19 (dev.133 trace, ChatGPT B6): the site replaced the original's turn just after it was found again; a
 // click then went to the replaced (detached) one — nothing copied. It goes to the turn found again instead.
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
