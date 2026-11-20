@@ -1110,7 +1110,7 @@
 
   /**
    * Scroll the thread until ChatGPT mounts the turn with this key, then call
-   * done(true) (done(false) after ~4 s). Direction comes from the turn order:
+   * done(true) (done(false) after ~4 s of steps, ~15 s at the top waiting for earlier turns). Direction from the turn order:
    * compare the target's index with the turns that are mounted now.
    */
   JR.scrollToTurnKey = function (key, done) {
@@ -1123,12 +1123,21 @@
     if (JR.site.unpin) JR.site.unpin();
     // First jump to the estimated position (when the whole order is known), then step a screen at a time.
     if (order.length) scroller.scrollTop = scroller.scrollHeight * (target / order.length) - scroller.clientHeight / 2;
-    var tries = 0;
+    var tries = 0, atTop = 0, gen = navGen;
     (function step() {
+      if (gen !== navGen) return; // another jump, or Esc: stop scrolling
       if (JR.site.findTurnByKey(key)) { done(true); return; }
-      if (++tries > 40) { done(false); return; }
       var mounted = JR.site.turns().map(function (t) { return pos(JR.site.turnKey(t)); }).filter(function (i) { return i >= 0; });
       var dir = mounted.length && Math.min.apply(null, mounted) > target ? -1 : 1;
+      // at the top with the turn earlier still: ChatGPT's new front end loads earlier turns a page at a time, on a
+      // scroll at the top (live 11-20: 163 highlights, those in turns not loaded never reached — it gave up after 4 s)
+      if (dir < 0 && scroller.scrollTop <= 0) {
+        if (++atTop > 50) { done(false); return; } // (~15 s at the top and nothing earlier came)
+        scroller.scrollTop = 40;
+        setTimeout(function () { scroller.scrollTop = 0; setTimeout(step, 250); }, 50);
+        return;
+      }
+      if (++tries > 40) { done(false); return; }
       if (JR.site.unpin) JR.site.unpin();
       scroller.scrollTop += dir * scroller.clientHeight * 0.8;
       setTimeout(step, 100);
