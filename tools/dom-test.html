@@ -1551,6 +1551,21 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }).finally(function () { JR.site = real; JR.qa.resetApi(); done(); });
 }, 250); }));
 
+// live round 5 (Claude Code): no turn order — scrollToTurnKey looks up from here, then down, until the turn is mounted
+asyncChecks.push(new Promise(function (done) { setTimeout(function () { // (its own time: it stands in for site functions)
+  var sc = document.createElement("div"); sc.style.cssText = "height:100px;overflow:auto";
+  sc.innerHTML = "<div style='height:2000px'></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1500;
+  var real = { sc: JR.site.scrollContainer, find: JR.site.findTurnByKey, order: JR.qa.turnOrderCache };
+  JR.site.scrollContainer = function () { return sc; };
+  JR.qa.turnOrderCache = null;
+  JR.site.findTurnByKey = function (k) { return k === "sw" && sc.scrollTop < 400 ? sc : null; }; // mounted near the top
+  JR.scrollToTurnKey("sw", function (ok) {
+    check("no turn order: scrollToTurnKey looks up from here until the turn is mounted", ok && sc.scrollTop < 400, ok + " " + sc.scrollTop);
+    JR.site.scrollContainer = real.sc; JR.site.findTurnByKey = real.find; JR.qa.turnOrderCache = real.order; sc.remove();
+    done();
+  });
+}, 28000); }));
 // review of dev.104: with no popup open and no highlight on the page that way (their turns not mounted), ∨ goes to the
 // first highlight in a turn after the ones in view — not the last of the chat (the user's "jumped to the 42nd")
 (function () {

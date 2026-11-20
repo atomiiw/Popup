@@ -1118,6 +1118,7 @@
     var order = JR.qa.turnOrderCache || [];
     var pos = turnPosition(order);
     var target = pos(key);
+    if (scroller && target < 0 && !order.length) { sweepTo(scroller, key, done); return; }
     if (!scroller || target < 0) { done(false); return; }
     if (JR.site.unpin) JR.site.unpin();
     // First jump to the estimated position (when the whole order is known), then step a screen at a time.
@@ -1133,6 +1134,21 @@
       setTimeout(step, 100);
     })();
   };
+
+  /** No turn order to aim with (Claude Code: no conversation read): up from here to the top, then down from here to
+   *  the end, a screen at a time, until its turn is mounted (live round 5: ∧ at the bottom opened nothing). */
+  function sweepTo(scroller, key, done) {
+    var from = scroller.scrollTop, dir = -1, tries = 0;
+    (function step() {
+      if (JR.site.findTurnByKey(key)) { done(true); return; }
+      if (++tries > 200) { done(false); return; }
+      if (dir < 0 && scroller.scrollTop <= 0) { dir = 1; scroller.scrollTop = from; }
+      else if (dir > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) { done(false); return; }
+      if (JR.site.unpin) JR.site.unpin();
+      scroller.scrollTop += dir * scroller.clientHeight * 0.8;
+      setTimeout(step, 100);
+    })();
+  }
 
   // --- Navigation order (user, 2026-11-18: "popups in their physical on-page order, popups in popups right after
   // their parent"): highlights by conversation turn, then by place in their answer's text; inside a popup, its

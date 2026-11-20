@@ -725,6 +725,7 @@
       st.restoreReady = true;
       JR.watchTurnMounts();
       JR.reapplyHighlights();
+      JR.updateNavWidget(); // (the arrows also when none of them is on the page — live round 5, Claude Code at the bottom)
       JR.recheckTurns(); // run the mount pass (self-heal / adoption) now that items are known
       readBackFromConversation(records, gen);
       rebuildFromConversation(records, gen, url);
