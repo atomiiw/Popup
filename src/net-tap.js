@@ -82,7 +82,7 @@
 
   var rawLog = [];
   function logRaw(url, line) {
-    if (rawLog.length >= 40) return;
+    if (rawLog.length >= 80) return;
     rawLog.push({ url: String(url).slice(0, 120), line: line.slice(0, 400) });
     var el = document.getElementById("jr-netlog");
     if (!el && document.body) {
@@ -124,6 +124,7 @@
   };
   Accumulator.prototype.event = function (obj) {
     if (!obj || typeof obj !== "object") return;
+    if (obj.type === "resume_conversation_token") { this.resume = true; return; } // the answer comes on another stream
     // The echoed question; its id is the turn's data-turn-key in the DOM.
     if (obj.type === "input_message" && obj.input_message) { this.inputId = obj.input_message.id || null; return; }
     if (obj.message) this.message(obj.message);
@@ -167,8 +168,12 @@
     } catch (e) {
       if (!(e && e.name === "AbortError")) logRaw(url, "ERROR " + e); // ChatGPT aborts the stream after [DONE]
     }
+    // ChatGPT's thinking models (live 2026-11-20, "gpt-6-thinking"): the send's stream carries the thoughts and a
+    // resume token, then ends; the answer comes on the next stream — not done yet: that one is followed
+    if (acc.resume && !acc.text.trim()) { following = { question: question, until: Date.now() + 180000 }; logRaw(url, "resuming"); return; }
     emit({ kind: "done", text: acc.text });
   }
+  var following = null; // { question, until }: the next event stream of the site carries this Popup question's answer
 
   // ---------------------------------------------------------------------------
   // Keep Popup Q&A out of the page (not out of ChatGPT's context).
@@ -372,6 +377,17 @@
       if (isPopupQuestion(q)) { question = q; rawLog = []; logRaw(url, "request matched"); logRaw(url, "request shape " + bodyShape(init.body)); } // log = latest Popup request
     }
     var p = origFetch.call(this, input, init);
+    if (!question && following && Date.now() < following.until && url.indexOf("/backend-api/") !== -1) {
+      var follow = following;
+      return p.then(function (res) {
+        try {
+          var type = res.headers.get("content-type") || "";
+          logRaw(url, "follow " + method + " " + type);
+          if (type.indexOf("event-stream") !== -1 && following === follow) { following = null; tap(url, res.clone(), follow.question); }
+        } catch (e) { logRaw(url, "ERROR " + e); }
+        return res;
+      });
+    }
     if (!question) return p;
     return p.then(function (res) {
       try {
