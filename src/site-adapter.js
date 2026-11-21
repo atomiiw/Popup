@@ -223,6 +223,17 @@
       return '[data-turn-key="' + key.replace(/["\\]/g, "") + '"]';
     },
 
+    /** Before Popup scrolls the chat (a jump's search): at the end, ChatGPT keeps it pinned there and brings it back
+     *  down as its list changes — a search stepping up was pulled back to the end every two steps (live 11-21, 160
+     *  steps, never past the last 3 turns); it lets go on the user's scroll up — a wheel event (claude.ai's way). */
+    unpin: function () {
+      var s = JR.site.scrollContainer();
+      if (!s) return;
+      var w = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+      w._jrPressed = true; // (Popup's own: not the user scrolling — chat.js markUser)
+      s.dispatchEvent(w);
+    },
+
     findTurnByKey: function (key) {
       var sel = JR.site.turnSelector(key);
       return sel ? activeRoot().querySelector(sel) : null;

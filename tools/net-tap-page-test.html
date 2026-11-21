@@ -53,7 +53,7 @@ ask("A").then(function (j) {
 }).then(function (j) {
   // live 11-21: one question after nine Popup Q&As — the page showed that one turn, nothing to scroll, older ones never loaded
   check("a page keeping fewer turns than asked: the visible ones before it put before it (as if the Popup Q&As weren't there)",
-    j.messages.map(function (m) { return m.id; }).join() === "u7,a7,u9,a9" && calls.length === 2 && /num_turns=9&/.test(calls[1].url) &&
+    j.messages.map(function (m) { return m.id; }).join() === "u7,a7,u9,a9" && calls.length === 2 && /num_turns=100&/.test(calls[1].url) &&
     j.page_info.has_previous_page === false && j.page_info.has_next_page === false,
     j.messages.map(function (m) { return m.id; }).join() + " " + calls.length + " " + (calls[1] && calls[1].url) + " " + JSON.stringify(j.page_info));
   return ask("E");

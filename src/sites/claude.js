@@ -279,7 +279,10 @@
      *  brings it back down, live 2026-11-18) and lets go only when the user scrolls up — a wheel event (tested live). */
     unpin: function () {
       var s = scroller();
-      if (s) s.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+      if (!s) return;
+      var w = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+      w._jrPressed = true; // (Popup's own: not the user scrolling — chat.js markUser)
+      s.dispatchEvent(w);
     },
     /** Level-1 popups live in the transcript column: full height, not one of rocksteady's rows. */
     popupHost: function (turn) {

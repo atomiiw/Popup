@@ -950,10 +950,9 @@
     }
 
     function markUser(e) {
-      var who = JR.press.of(e).owner;
-      if (who === "synthetic") return; // (a site control pressed for a popup: site-control.js)
+      if (e._jrPressed) return; // (a site control pressed for a popup: site-control.js — press.js "synthetic")
       // Typing or clicking in Popup's UI (Return, the send arrow in a popup) isn't scrolling the chat (R33)
-      if ((e.type === "keydown" || e.type === "pointerdown") && !/^(outside|repeat|scrollbar)$/.test(who)) return;
+      if ((e.type === "keydown" || e.type === "pointerdown") && !/^(outside|repeat|scrollbar)$/.test(JR.press.of(e).owner)) return;
       userScrolling = true;
       if (wheelTimer) clearTimeout(wheelTimer);
       wheelTimer = setTimeout(function () { userScrolling = false; }, 800);
@@ -978,15 +977,23 @@
     // it rebuilt its list — 75 196 → 50 945 px, the reader's 19 500 px turn back to an estimate — and scrolled to
     // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
     // held where the reader saw it (its drift, below). Twice at most per send.
-    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, moved = false;
+    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, jumped = false, unlocked = false;
     function reachBack(now) {
-      if (moved) return false; // (the reader went elsewhere during the send: not pulled back to where they were)
+      if (jumped) return false; // (the reader jumped elsewhere during the send: not pulled back to where they were)
       if (!lostAt) lostAt = now;
       if (container.scrollHeight !== settledH) { settledH = container.scrollHeight; settledAt = now; }
       if (reaches >= 2 || now - lostAt < 600 || now - settledAt < 600 || !JR.scrollToTurnKey) return false;
       reaching = true; reaches++;
       JR.posLog("reach-back", document.documentElement, { key: String(anchorKey).slice(0, 8), top: Math.round(container.scrollTop) });
-      JR.scrollToTurnKey(anchorKey, function () { reaching = false; lostAt = 0; savedTop = container.scrollTop; });
+      var from = savedTop;
+      // (not found, or stopped — the user scrolling, the hold's end, Esc: back where it started, no second search —
+      // review: it held the reader where the search stopped, the top of a long chat)
+      JR.scrollToTurnKey(anchorKey, function (ok) {
+        reaching = false; lostAt = 0;
+        if (unlocked) return;
+        if (!ok) { reaches = 2; if (!userScrolling) container.scrollTop = from; }
+        savedTop = container.scrollTop;
+      }, function () { return unlocked || userScrolling; });
       return true;
     }
 
@@ -1008,8 +1015,9 @@
       if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
-      if (userScrolling || (JR.jumping && JR.jumping())) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
-        moved = true;
+      var jumping = JR.jumping && JR.jumping();
+      if (userScrolling || jumping) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
+        if (jumping) jumped = true;
         savedTop = container.scrollTop;
         // (where the user went is the new start: a later height change estimates from there, not the send's start —
         // review: a reader who scrolled away was thrown back)
@@ -1052,6 +1060,7 @@
     addListeners(container);
 
     return function unlock() {
+      unlocked = true;
       window.removeEventListener("resize", onResize);
       openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(unanchor);
       if (rafId) cancelAnimationFrame(rafId);

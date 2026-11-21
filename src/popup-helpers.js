@@ -1068,12 +1068,12 @@
    * (JR.reachTurn: the same search as the hidden copy's — earlier turns loaded at the top, ChatGPT's new front end; no
    * order: up from here, then down). Another jump or Esc stops it (navGen).
    */
-  JR.scrollToTurnKey = function (key, done) {
+  JR.scrollToTurnKey = function (key, done, stop) { // (stop(): true ends the search — a send's hold, chat.js)
     var scroller = JR.site.scrollContainer();
     if (!scroller) { done(false); return; }
     var gen = navGen, order = JR.qa.turnOrderCache || [];
     var list = JR.reachTurn.listOf(scroller, JR.site.turns, JR.site.findTurnByKey, JR.site.unpin);
-    JR.reachTurn(list, key, order, { cancel: function () { return gen !== navGen; }, position: JR.site.turnPosition })
+    JR.reachTurn(list, key, order, { cancel: function () { return gen !== navGen || !!(stop && stop()); }, position: JR.site.turnPosition })
       .then(function (r) { JR.navTrace = (JR.navTrace || "") + (r.why ? ", " + r.why : ""); done(!!r.turn); });
   };
 

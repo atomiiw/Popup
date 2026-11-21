@@ -109,7 +109,9 @@
   function letThrough(el, what, v) {
     if (!lockOn() || !isThreadScroller(el)) return;
     document.documentElement.setAttribute("data-jr-site-scroll", String(++passed));
-    note("let " + what, v); // (who moved the chat during a send: NT2 G2 — its list rebuilt, the scroll went far)
+    // (who moved the chat during a send: NT2 G2 — its list rebuilt, the scroll went far; with #jr-poslog only: they'd
+    // push the blocked ones out of the log — review)
+    if (location.hash.indexOf("jr-poslog") !== -1) note("let " + what, v);
   }
   function targetTop(el, name, args) {
     var a = args[0], top = a && typeof a === "object" ? a.top : args[1];

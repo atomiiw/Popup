@@ -335,7 +335,9 @@
     want = want || 10;
     // (nothing filtered, or half of what it asked for kept — enough to scroll: as it is, no extra request — review)
     if (!out || turns >= Math.ceil(want / 2) || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
-    return fetchOlder(oldest, turns ? want - turns : 100).then(function (older) {
+    // (100 turns, one request, as after a page of only Popup Q&As: asking only for what it lacked loaded the chat in
+    // small steps — ChatGPT re-laid its list at each, a jump to an old popup landed and was pushed away, live 11-21)
+    return fetchOlder(oldest, 100).then(function (older) {
       if (!older || !Array.isArray(older.messages)) return out;
       return filled(convId, older, false, fetchOlder, (depth || 0) + 1, want - turns).then(function (o) {
         var page = o || older, res = Object.assign({}, j);

@@ -42,7 +42,7 @@
     if (el || response) return inPopup(null); // (an answer area not in a popup: tests)
     function inPopup(popup) {
       if (el) return { owner: "control", popup: popup, el: el };
-      if (site && response && !site._jrReplyAnchor) return { owner: "site-control", popup: popup, el: site, response: response };
+      if (site && response) return { owner: "site-control", popup: popup, el: site, response: response };
       return { owner: "popup", popup: popup };
     }
     if (e.detail > 1) return { owner: "repeat" };
