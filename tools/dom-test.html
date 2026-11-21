@@ -2205,11 +2205,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // peer audit A1: a popup reopened while its send waits in the queue (the main answer still writing) stays pending —
 // it was marked failed with Retry while the message still went out later (Retry sent it twice)
 (function () {
-  function reopen(queued) {
+  function reopen(queued, keys) {
     var p = document.createElement("div"); p.className = "jr-popup";
     p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-highlight"></div></div>';
     document.body.appendChild(p);
-    var item = { id: "qa1-i", question: "Q", status: "pending", turnKeys: [] };
+    var item = { id: "qa1-i", question: "Q", status: "pending", turnKeys: keys || [] };
     JR.state.completedHighlights.set("qa1-hl", { question: "Q", spans: [], items: [item], activeItemIndex: 0 });
     if (queued) JR.state.messageQueue.push({ message: "m", waitOpts: { preRegisteredHlId: "qa1-hl", preRegisteredItemId: "qa1-i" } });
     try { JR.rebuildPopupAfterEdit(p, "qa1-hl"); } catch (e) { out.push("NOTE A1 rebuild threw: " + e.message); }
@@ -2217,10 +2217,11 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     return item.status;
   }
   var live = JR.state.responseWatchActive; JR.state.responseWatchActive = false;
-  var q = reopen(true), notQ = reopen(false);
+  var q = reopen(true), notQ = reopen(false), linked = reopen(false, ["qa1-t"]);
   JR.state.responseWatchActive = live;
   check("A1: reopened while its send is queued: still pending (not failed with Retry); not queued and no watch: failed",
     q === "pending" && notQ === "failed", q + " " + notQ);
+  check("live NT1 N4: a pending version whose Q&A is in the chat (reloaded mid-answer): done — looked for, not failed", linked === "done", linked);
 })();
 
 // Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes
