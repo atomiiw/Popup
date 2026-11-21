@@ -1560,23 +1560,29 @@
     if (!sc || span.closest(".jr-popup") || !JR.lockScroll) return;
     var un = JR.lockScroll(sc, span, { chatOnly: true }), done = false, t0 = Date.now();
     var mine = settled = function () { if (!done) { done = true; un(); } if (settled === mine) settled = null; };
-    // (its own: a later jump's hold isn't ended by it; over at once when its highlight or the chat is gone). Its popup
-    // placed again when the site put content above the place it is measured from (live NT4 A2: 19 352 px came above,
-    // ChatGPT kept the highlight on screen by scrolling, the popup went with the old place to −19 143): the popup and
-    // its highlight parted by more than 50 px, the popup's height the same — not its own growing
-    // (its highlight by id: ChatGPT remounting the turn wraps it anew — the same highlight, not gone; review)
-    var prev = null, id = span.getAttribute("data-jr-highlight-id");
+    // (its own: a later jump's hold isn't ended by it; over at once when the chat is gone, 2 s after the list last changed,
+    // 6 s at most). Its highlight by id: ChatGPT lays the turn out anew as a placeholder for a moment — the highlight off
+    // the page, then wrapped anew (live NT19: the settle ended there, the highlight came back on screen, its popup stayed
+    // 5 520 px away). Its popup placed again whenever its distance to its highlight moved by more than 50 px (live NT4
+    // A2: 19 352 px came above, the popup went with the old place to −19 143) — an above popup's by its bottom, so its
+    // own growing is no move
+    var id = span.getAttribute("data-jr-highlight-id"), base = null, listH = sc.scrollHeight, still = t0;
     (function watch() {
       if (done) return;
       if (!span.isConnected && id) span = document.querySelector('[data-jr-highlight-id="' + id + '"]') || span;
-      if (Date.now() - t0 >= 2000 || !span.isConnected || !sc.isConnected) return mine();
-      var p = st.activePopup, now = p && p.isConnected ? { el: p, p: p.getBoundingClientRect(), h: span.getBoundingClientRect().top } : null;
-      if (now && prev && prev.el === now.el && Math.abs((now.p.top - prev.p.top) - (now.h - prev.h)) > 50 && Math.abs(now.p.height - prev.p.height) < 1) {
-        JR.posLog("settle-place", p, { moved: Math.round(now.p.top - prev.p.top), hl: Math.round(now.h - prev.h) });
-        JR.repositionAll();
-        now = null; // (measured again next frame)
+      var now = Date.now();
+      if (sc.scrollHeight !== listH) { listH = sc.scrollHeight; still = now; }
+      if (!sc.isConnected || now - still >= 2000 || now - t0 >= 6000) return mine();
+      var p = st.activePopup, hr = span.isConnected ? span.getBoundingClientRect() : null;
+      if (p && p.isConnected && hr && hr.height) {
+        var pr = p.getBoundingClientRect(), gap = p._jrLockedDirection === "above" ? hr.top - pr.bottom : pr.top - hr.bottom;
+        if (!base || base.el !== p) base = { el: p, gap: gap };
+        else if (Math.abs(gap - base.gap) > 50) {
+          JR.posLog("settle-place", p, { gap: Math.round(gap), was: Math.round(base.gap) });
+          JR.repositionAll();
+          base = null; // (measured again next frame)
+        }
       }
-      prev = now;
       requestAnimationFrame(watch);
     })();
   }

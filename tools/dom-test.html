@@ -1361,6 +1361,42 @@ asyncChecks.push(new Promise(function (done) {
   JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
 })();
 
+// live NT19 (ChatGPT, ∧ from the chat's end): after the jump opened its popup ChatGPT laid the turn out anew as a
+// placeholder — the highlight off the page — then measured it, the highlight back on screen elsewhere; the settle had
+// ended when the highlight went, the popup stayed 5 520 px away. It watches on, and places the popup again
+(function () {
+  var st = JR.state, frames = [], fake = Date.now(), placed = 0, real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand,
+    create: JR.createPopup, all: JR.repositionAll, raf: window.requestAnimationFrame, now: Date.now };
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:9000px;position:relative"><div data-turn-key="nt19" style="position:absolute;top:3000px;width:280px">' +
+    '<p id="nt19-p" style="margin:0">A passage with a highlight in it: <span data-jr-highlight-id="nt19A">here</span></p></div></div>';
+  document.body.appendChild(box);
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  JR.repositionAll = function () { placed++; };
+  Date.now = function () { return fake; };
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  function run(n) { while (n--) frames.splice(0).forEach(function (f) { f(); }); }
+  var pop = document.createElement("div"); pop.className = "jr-popup"; pop.style.cssText = "position:absolute;height:50px;width:100px";
+  JR.createPopup = function () { var hr = box.querySelector("[data-jr-highlight-id]").getBoundingClientRect(); pop.style.top = (hr.top + box.scrollTop - 60) + "px";
+    pop._jrLockedDirection = "above"; box.firstElementChild.appendChild(pop); st.activePopup = pop; };
+  var span = box.querySelector("[data-jr-highlight-id]");
+  st.completedHighlights.set("nt19A", { spans: [span], items: [] });
+  JR.scrollToAndOpenPopup("nt19A");
+  run(2);
+  var p = box.querySelector("#nt19-p");
+  p.textContent = "…"; // (the turn a placeholder: no highlight)
+  fake += 300; run(3);
+  box.querySelector("[data-turn-key]").style.top = "8000px"; box.scrollTop += 5000 - 40; // (measured: 5 000 px came above; the site's scroll 40 px short)
+  p.innerHTML = 'A passage with a highlight in it: <span data-jr-highlight-id="nt19A">here</span>'; // (wrapped anew)
+  fake += 300; run(3);
+  fake += 2500; run(2); // (settled)
+  check("a jump's popup, its highlight laid out anew elsewhere after a moment off the page: placed again (live NT19)", placed >= 1, "placed " + placed);
+  window.requestAnimationFrame = real.raf; Date.now = real.now;
+  st.activePopup = null; st.completedHighlights.delete("nt19A"); box.remove();
+  JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {
