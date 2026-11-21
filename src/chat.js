@@ -1259,32 +1259,7 @@
         return;
       }
 
-      if (preRegisteredHlId) {
-        // Use pre-registered entry from doSend
-        detachedHlId = preRegisteredHlId;
-      } else {
-        detachedHlId = crypto.randomUUID();
-        var contentContainer = JR.site.popupHost(JR.site.turnOf(detachedSpans[0]));
-        for (var k = 0; k < detachedSpans.length; k++) {
-          detachedSpans[k].setAttribute("data-jr-highlight-id", detachedHlId);
-          detachedSpans[k].classList.add("jr-source-highlight-done");
-        }
-        var detachEntry = {
-          quoteId: detachedHlId,
-          spans: detachedSpans.slice(),
-          text: text,
-          sentence: sentence,
-          blockTypes: blockTypes,
-          question: question || null,
-          contentContainer: contentContainer,
-          parentId: parentId || null,
-          parentItemId: parentItemId || null,
-          sourceTurnKey: JR.getTurnKey(detachedSpans[0]),
-          items: [],
-          activeItemIndex: 0,
-        };
-        st.completedHighlights.set(detachedHlId, detachEntry);
-      }
+      detachedHlId = preRegisteredHlId; // (every send pre-registers its version: popup.js doSend / Retry — A1b)
 
       // Keep observer running — streaming continues in background
       if (unlockScroll) unlockScroll();
@@ -1379,7 +1354,6 @@
       // --- Normal (non-edit) capture ---
       var hlId2;
       var entry = null;
-      var itemId2 = null;
 
       function fillItem(e, itemId) {
         e.question = e.question || question || null;
@@ -1417,8 +1391,8 @@
           JR.syncHighlightActive(hlId2);
           JR.rebuildPopupAfterEdit(st.activePopup, hlId2);
         }
-      } else if (preRegisteredHlId) {
-        // Update pre-registered pending entry with real response
+      } else {
+        // the version stored when sent (every send pre-registers it — A1b: no other kind)
         hlId2 = preRegisteredHlId;
         entry = st.completedHighlights.get(hlId2);
         if (entry) fillItem(entry, preRegisteredItemId);
@@ -1427,61 +1401,13 @@
           if (popup === st.activePopup) { st.activeHighlightId = hlId2; JR.syncHighlightActive(hlId2); } // (review #8)
           JR.rebuildPopupAfterEdit(popup, hlId2);
         }
-      } else {
-        hlId2 = crypto.randomUUID();
-        itemId2 = crypto.randomUUID();
-        if (spans.length > 0) {
-          for (var k = 0; k < spans.length; k++) {
-            spans[k].setAttribute("data-jr-highlight-id", hlId2);
-            spans[k].classList.add("jr-source-highlight-done");
-          }
-          st.completedHighlights.set(hlId2, {
-            quoteId: hlId2,
-            spans: spans.slice(),
-            text: text,
-            sentence: sentence,
-            blockTypes: blockTypes,
-            question: question || null,
-            contentContainer: popup.parentElement,
-            parentId: parentId || null,
-            parentItemId: parentItemId || null,
-            sourceTurnKey: sourceTurnKey,
-            items: [{ id: itemId2, question: question || null, status: "done", turnKeys: qaKeys.slice() }],
-            activeItemIndex: 0,
-          });
-        }
-
-        // Rebuild popup into completed view (editable question, version nav)
-        if (popup && popup.isConnected) {
-          if (popup === st.activePopup) { st.activeHighlightId = hlId2; JR.syncHighlightActive(hlId2); } // (review #8)
-          JR.rebuildPopupAfterEdit(popup, hlId2);
-        }
       }
 
-      // Determine the item id to persist
-      var persistItemId = preRegisteredItemId
-        || (detached && entry && entry.items && entry.items[0] ? entry.items[0].id : itemId2);
-
-      if (preRegisteredItemId || (detached && preRegisteredHlId)) {
-        // Update the existing pending storage record
-        updateHighlightFields(persistItemId, {
-          status: "done",
-          turnKeys: qaKeys,
-          sourceTurnKey: (entry && entry.sourceTurnKey) || sourceTurnKey,
-        }, convUrl);
-      } else {
-        saveHighlight({
-          id: persistItemId,
-          quoteId: hlId2,
-          text: text,
-          status: "done",
-          url: convUrl,
-          parentId: parentId || null,
-          parentItemId: parentItemId || null,
-          sourceTurnKey: sourceTurnKey,
-          turnKeys: qaKeys,
-        });
-      }
+      updateHighlightFields(preRegisteredItemId, {
+        status: "done",
+        turnKeys: qaKeys,
+        sourceTurnKey: (entry && entry.sourceTurnKey) || sourceTurnKey,
+      }, convUrl);
 
       JR.updateNavWidget();
       st.cancelResponseWatch = null;
