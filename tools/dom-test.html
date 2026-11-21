@@ -27,6 +27,7 @@
 <script src="../src/availability.js"></script>
 <script src="../src/locator.js"></script>
 <script src="../src/reach-turn.js"></script>
+<script src="../src/site-overlay.js"></script>
 <script src="../src/site-answer.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
@@ -2047,6 +2048,31 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     }, 300);
   }, 400);
 }, 20100); })); // (its own time — 20.1–20.9 s, between the 20 s and 21 s tests: one original is live at a time)
+
+// user 11-20 ("一个方法处理所有平台所有按钮"): a site control used in a popup is pressed as a pointer presses it (a menu
+// opening on pointerdown), and the menu the site opens in the hidden copy shows in the page, used as the site's own
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var f = document.createElement("iframe");
+  f.srcdoc = '<button id="trig">Share</button><script>document.getElementById("trig").addEventListener("pointerdown", function () {' +
+    ' var m = document.createElement("div"); m.id = "menu"; m.innerHTML = "<button id=\\"item\\">Download</button>";' +
+    ' m.querySelector("#item").addEventListener("click", function () { window.picked = true; m.remove(); }); document.body.appendChild(m); });<\/script>';
+  f.onload = function () {
+    var copyCtrl = document.createElement("button"); copyCtrl.textContent = "Share"; document.body.appendChild(copyCtrl);
+    JR.siteOverlay.forward(f.contentDocument.getElementById("trig"), copyCtrl);
+    setTimeout(function () {
+      var ov = document.querySelector(".jr-site-overlay"), item = ov && ov.querySelector("button");
+      var shown = !!item && item.textContent === "Download";
+      if (item) item.click();
+      setTimeout(function () {
+        check("a site's menu opened in the hidden copy: shown in the page, a click there is the site's own, gone when it closes",
+          shown && f.contentWindow.picked === true && !document.querySelector(".jr-site-overlay"),
+          [shown, f.contentWindow.picked, !!document.querySelector(".jr-site-overlay")].join(" "));
+        copyCtrl.remove(); f.remove(); done();
+      }, 200);
+    }, 300);
+  };
+  document.body.appendChild(f);
+}, 21100); })); // (its own time — 21.1–21.9 s, between the 21 s and 22 s tests)
 
 // 11-20 (ChatGPT rate-limited the account): a copy shown before shows from memory when reopened — no hidden copy loaded
 (function () {

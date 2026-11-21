@@ -421,6 +421,20 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
 .jr-popup-response--waiting { display: none !important; }
 
 /* Retry button inside timeout loading div */
+/* What a site opens for one of its controls used in a popup, shown here (site-overlay.js): the hidden copy's viewport,
+   moved to where the control is in the popup; above the popups */
+.jr-site-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: var(--jr-ov-w);
+  height: var(--jr-ov-h);
+  transform: translate(var(--jr-ov-x), var(--jr-ov-y));
+  pointer-events: none;
+  z-index: 2147483000;
+}
+.jr-site-overlay > * { pointer-events: auto; }
+
 /* During a send a "below" popup is tied to its highlight with CSS anchor positioning (chat.js lockScroll): the browser
    places it as it lays out each frame — the site moving its list can't leave it off its highlight for a frame */
 .jr-anchor-src { anchor-name: var(--jr-anchor-name); }

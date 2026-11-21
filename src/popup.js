@@ -94,8 +94,9 @@
         var fd = o.ownerDocument;
         if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
       }
-      o.click();
-    })(40);
+      // pressed as a pointer presses it, and what the site opens for it in the hidden copy shown here (site-overlay.js)
+      JR.siteOverlay.forward(o, el);
+    })(JR.siteAnswer && (JR.siteAnswer.state() || {}).fromMemory ? 200 : 40); // (a copy from memory: its original is looked for first)
   }
 
 

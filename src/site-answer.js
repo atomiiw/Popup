@@ -269,9 +269,11 @@
     state: function () {
       var l = live;
       return l && { keys: l.keys, key: l.key, turn: !!l.turn, connected: !!(l.turn && l.turn.isConnected),
-        fromPage: l.fromPage, finding: l.finding, tries: l.tries, asked: l.asked.length,
+        fromPage: l.fromPage, finding: l.finding, tries: l.tries, asked: l.asked.length, fromMemory: !!l.fromMemory,
         availability: l.id ? JR.availability.of(l.id) : null };
     },
+    /** Keep copy (an element) the same as orig, node by node (site-overlay.js: what the site opens for a control). */
+    mirror: function (orig, copy) { syncAttrs(orig, copy); syncChildren(Array.prototype.slice.call(orig.childNodes), copy); },
     /** The copy element live now, or null. */
     current: function () { return live ? live.copyEl : null; },
     /** Let the live original go (the popup closed, or another one is active). */

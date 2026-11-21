@@ -105,6 +105,7 @@
         "src/availability.js",
         "src/locator.js",
         "src/reach-turn.js",
+        "src/site-overlay.js",
         "src/site-answer.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",
