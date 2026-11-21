@@ -1596,12 +1596,20 @@
     var q = entry || JR.pendingL1Quotes().filter(function (p) { return p.quoteId === hlId; })[0];
     if (!q || !q.sourceTurnKey) { JR.navTrace += ", no turn key"; jumpEnds(); return; }
     JR.navTrace += ", turn " + q.sourceTurnKey.slice(0, 8) + " at " + turnPosition(JR.qa.turnOrderCache)(q.sourceTurnKey) + "/" + (JR.qa.turnOrderCache || []).length;
-    JR.scrollToTurnKey(q.sourceTurnKey, function (ok) {
+    var again = 0;
+    JR.scrollToTurnKey(q.sourceTurnKey, function reached(ok) {
       JR.navTrace += ", reached=" + ok + (gen !== navGen ? " (dropped)" : "");
       if (!ok || gen !== navGen) return jumpEnds();
       var waited = 0;
       (function open() {
         if (gen !== navGen) return jumpEnds(); // the user went elsewhere meanwhile (user, 2026-11-18: two popups at once)
+        // its turn gone again — ChatGPT laid the list out anew once it got there (live NT4 A2: a 21 600 px turn, the
+        // highlight never came back in 6 s): reached again, twice at most
+        if (waited >= 300 && !JR.site.findTurnByKey(q.sourceTurnKey) && again < 2) {
+          again++;
+          JR.navTrace += ", gone again";
+          return JR.scrollToTurnKey(q.sourceTurnKey, reached);
+        }
         var e = st.completedHighlights.get(hlId);
         if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
           openAt(e.spans[0], function () {
