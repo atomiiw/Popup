@@ -2161,6 +2161,20 @@ asyncChecks.push(new Promise(function (done) {
   failedT.remove(); imgT.remove();
 })();
 
+// live G4: Esc while the user is in a dialog the site opened (its Share panel, its editor) is the site's — the popup stays
+(function () {
+  var pop = document.createElement("div"); pop.className = "jr-popup"; document.body.appendChild(pop);
+  var dlg = document.createElement("div"); dlg.setAttribute("role", "dialog"); dlg.innerHTML = "<button>x</button>"; document.body.appendChild(dlg);
+  var got = 0; function on() { got++; } document.addEventListener("jr-escape", on);
+  dlg.querySelector("button").focus();
+  dlg.querySelector("button").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  var inDialog = got;
+  dlg.remove(); document.body.focus && document.body.focus();
+  document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  document.removeEventListener("jr-escape", on); pop.remove();
+  check("Esc in a site dialog goes to the site (popup stays); elsewhere it is Popup's", inDialog === 0 && got === 1, inDialog + " " + got);
+})();
+
 // live G4 (ChatGPT, an image just made): its Share opened a panel placed by the hidden control (off the window's
 // edge): moved by as much as the popup's control is from it; a press in it doesn't close the popup
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {

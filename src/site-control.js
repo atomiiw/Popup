@@ -127,9 +127,16 @@
         Array.prototype.forEach.call(document.body.children, function (c) {
           if (had.has(c) || c._jrMoved || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || c.classList.contains("jr-site-overlay") || c.closest(".jr-popup")) return;
           c._jrMoved = true;
+          c.setAttribute("data-jr-site-opened", ""); // (escape-guard.js: Esc in it is the site's)
           c.style.translate = Math.round(cRect.left - oRect.left) + "px " + Math.round(cRect.top - oRect.top) + "px";
           c.addEventListener("mousedown", function (e) { e.stopPropagation(); });
         });
+        // …or where it put the focus (ChatGPT's image editor: a side panel of its own layout, no new element): Esc there
+        // is the site's (escape-guard.js)
+        var f = document.activeElement;
+        // (not a text box — the site's own input: Esc there stays Popup's, Claude Code takes Esc Esc as Rewind)
+        if (f && f !== document.body && f.closest && !f.closest(".jr-popup") && !f.isContentEditable && !/^(INPUT|TEXTAREA)$/.test(f.tagName))
+          (f.closest("[role]") || f).setAttribute("data-jr-site-opened", "");
         if (Date.now() - t0 < 1500) setTimeout(function () { look(t0); }, 50);
       })(Date.now());
       return;

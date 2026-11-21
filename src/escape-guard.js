@@ -5,6 +5,11 @@
 window.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" || e.isComposing) return;
   if (!document.querySelector(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn, .jr-site-overlay")) return;
+  // the user is in something the site opened (its dialog, menu, editor — one of its controls used in a popup, live G4:
+  // Esc closed the popup and left ChatGPT's Share panel / image editor open): the site's Esc
+  var a = document.activeElement;
+  if (a && a.closest && !a.closest(".jr-popup, .jr-lightbox") &&
+      a.closest("[role=dialog], [role=alertdialog], [role=menu], [role=listbox], [aria-modal=true], [data-jr-site-opened]")) return;
   e.stopImmediatePropagation();
   e.preventDefault();
   var t = e.target && e.target.dispatchEvent ? e.target : document;
