@@ -801,8 +801,45 @@
   JR.lockScroll = function (container, anchorEl) {
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
-    var anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
+    var hint = anchorEl, anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
     if (anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey) || anchorEl;
+    // …and inside it on the passage the reader sees (live NT4 A1, ChatGPT: the reader mid-way through a long answer;
+    // at the send ChatGPT laid that turn out anew — its top held where it was, its inside not: the screen showed the
+    // next turn, and the site's scrolls that kept the turn's top went through). A block by its text, found again in
+    // the turn each time it is redrawn; where it isn't (being drawn), the turn. Each with its own place on screen.
+    var BLOCK = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, td";
+    var point = null, pointEl = null, kind = "turn", saved = { turn: null, block: null };
+    function blockText(b) { return (b.textContent || "").trim().slice(0, 80); }
+    function pickPoint(turn, near) {
+      point = null; pointEl = null;
+      if (!turn || !turn.querySelectorAll) return;
+      var b = near && near.closest && near.closest(BLOCK), band = JR.site.visibleBand();
+      if (!b || !turn.contains(b)) {
+        // the one at the upper third of the view (what is read), else the first starting in it — not one that only
+        // ends at its top edge (its own top far above)
+        var all = Array.prototype.slice.call(turn.querySelectorAll(BLOCK)), y = band.top + (band.bottom - band.top) / 3;
+        b = all.filter(function (x) { var r = x.getBoundingClientRect(); return r.height && r.top <= y && r.bottom > y; }).pop() ||
+          all.filter(function (x) { var r = x.getBoundingClientRect(); return r.height && r.top >= band.top && r.top < band.bottom; })[0];
+      }
+      var text = b && blockText(b);
+      if (!text || text.length < 12) return; // (too short to be found again)
+      var same = Array.prototype.filter.call(turn.querySelectorAll(BLOCK), function (x) { return blockText(x) === text; });
+      point = { text: text, nth: same.indexOf(b) };
+      pointEl = b;
+    }
+    function findPoint(turn) {
+      if (!point || !turn) return null;
+      if (pointEl && pointEl.isConnected && turn.contains(pointEl)) return pointEl;
+      var same = Array.prototype.filter.call(turn.querySelectorAll(BLOCK), function (x) { return blockText(x) === point.text; });
+      pointEl = same[point.nth] || same[0] || null;
+      return pointEl;
+    }
+    /** The anchor's places on screen now (the turn's and the passage's), for what they are to be held at. */
+    function takePlaces(turn) {
+      var b = findPoint(turn);
+      saved.turn = turn ? turn.getBoundingClientRect().top : null;
+      saved.block = b ? b.getBoundingClientRect().top : null;
+    }
     // marked for scroll-guard.js (page world): a site scroll keeping it in view goes through
     var marked = null;
     function mark(el) {
@@ -812,14 +849,16 @@
         if (el) el.setAttribute("data-jr-anchor", "");
       }
       // where the reader sees it: a site scroll that keeps it there goes through (scroll-guard.js)
-      var y = savedAnchorY === null ? null : String(Math.round(savedAnchorY));
+      var y = saved[kind] === null ? null : String(Math.round(saved[kind]));
       if (el && el.getAttribute("data-jr-anchor-y") !== y) {
         if (y === null) el.removeAttribute("data-jr-anchor-y"); else el.setAttribute("data-jr-anchor-y", y);
       }
     }
     function liveAnchor() {
       if (!(anchorEl && anchorEl.isConnected) && anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);
-      var a = anchorEl && anchorEl.isConnected ? anchorEl : null;
+      var t = anchorEl && anchorEl.isConnected ? anchorEl : null, b = t && findPoint(t);
+      kind = b ? "block" : "turn";
+      var a = b || t;
       mark(a);
       return a;
     }
@@ -924,7 +963,8 @@
     // loaded above), its place is where it was plus what came above (live Beta 11-20: the list collapsed, came back
     // 14 000 px taller, the hold went to the site's own place — an article far above)
     var startTop = container.scrollTop, startH = container.scrollHeight, lastH = startH;
-    var savedAnchorY = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+    pickPoint(anchorEl, hint);
+    takePlaces(anchorEl && anchorEl.isConnected ? anchorEl : null);
     // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
     var startAnchor = liveAnchor();
@@ -1022,18 +1062,21 @@
         // (where the user went is the new start: a later height change estimates from there, not the send's start —
         // review: a reader who scrolled away was thrown back)
         startTop = container.scrollTop; startH = lastH = container.scrollHeight;
-        // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
-        savedAnchorY = anchor ? anchor.getBoundingClientRect().top : null;
+        // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts; the passage now
+        // in view is the one to hold
+        var t0 = anchorEl && anchorEl.isConnected ? anchorEl : null;
+        pickPoint(t0, null);
+        takePlaces(t0);
       } else {
         if (anchor) lostAt = 0;
-        else if (anchorKey && savedAnchorY !== null && reachBack(Date.now())) return;
-        if (anchor && savedAnchorY === null) {
-          savedAnchorY = anchor.getBoundingClientRect().top;
+        else if (anchorKey && (saved.turn !== null || saved.block !== null) && reachBack(Date.now())) return;
+        if (anchor && saved[kind] === null) {
+          saved[kind] = anchor.getBoundingClientRect().top;
         } else if (anchor) {
           // The anchor turn stays where it is on screen in every drawn frame — even while ChatGPT draws it
           // as a placeholder: what the reader looks at doesn't move.
           var currentY = anchor.getBoundingClientRect().top;
-          var drift = currentY - savedAnchorY;
+          var drift = currentY - saved[kind];
           if (Math.abs(drift) > 1) {
             if (Math.abs(drift) > 40) JR.posLog("lock", st.activePopup || document.documentElement, { drift: Math.round(drift), top: Math.round(container.scrollTop) });
             // savedTop stays where the user was: ChatGPT re-creates every turn after a send, and a correction made

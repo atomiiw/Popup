@@ -2385,6 +2385,30 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 100);
 }, 15200); })); // (its own time: 15.2–17.4 s, nothing else then — it stubs frames)
 
+// live NT4 A1 (ChatGPT): the reader mid-way through a long answer; at the send the site laid that turn out anew — its
+// top where it was, its inside not: the hold kept the turn's top and the screen showed another passage. It holds the
+// passage the reader sees (by its text), and the turn only while that passage isn't drawn
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto;position:relative";
+  sc.innerHTML = "<div style='height:6000px;position:relative'><div data-turn-key='pt-1' style='position:absolute;top:100px'>" +
+    "<p id='pt-a' style='height:2000px;margin:0'>The opening of a long answer, far above the reader</p>" +
+    "<p id='pt-b' style='height:200px;margin:0'>The passage the reader is looking at, mid-way through the answer</p></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 2050;
+  var b = sc.querySelector("#pt-b"), saw = b.getBoundingClientRect().top;
+  var rafR = window.requestAnimationFrame, cafR = window.cancelAnimationFrame, realBand = JR.site.visibleBand;
+  window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
+  JR.site.visibleBand = function () { var r = sc.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+  var unlock = JR.lockScroll(sc, sc.querySelector("[data-turn-key]"));
+  setTimeout(function () {
+    sc.querySelector("#pt-a").style.height = "2500px"; // (laid out anew: 500 px more above the passage, the turn's top the same)
+    setTimeout(function () {
+      var y = sc.querySelector("#pt-b").getBoundingClientRect().top;
+      check("the hold keeps the passage the reader sees, not only its turn's top", Math.abs(y - saw) <= 2, Math.round(y) + " vs " + Math.round(saw));
+      unlock(); JR.site.visibleBand = realBand; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
+    }, 300);
+  }, 100);
+}, 17600); })); // (its own time: 17.6–18.1 s, nothing else then — it stubs frames)
+
 // user 11-21 ("整个鼠标检测鼠标clicking太乱了"): whose press is one rule (press.js), each case once
 (function () {
   var pop = document.createElement("div"); pop.className = "jr-popup";
