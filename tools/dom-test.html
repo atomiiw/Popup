@@ -635,7 +635,7 @@ function place3(contentH, y, scrollTop) {
   host3.style.height = contentH + "px"; hl3.style.top = y + "px"; sc3.scrollTop = scrollTop;
   return hl3.getBoundingClientRect();
 }
-function dir3(contentH, y, scrollTop) { return JR.bestDirection(place3(contentH, y, scrollTop), H70, 8); }
+function dir3(contentH, y, scrollTop) { return JR.bestDirection(place3(contentH, y, scrollTop), 8); }
 function popup3(answer) {
   var p = document.createElement("div");
   p.className = "jr-popup";
@@ -652,10 +652,9 @@ check("R18: both sides reachable, highlight low on screen → above", dir3(C3, 1
 // end of the chat: the room on screen decides (user, 2026-11-18) — below makes the page longer
 check("R18: scrolled to the end, highlight high on screen → below", dir3(C3, C3 - 0.75 * W3, C3 - W3) === "below", dir3(C3, C3 - 0.75 * W3, C3 - W3));
 check("R18: scrolled to the end, highlight low on screen → above", dir3(C3, C3 - 0.2 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.2 * W3, C3 - W3));
-// above only when the chat can scroll up far enough to show it
-check("R18: start of the chat, above not reachable → below", dir3(C3, 0.55 * W3, 0) === "below", dir3(C3, 0.55 * W3, 0));
-// neither side reachable (very short chat) → below: the popup makes the page longer
-check("R18: short chat, neither side reachable → below", dir3(W3 + 50, 50 + 0.5 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.5 * W3, 50));
+// user 11-21: the room on screen only — what the chat could scroll to isn't room (a popup hung behind the send box)
+check("R18: start of the chat, highlight in the lower half → above (the room on screen, not what it could scroll to)", dir3(C3, 0.55 * W3, 0) === "above", dir3(C3, 0.55 * W3, 0));
+check("R18: short chat, highlight in the upper half → below", dir3(W3 + 50, 50 + 0.45 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.45 * W3, 50));
 
 // R16/R26: a popup with an answer is as tall as the answer, up to 70vh; a longer answer scrolls inside; never capped lower
 var p16 = popup3("short");
@@ -685,27 +684,31 @@ document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r16
 document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 7 }));
 check("R26: a slip on a short popup's edge saves no height", !p16s.style.getPropertyValue("--jr-popup-h") && JR.state.customPopupHeightL1 === saved16s, p16s.style.getPropertyValue("--jr-popup-h") + " / " + JR.state.customPopupHeightL1);
 p16s.remove(); JR.state.customPopupHeightL1 = saved16s;
-// A popup with a short answer still picks its side for 70vh (an edit may bring a long answer; the side never flips):
-// top of the chat, more room above on screen but not 70vh → below
-var p16d = popup3("short");
+// user 11-21 ("都顶了就改高度"): room for 70vh on neither side → the roomier side, no taller than its room: whole on screen
+var p16d = popup3(new Array(200).join("<p>line</p>"));
+p16d.style.animation = "none"; // (no fade-in offset while measured)
 JR.positionPopup(p16d, place3(C3, 0.6 * W3, 0), host3, null, []);
-check("R26: a short-answer popup picks its side for 70vh (above can't hold it → below)", p16d._jrLockedDirection === "below", p16d._jrLockedDirection);
+var band16d = JR.site.visibleBand(), r16d = p16d.getBoundingClientRect();
+check("neither side holds 70vh: the roomier side (above), no taller than its room — whole on screen",
+  p16d._jrLockedDirection === "above" && r16d.top >= band16d.top + 7 && r16d.height > 100, p16d._jrLockedDirection + " top " + Math.round(r16d.top) + " band " + Math.round(band16d.top) + " h " + Math.round(r16d.height));
 p16d.remove();
 
 // 2026-11-20 (user, DeepSeek's first sentence): ChatGPT / DeepSeek clip a popup hanging past the end of the list, so the
 // page can't scroll to it — below a highlight in a short chat it stops where the chat can still scroll to; unclipped, 70vh
 host3.style.overflow = "clip";
 var pcap = popup3(new Array(200).join("<p>line</p>"));
-JR.positionPopup(pcap, place3(W3 + 50, 0.5 * W3, 0), host3, null, []);
-var reachCap = JR.site.visibleBand().bottom + (sc3.scrollHeight - sc3.scrollTop - sc3.clientHeight);
-check("short chat, list clips: a popup below stops where the chat ends (its end and bottom edge reachable)",
+pcap.style.animation = "none"; // (no fade-in offset while measured)
+JR.positionPopup(pcap, place3(W3 + 50, 0.25 * W3, 0), host3, null, []);
+var reachCap = JR.site.visibleBand().bottom;
+check("short chat, list clips: a popup below stops above the send box (its end and bottom edge in view)",
   pcap._jrLockedDirection === "below" && pcap.getBoundingClientRect().bottom <= reachCap - 7 && pcap.offsetHeight > 100,
   pcap._jrLockedDirection + " bottom " + Math.round(pcap.getBoundingClientRect().bottom) + " reach " + Math.round(reachCap) + " h " + pcap.offsetHeight);
 pcap.remove(); host3.style.overflow = "";
 var pfree = popup3(new Array(200).join("<p>line</p>"));
-JR.positionPopup(pfree, place3(W3 + 50, 0.5 * W3, 0), host3, null, []);
-var reachFree = JR.site.visibleBand().bottom + (sc3.scrollHeight - sc3.scrollTop - sc3.clientHeight);
-check("short chat where the popup would make the page longer: capped the same (past the end it sits under the composer)",
+pfree.style.animation = "none"; // (no fade-in offset while measured)
+JR.positionPopup(pfree, place3(C3, 0.25 * W3, 0), host3, null, []); // (a long chat: it could scroll on below — not room)
+var reachFree = JR.site.visibleBand().bottom;
+check("user 11-21: the chat going on below is no room — a popup below still stops above the send box",
   pfree.getBoundingClientRect().bottom <= reachFree + 1 - 7 && !!pfree.style.getPropertyValue("--jr-popup-cap"), Math.round(pfree.getBoundingClientRect().bottom) + " vs " + Math.round(reachFree));
 pfree.remove();
 
@@ -714,11 +717,13 @@ pfree.remove();
 (function () {
   var realBand = JR.site.visibleBand;
   var box = sc3.getBoundingClientRect();
-  JR.site.visibleBand = function () { return { top: box.top, bottom: box.top + 0.6 * W3 }; }; // the composer over the lower 40 %
+  JR.site.visibleBand = function () { return { top: box.top, bottom: box.top + 0.85 * W3 }; }; // the composer over the lower 15 %
   var pdir = popup3(new Array(200).join("<p>line</p>"));
-  JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.2 * W3, 400), host3, null, []);
-  check("end of the chat, composer over the lower part, a high highlight: below can't hold 40vh (even though the popup makes the page longer) → above",
-    pdir._jrLockedDirection === "above", pdir._jrLockedDirection);
+  pdir.style.animation = "none"; // (no fade-in offset while measured)
+  JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.15 * W3, 400), host3, null, []);
+  var rdir = pdir.getBoundingClientRect();
+  check("end of the chat, composer over the lower part, a high highlight: the roomier side (below), stopping above the send box",
+    pdir._jrLockedDirection === "below" && rdir.bottom <= box.top + 0.85 * W3 - 7, pdir._jrLockedDirection + " bottom " + Math.round(rdir.bottom) + " box " + Math.round(box.top + 0.85 * W3));
   pdir.remove();
   var pdir2 = popup3(new Array(200).join("<p>line</p>"));
   JR.positionPopup(pdir2, place3(C3, 400 + 0.15 * W3, 400), host3, null, []);
@@ -726,6 +731,28 @@ pfree.remove();
     pdir2._jrLockedDirection === "below", pdir2._jrLockedDirection);
   pdir2.remove();
   JR.site.visibleBand = realBand;
+})();
+
+// user 11-21 (ChatGPT): a popup covers the "can make mistakes" line (it was drawn over the popup) and stays under the
+// send box — the chat's own layers (site-adapter.js popupLayer, styles.css)
+(function () {
+  var wrap = document.createElement("div"); wrap.style.cssText = "position:fixed;left:0;top:0;width:400px;height:300px";
+  wrap.innerHTML = "<div class='ly-col' style='display:flex;flex-direction:column;height:300px'>" +
+    "<div data-thread-user-message-navigation-content='true' style='position:relative;flex:1'><div class='ly-host' style='position:relative;height:100px'></div></div>" +
+    "<div class='z-20' style='z-index:20;height:40px;background:#eee'>can make mistakes</div></div>" +
+    "<div class='ly-foot' style='position:absolute;left:0;right:0;bottom:0;height:20px;z-index:20;background:#ccc'></div>";
+  document.body.appendChild(wrap);
+  var host = wrap.querySelector(".ly-host"), pop = document.createElement("div");
+  pop.className = "jr-popup"; pop.style.cssText = "top:20px;left:0;width:300px;height:270px;min-height:0;max-height:none;animation:none";
+  host.appendChild(pop); JR.popupLayer(host);
+  function order(y) { // (only these: other tests' popups may lie over the same point)
+    return document.elementsFromPoint(100, y).filter(function (e) { return wrap.contains(e); })
+      .map(function (e) { return e === pop ? "popup" : e.classList.contains("z-20") ? "line" : e.classList.contains("ly-foot") ? "box" : ""; }).filter(Boolean).join(">");
+  }
+  var onLine = order(270), onFoot = order(285);
+  check("ChatGPT: a popup over the 'can make mistakes' line, under the send box",
+    onLine === "popup>line" && onFoot.indexOf("box>popup") === 0, onLine + " / " + onFoot);
+  wrap.remove();
 })();
 
 // 2026-11-20: while an edge is dragged the resize cursor is on the whole page (past the popup too), gone after
@@ -873,11 +900,6 @@ p8.innerHTML = '<div class="jr-popup-delete-confirm"><span class="jr-popup-confi
 var conf8 = p8.querySelector(".jr-popup-delete-confirm");
 check("R16: the delete confirmation is compact", Math.abs(conf8.offsetHeight - p8.offsetHeight) <= 2 && p8.offsetHeight < 100, conf8.offsetHeight + " vs " + p8.offsetHeight);
 p8.remove();
-// A compact popup opens on the side its 70vh answer will fit (top of the chat: above can't → below)
-var p8d = popup3("x"); p8d.querySelector(".jr-popup-response").remove();
-JR.positionPopup(p8d, place3(C3, 0.6 * W3, 0), host3, null, []);
-check("R18: a compact popup chooses its side for the answer's height", p8d._jrLockedDirection === "below", p8d._jrLockedDirection);
-p8d.remove();
 
 // R23: after ChatGPT re-lays the chat (window resize), every open popup, parents first, goes back to its own highlight
 var par23 = popup3("<p>parent answer with <span id=\"cs23\">a child highlight</span></p>");

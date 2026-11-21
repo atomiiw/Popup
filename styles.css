@@ -144,14 +144,14 @@ body.dark /* DeepSeek */ {
 
 .jr-popup {
   position: absolute;
-  z-index: 99;
+  z-index: var(--jr-popup-z, 99); /* (in the site's own layers on ChatGPT: JR.popupLayer) */
   width: min(360px, calc(100vw - 32px));
   max-width: 720px;
   /* As tall as its content, up to the same share of the window on every screen (drag 40-70vh,
      JR.addResizeHandlers); a long answer scrolls inside. On a tiny window the limit stops at
      the quote + question (--jr-upper-h, JR.watchUpper) + a 3-line answer (+ padding, border;
-     the 3 lines: .jr-popup-response min-height, change both). Below a highlight it stops where the chat can still be
-     scrolled to — past that it would sit under the composer (--jr-popup-cap, JR.positionPopup capBelow). */
+     the 3 lines: .jr-popup-response min-height, change both). No taller than the room on screen on its side, between the
+     site's header and its send box (--jr-popup-cap, popup-helpers.js capToRoom). */
   max-height: max(min(var(--jr-popup-h, 70vh), var(--jr-popup-cap, 100vh)), calc(var(--jr-upper-h, 0px) + 3 * 1.6 * 16px + 29px));
   background: var(--jr-bg);
   border: none;
@@ -171,8 +171,6 @@ html.jr-resizing, html.jr-resizing * { cursor: var(--jr-resize-cursor) !importan
 /* chat.js freezeChat + sites/claude.js freezeRow: a Popup question row added during the send, before its answer row
    (the turn hidden by key) exists — hidden like claude.ai's Q&As (never display:none: rocksteady keeps 0x0 rows' heights) */
 [data-jr-freeze] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
-/* popup-helpers.js withoutPopup: out of the layout for one measurement, never painted */
-.jr-popup.jr-popup--measure { display: none !important; }
 /* Put back after ChatGPT re-rendered what held it (JR.placePopup): no second fade-in */
 .jr-popup.jr-popup--back { animation: none; }
 
@@ -1082,6 +1080,8 @@ html[data-theme="dark"] .jr-popup-confirm-icon-btn--danger:hover { color: #f8717
    hidden, so the spacer would be a blank screen. Hidden only while the newest
    turn is a Popup Q&A (html.jr-tail-hidden, set by qa-content.js / chat.js).
    DOM: [data-thread-find-target=conversation] > div.relative (turn list) + div.shrink-0 (spacer). */
+/* ChatGPT's "can make mistakes" line (z 20, after the chat) under popups (z 20 there: site-adapter.js popupLayer) */
+[data-thread-user-message-navigation-content] ~ .z-20 { z-index: 19 !important; }
 html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(.relative)[style*="height"] {
   height: 0 !important; /* not display:none: that also drops the list's 6px flex gap and the page moved 6px at max scroll (R36a, E-send-3) */
 }

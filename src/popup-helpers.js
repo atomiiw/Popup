@@ -451,27 +451,22 @@
   };
 
   /**
-   * Which side of the highlight a popup of height popupH opens on (user, 2026-11-20, again after ChatGPT): first the side
-   * where it can be seen whole — the chat can scroll far enough to show it, not left behind the composer; only one does →
-   * that one. Both do → the side with more room on screen now (high on screen → below, low → above; 2026-11-18). Neither →
-   * below, no taller than the room there (capBelow). Below counts as fitting with room for at least the popup's least
-   * height (40vh, the drag limit) — it is then no taller than that room; a popup that would make the page longer counts
-   * no more room: past the chat's end it stays under the composer (Claude Code, 2026-11-20). The chat's reach is
-   * measured without the popup in it (positionPopup).
+   * Which side of the highlight a popup opens on: the one with more room on screen, between the site's header and its
+   * send box (high on screen → below, low → above, 2026-11-18) — where it fits whole that is the side; where it fits on
+   * neither it is no taller than that room (capToRoom: user 11-21 "下面顶格了不应该向上开吗 都顶了就改高度" — a popup
+   * below hung behind the send box, counted as room because the chat could scroll there).
    */
-  JR.bestDirection = function (highlightRect, popupH, gap) {
+  JR.bestDirection = function (highlightRect, gap) {
     if (!highlightRect) return "below";
-    var band = JR.site.visibleBand();
-    var sc = JR.site.scrollContainer();
-    var spaceAbove = highlightRect.top - band.top - gap;
-    var spaceBelow = band.bottom - highlightRect.bottom - gap;
-    var reachAbove = spaceAbove + (sc ? sc.scrollTop : 0);
-    var reachBelow = spaceBelow + (sc ? Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight) : 0);
-    var fitsAbove = reachAbove >= popupH, fitsBelow = reachBelow >= Math.min(popupH, 40 * window.innerHeight / 100);
-    if (fitsAbove !== fitsBelow) return fitsBelow ? "below" : "above";
-    if (fitsAbove) return spaceBelow >= spaceAbove ? "below" : "above";
-    return "below";
+    var room = roomBy(highlightRect, gap);
+    return room.below >= room.above ? "below" : "above";
   };
+  /** The room on screen above and below a highlight: to the header, to just above the send box (it may cover what the
+   *  site shows between the chat and the send box — ChatGPT's "can make mistakes" line, user 11-21). */
+  function roomBy(rect, gap) {
+    var band = JR.site.visibleBand(), edge = 8;
+    return { above: rect.top - gap - band.top - edge, below: band.bottom - edge - rect.bottom - gap };
+  }
 
   /**
    * Get the bounding rect of just the first or last line of highlight spans.
@@ -556,12 +551,6 @@
     arrow.style.left = offset + "px";
   };
 
-  // A popup grows with its answer up to its max-height (styles.css), and an edit can bring
-  // a longer answer: its side is chosen for that height so it never has to flip.
-  function answerH(popup) {
-    return parseFloat(getComputedStyle(popup).maxHeight) || popup.offsetHeight;
-  }
-
   /**
    * Position the popup inside the content container.
    * Uses position: absolute relative to the container.
@@ -573,39 +562,36 @@
     if (getComputedStyle(contentContainer).position === "static") {
       contentContainer.style.position = "relative";
     }
-    contentContainer.style.zIndex = "0";
+    JR.popupLayer(contentContainer);
+    popup.style.removeProperty("--jr-popup-cap"); // (its height limit for this place, from its full height)
     var gap = 8;
 
     contentContainer.appendChild(popup);
     JR.watchUpper(popup); // before measuring: on a tiny window the height limit depends on it
     if (forceDirection === "above" || forceDirection === "below") popup._jrLockedDirection = forceDirection;
     else {
-      var popupH = Math.max(popup.offsetHeight, answerH(popup));
-      popup._jrLockedDirection = withoutPopup(popup, function () { return JR.bestDirection(rect, popupH, gap); });
+      popup._jrLockedDirection = JR.bestDirection(rect, gap);
     }
+    capToRoom(popup, rect, gap);
     placeAt(popup, rect, spans, containerRect);
-    capBelow(popup, gap);
     JR.posLog("position", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, cTop: containerRect.top, popupH: popup.offsetHeight });
   };
 
-  /** A popup below a highlight near the end of a short chat: ChatGPT and DeepSeek clip what hangs past the end of their
-   *  list, so the page can't scroll to it — its end sat behind the composer and its bottom edge (resize) was out of reach
-   *  (user, 2026-11-20, DeepSeek's first sentence). It is no taller than the chat can still scroll to; it scrolls inside. */
-  function capBelow(popup, gap) {
-    popup.style.removeProperty("--jr-popup-cap");
-    var sc = JR.site.scrollContainer();
-    if (popup._jrLockedDirection !== "below" || !sc) return;
-    var reach = withoutPopup(popup, function () {
-      return JR.site.visibleBand().bottom + Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight);
-    });
-    popup.style.setProperty("--jr-popup-cap", Math.floor(reach - popup.getBoundingClientRect().top - gap) + "px");
+  /** No taller than the room on its side (roomBy): where both sides are short it opens on the roomier one and its answer
+   *  scrolls inside — never behind the send box or the header (user 11-21: "都顶了就改高度"). */
+  function capToRoom(popup, rect, gap) {
+    var room = roomBy(rect, gap)[popup._jrLockedDirection === "above" ? "above" : "below"];
+    popup.style.setProperty("--jr-popup-cap", Math.floor(room) + "px");
   }
 
-  /** fn() measured with this popup out of the layout (never painted): the chat's own length, not one it makes longer. */
-  function withoutPopup(popup, fn) {
-    popup.classList.add("jr-popup--measure");
-    try { return fn(); } finally { popup.classList.remove("jr-popup--measure"); }
-  }
+  /** The layer of the popups in host: their own (z-index 0 on it) unless the site needs them in its own layers
+   *  (JR.site.popupLayer: ChatGPT — over its "can make mistakes" line, under its send box). */
+  JR.popupLayer = function (host) {
+    var l = JR.site.popupLayer;
+    host.style.zIndex = l ? l.host : "0";
+    if (l) host.style.setProperty("--jr-popup-z", l.popup); else host.style.removeProperty("--jr-popup-z");
+  };
+
 
 
 
@@ -766,7 +752,7 @@
       var host = parentPopup ? parentPopup.parentElement : JR.site.popupHost(JR.site.turnOf(spans[0]));
       if (!host) return;
       if (getComputedStyle(host).position === "static") host.style.position = "relative";
-      host.style.zIndex = "0";
+      JR.popupLayer(host);
       popup.classList.add("jr-popup--back");
       host.appendChild(popup);
     }
@@ -1733,6 +1719,7 @@
       st.activePopup = null;
       if (popupParent && st.popupStack.length === 0) {
         popupParent.style.zIndex = "";
+        popupParent.style.removeProperty("--jr-popup-z");
       }
     }
     st.activeHighlightId = null;

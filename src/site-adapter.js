@@ -396,6 +396,10 @@
      * [data-thread-find-target=conversation]; the full-height list child of
      * the conversation element is the host.
      */
+    // Popups in ChatGPT's layers (user 11-21: its "can make mistakes" line, z 20 and later in the page, was drawn over a
+    // popup): the host no layer of its own, popups at 20 — over that line (styles.css puts it at 19), under the send box
+    // (z 20, later in the page) and the header (30); the chat's text stays under the line
+    popupLayer: { host: "auto", popup: "20" },
     popupHost: function (turn) {
       var el = turn || JR.site.turns()[0];
       var conv = el && el.closest(C.conversation.join(", "));
@@ -506,7 +510,7 @@
       var h = visible("[data-app-shell-titlebar]");
       var f = visible("[data-thread-scroll-footer]");
       var top = h ? h.getBoundingClientRect().bottom : 0;
-      var bottom = f ? f.getBoundingClientRect().top - 28 : window.innerHeight;
+      var bottom = f ? f.getBoundingClientRect().top : window.innerHeight; // (the send box's top)
       return { top: top, bottom: Math.min(bottom, window.innerHeight) };
     },
     // KaTeX formulas: a visible copy plus an invisible one for screen readers
