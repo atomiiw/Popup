@@ -187,6 +187,7 @@
   // --- Dismissal ---
 
   document.addEventListener("mousedown", function (e) {
+    if (e._jrPressed) return; // (a site control pressed for a popup — site-overlay.js — is no click outside it: review)
     // Ignore clicks on the trigger button
     if (e.target.closest(".jr-highlight-trigger-btn")) return;
     // ...and the second click of a double-click (on the button: it closed the popup it had just opened — peer audit

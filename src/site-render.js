@@ -37,11 +37,15 @@
   var frameAt = null;
   // At most 5 copies loaded in 2 minutes: each is a whole page of the site (ChatGPT: a dozen requests and the whole
   // conversation — live 11-20, opening old popups one after another got the account a temporary limit). Over it: none.
+  // (ChatGPT only: the rate limit is ChatGPT's — review: claude.ai popups went unreachable after 5 chats)
   var boots = [];
+  function canBoot() {
+    boots = boots.filter(function (t) { return Date.now() - t < 120000; });
+    return JR.site.name !== "chatgpt" || boots.length < 5;
+  }
   function frameFor(conv, at) {
     if (frame && frameConv === conv && frame.isConnected && (at === undefined || frameAt === (at || null))) return frame;
-    boots = boots.filter(function (t) { return Date.now() - t < 120000; });
-    if (boots.length >= 5) return null;
+    if (!canBoot()) return null;
     boots.push(Date.now());
     frameAt = at || null;
     dropFrame();
@@ -197,13 +201,13 @@
       run(function () {
         var conv = JR.site.conversationId();
         if (!conv || !key) return give(null);
-        if (fresh) { dropFrame(); reloadedFor.delete(key); }
+        if (fresh && canBoot()) { dropFrame(); reloadedFor.delete(key); }
         if (onWaiting) onWaiting("frame");
         // a Q&A newer than the order read (sent since): the order read again, and a copy newer than it (live Beta C2: the
         // copy and the order from before the send — looked for at the end of an old copy until the deadline)
         var known = (JR.qa.turnOrderCache || []).indexOf(key) >= 0;
         // (the whole conversation read again: at most every 30 s)
-        if (!known && JR.site.name === "chatgpt" && JR.qa.resetApi && Date.now() - lastReread > 30000) { lastReread = Date.now(); JR.qa.resetApi(); dropFrame(); }
+        if (!known && JR.site.name === "chatgpt" && JR.qa.resetApi && Date.now() - lastReread > 30000 && canBoot()) { lastReread = Date.now(); JR.qa.resetApi(); dropFrame(); }
         return (JR.qa.turnOrder ? JR.qa.turnOrder() : Promise.resolve([])).then(function (order) {
           // ChatGPT: the copy opened at the answer (its network tap there, net-tap.js) — the answer drawn last, at once;
           // no scrolling the copy to it (its list didn't follow a scroll: 20–40 s, or never — live 11-20). One already
@@ -226,11 +230,12 @@
             // stuck (live 11-20, ChatGPT: after many sends it kept the same 3 turns mounted wherever it scrolled — an older
             // popup stayed Loading… for good)
             if (turn || !wanted.has(key) || reloadedFor.has(key)) return turn;
+            if (!canBoot()) { missWhy[key] = "too-many"; return null; }
             reloadedFor.add(key);
             // sent after the order and the frame were loaded: both again (review: else the search looks only at the end)
             JR.qa.resetApi();
             dropFrame();
-            if (!frameFor(conv)) { missWhy[key] = "too-many"; return null; }
+            frameFor(conv);
             run(loadAll); // (after this one: the next answer asked for is then found at once)
             return frameReady()
               .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
@@ -272,8 +277,7 @@
    *  so opening one is quick. Queued like a render: they share the frame's scrolling. */
   JR.siteRenderPrewarm = function () {
     var conv = JR.site.conversationId();
-    if (!conv) return;
-    frameFor(conv);
+    if (!conv || !frameFor(conv)) return;
     run(function () { return frameReady().then(function (ready) { return ready ? loadAll() : null; }); });
   };
 
@@ -291,6 +295,7 @@
     fd.addEventListener("focusin", function () { setTimeout(giveFocusBack, 0); }, true);
     // a key while a forwarded click has the frame is the page's (review: Esc right after Copy didn't close the popup)
     fd.addEventListener("keydown", function (e) {
+      if (e._jrPressed) return; // (Esc sent to the site's menu there — site-overlay.js; else it came back as the page's: a loop)
       e.preventDefault(); e.stopPropagation();
       focusUntil = 0; giveFocusBack();
       document.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey,

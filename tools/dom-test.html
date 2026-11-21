@@ -2067,12 +2067,60 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
         check("a site's menu opened in the hidden copy: shown in the page, a click there is the site's own, gone when it closes",
           shown && f.contentWindow.picked === true && !document.querySelector(".jr-site-overlay"),
           [shown, f.contentWindow.picked, !!document.querySelector(".jr-site-overlay")].join(" "));
-        copyCtrl.remove(); f.remove(); done();
+        // Esc with a popup open: the menu closes (Esc to the site there, once — it came back as the page's: a loop), the popup stays
+        var pop = document.createElement("div"); pop.className = "jr-popup"; document.body.appendChild(pop);
+        var popupClosed = false, escs = 0;
+        function onJrEsc() { popupClosed = true; }
+        document.addEventListener("jr-escape", onJrEsc);
+        f.contentDocument.addEventListener("keydown", function (e) { if (e.key === "Escape") escs++; });
+        JR.siteOverlay.forward(f.contentDocument.getElementById("trig"), copyCtrl);
+        setTimeout(function () {
+          var shown2 = !!document.querySelector(".jr-site-overlay");
+          var mdOutside = 0;
+          function md(e) { if (!e.target.closest(".jr-popup")) mdOutside++; }
+          document.addEventListener("mousedown", md);
+          var ov2 = document.querySelector(".jr-site-overlay button");
+          if (ov2) ov2.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+          document.removeEventListener("mousedown", md);
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          document.removeEventListener("jr-escape", onJrEsc);
+          check("Esc on the site's menu with a popup open: the menu closes, Esc reaches the site once, the popup stays; a press in the menu is no press outside",
+            shown2 && !document.querySelector(".jr-site-overlay") && escs === 1 && !popupClosed && mdOutside === 0,
+            [shown2, !!document.querySelector(".jr-site-overlay"), escs, popupClosed, mdOutside].join(" "));
+          pop.remove(); copyCtrl.remove(); f.remove(); done();
+        }, 300);
       }, 200);
     }, 300);
   };
   document.body.appendChild(f);
 }, 21100); })); // (its own time — 21.1–21.9 s, between the 21 s and 22 s tests)
+
+// review 11-20 night: a memory copy of a popup's version (an id): a site control looks for its original (it was "shown",
+// and find looks only while locating — the controls were dead); memory is per chat (DeepSeek's ids are 1, 2, 3 per chat)
+(function () {
+  var realO = JR.site.original, realC = JR.site.conversationId, asked = 0, conv = "chat-A";
+  JR.site.conversationId = function () { return conv; };
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "mem-2"); t.hidden = true;
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>CHAT A</p><button>Copy</button></div></div>';
+  document.body.appendChild(t);
+  JR.site.original = function () { asked++; return new Promise(function () {}); };
+  var c1 = document.createElement("div");
+  JR.siteAnswer.follow(c1, ["mem-2"], null, "ver-mem-2");
+  JR.siteAnswer.stop(); t.remove();
+  var c2 = document.createElement("div");
+  JR.siteAnswer.follow(c2, ["mem-2"], null, "ver-mem-2");
+  var shownFromMemory = /CHAT A/.test(c2.textContent) && asked === 0;
+  JR.siteAnswer.counterpart(c2.querySelector("button"));
+  check("a memory copy with a version id: a site control looks for its original (locating)", shownFromMemory && asked === 1 && JR.availability.of("ver-mem-2").kind === "locating",
+    [shownFromMemory, asked, JR.availability.of("ver-mem-2").kind].join(" "));
+  JR.siteAnswer.stop();
+  conv = "chat-B";
+  var c3 = document.createElement("div");
+  JR.siteAnswer.follow(c3, ["mem-2"], null);
+  check("memory is per chat: the same key in another chat isn't that chat's answer", !/CHAT A/.test(c3.textContent), c3.textContent);
+  JR.siteAnswer.stop(); JR.availability.clear();
+  JR.site.original = realO; JR.site.conversationId = realC;
+})();
 
 // 11-20 (ChatGPT rate-limited the account): a copy shown before shows from memory when reopened — no hidden copy loaded
 (function () {

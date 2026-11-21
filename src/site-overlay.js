@@ -6,16 +6,20 @@
 (function () {
   "use strict";
 
+  /** el gets ev, marked as Popup's (_jrPressed: not the user's press outside a popup, nor the user scrolling, nor a key
+   *  of the page's — content.js, chat.js markUser, site-render.js guardFocus). */
+  function send(el, ev) { ev._jrPressed = true; el.dispatchEvent(ev); }
+
   /** Press el as a pointer does: down, up, then the click (a site's menu may open on pointerdown, a button on click). */
   function press(el) {
     var w = el.ownerDocument.defaultView, r = el.getBoundingClientRect();
     var o = { bubbles: true, cancelable: true, composed: true, view: w, button: 0, buttons: 1,
       clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, pointerId: 1, pointerType: "mouse", isPrimary: true };
-    if (w.PointerEvent) el.dispatchEvent(new w.PointerEvent("pointerdown", o));
-    el.dispatchEvent(new w.MouseEvent("mousedown", o));
+    if (w.PointerEvent) send(el, new w.PointerEvent("pointerdown", o));
+    send(el, new w.MouseEvent("mousedown", o));
     o.buttons = 0;
-    if (w.PointerEvent) el.dispatchEvent(new w.PointerEvent("pointerup", o));
-    el.dispatchEvent(new w.MouseEvent("mouseup", o));
+    if (w.PointerEvent) send(el, new w.PointerEvent("pointerup", o));
+    send(el, new w.MouseEvent("mouseup", o));
     el.click();
   }
 
@@ -61,16 +65,20 @@
       e.preventDefault(); e.stopPropagation();
       forward(t, e.target);
     }, true);
-    // away from it, or Esc: as on the site (Esc to its document)
-    function escape() { doc.dispatchEvent(new fw.KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true })); }
-    function away(e) { if (!wrap.contains(e.target)) { escape(); setTimeout(function () { if (orig.isConnected) close(); }, 300); } }
-    function key(e) { if (e.key === "Escape") { e.stopPropagation(); escape(); } }
+    // a press in it is no press outside the popup (content.js closes the popups on one)
+    function inside(e) { e.stopPropagation(); }
+    wrap.addEventListener("mousedown", inside);
+    wrap.addEventListener("pointerdown", inside);
+    // away from it, or Esc (escape-guard.js: "jr-escape" — this first, the popup stays): as on the site, Esc to its document
+    function escape() { send(doc, new fw.KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true })); }
+    function away(e) { if (!e._jrPressed && !wrap.contains(e.target)) { escape(); setTimeout(function () { if (orig.isConnected) close(); }, 300); } }
+    function key(e) { e.stopImmediatePropagation(); escape(); close(); }
     document.addEventListener("pointerdown", away, true);
-    document.addEventListener("keydown", key, true);
+    window.addEventListener("jr-escape", key, true);
     function close() {
       obs.disconnect(); gone.disconnect(); wrap.remove();
       document.removeEventListener("pointerdown", away, true);
-      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("jr-escape", key, true);
       open = open.filter(function (x) { return x.orig !== orig; });
     }
     open.push({ orig: orig, close: close });
@@ -95,5 +103,5 @@
     })();
   }
 
-  JR.siteOverlay = { forward: forward, press: press };
+  JR.siteOverlay = { forward: forward };
 })();

@@ -22,6 +22,11 @@
   function wireResponseClicks(responseDiv) {
     if (responseDiv._jrClickWired) return;
     responseDiv._jrClickWired = true;
+    // (a copy shown from memory: its original looked for as the pointer comes to a site control — by the click it may be in)
+    responseDiv.addEventListener("pointerover", function (e) {
+      var c = e.target.closest && e.target.closest("button, [role=button]");
+      if (c && JR.siteAnswer && JR.siteAnswer.current() === responseDiv && (JR.siteAnswer.state() || {}).fromMemory) JR.siteAnswer.counterpart(c);
+    });
     responseDiv.addEventListener("click", function (e) {
       // --- Whatever the site handles — a control it drew (a code block's Run / Copy / wrap / Download, whatever it adds),
       // a button, ChatGPT's entity links: one rule (P0-7 #4), the site's own, clicked at the same place in the original
@@ -1253,7 +1258,8 @@
     // the area following its original right now (the one that streamed) stays — whatever the version's keys say yet
     // (drawn record 11-20: at the end of an answer one frame showed a new empty area — its keys not in yet)
     var live = JR.siteAnswer && JR.siteAnswer.current();
-    if (item.status === "done" && live && live.parentNode === popup && live.classList.contains("jr-popup-response")) keep = live;
+    // (only while the version has no keys yet: another version's live area is not this one's — review, ‹ ›)
+    if (item.status === "done" && !keys && live && live.parentNode === popup && live.classList.contains("jr-popup-response")) keep = live;
     if (item.status === "done" && keys && !keep) {
       // (the same Q&A: a key in common — the streaming area had the turn's key, the done version its keys: equal strings
       // only, the area was dropped and a new one empty ~0.5 s until its copy came — the flash at the end, drawn record 11-20)
@@ -1335,6 +1341,7 @@
       }
     }
     stop = JR.availability.watch(item.id, render);
+    responseDiv._jrUnwatch = function () { if (stop) stop(); }; // (its copy in: ended there — else kept till the next event)
     render(JR.availability.of(item.id));
   }
 
@@ -1439,7 +1446,7 @@
     if (activeItem && activeItem.turnKeys && activeItem.turnKeys.length && JR.siteAnswer) {
       responseDiv._jrSiteFollow = function (fresh) { // fresh: Try again — a fresh hidden copy, a deadline of its own
         JR.siteAnswer.follow(responseDiv, activeItem.turnKeys, function (el, turn) {
-          if (responseDiv._jrWait) { responseDiv._jrWait.remove(); responseDiv._jrWait = null; responseDiv.classList.remove("jr-popup-response--waiting"); }
+          if (responseDiv._jrWait) { responseDiv._jrWait.remove(); responseDiv._jrWait = null; responseDiv.classList.remove("jr-popup-response--waiting"); if (responseDiv._jrUnwatch) responseDiv._jrUnwatch(); }
           // its question isn't stored and the site's data didn't give it (Claude Code has none to read): from the
           // original's question row (live 2026-11-19: a Claude Code answer from the frame had no question line)
           var parsed = activeItem.question == null && turn && JR.parsePopupMessage(JR.site.userText(turn) || "");

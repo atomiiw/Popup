@@ -4,7 +4,7 @@
 // is up (a popup, its lightbox, the ask button).
 window.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" || e.isComposing) return;
-  if (!document.querySelector(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn")) return;
+  if (!document.querySelector(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn, .jr-site-overlay")) return;
   e.stopImmediatePropagation();
   e.preventDefault();
   var t = e.target && e.target.dispatchEvent ? e.target : document;

@@ -924,6 +924,7 @@
     }
 
     function markUser(e) {
+      if (e._jrPressed) return; // (a site control pressed for a popup: site-overlay.js)
       // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
       // composedPath: sending removes the question box before the event gets here, so e.target is no longer in the popup
       if ((e.type === "keydown" || e.type === "pointerdown") && e.composedPath().some(function (n) { return n.classList && n.classList.contains("jr-popup"); })) return;
