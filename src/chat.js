@@ -857,11 +857,18 @@
         if (y === null) el.removeAttribute("data-jr-anchor-y"); else el.setAttribute("data-jr-anchor-y", y);
       }
     }
+    var lastSeen = { a: null, t: null }, diag = location.hash.indexOf("jr-poslog") !== -1;
     function liveAnchor() {
       if (!(anchorEl && anchorEl.isConnected) && anchorKey) anchorEl = JR.site.findTurnByKey(anchorKey);
       var t = anchorEl && anchorEl.isConnected ? anchorEl : null, b = t && findPoint(t);
       kind = b ? "block" : "turn";
       var a = b || t;
+      if (diag && (a !== lastSeen.a || t !== lastSeen.t)) { // (#jr-poslog: what the hold goes by, each time it changes)
+        var hl0 = JR.viewAnchor && st.activeSourceHighlights[0];
+        JR.posLog("anchor", st.activePopup || document.documentElement, { kind: kind, sameTurn: t === lastSeen.t, y: a ? Math.round(a.getBoundingClientRect().top) : null,
+          hl: hl0 && hl0.isConnected ? Math.round(hl0.getBoundingClientRect().top) : null, inA: !!(hl0 && a && a.contains(hl0)), text: point ? point.text.slice(0, 24) : null });
+        lastSeen = { a: a, t: t };
+      }
       mark(a);
       return a;
     }
@@ -892,22 +899,30 @@
     function anchorPopups() {
       if (!canAnchor) return;
       openPopups().forEach(function (p) {
-        if (!p || !p.isConnected || p._jrAnchorHl || p._jrLockedDirection === "above") return;
+        if (!p || !p.isConnected || p._jrAnchorHl) return;
+        // an "above" one by its bottom on the highlight's top: it grows up from there (live NT7, ChatGPT: glued by the
+        // hold's look, it was drawn off screen ~0.3 s while the site re-laid its list at the send)
+        var up = p._jrLockedDirection === "above";
+        if (up && p._jrBottomAnchor == null) return;
         var hl = sourceOf(p);
         if (!hl || !hl.isConnected || !hl.getBoundingClientRect().height) return;
-        var name = "--jr-a" + (++anchorSeq), dy = p.getBoundingClientRect().top - hl.getBoundingClientRect().top;
+        var pr = p.getBoundingClientRect(), hr = hl.getBoundingClientRect(), name = "--jr-a" + (++anchorSeq);
+        var dy = up ? hr.top - pr.bottom : pr.top - hr.top, want = up ? pr.bottom : pr.top;
+        // (no anchor: where it is — a below one's top; an above one's bottom, as an inset from its container's bottom)
+        var stays = up ? (p.offsetParent ? p.offsetParent.clientHeight : 0) - p._jrBottomAnchor : (parseFloat(p.style.top) || 0);
         hl.style.setProperty("--jr-anchor-name", name);
         hl.classList.add("jr-anchor-src");
         p.style.setProperty("--jr-anchor", name);
         p.style.setProperty("--jr-anchor-dy", dy + "px");
-        p.style.setProperty("--jr-anchor-fb", ((parseFloat(p.style.top) || 0) - dy) + "px"); // (no anchor: where it is)
-        var want = p.getBoundingClientRect().top;
+        p.style.setProperty("--jr-anchor-fb", (stays - dy) + "px");
         p.classList.add("jr-anchored");
-        // (CSS takes an inline highlight's top a few px off from its client rect — live dom-test: 4 px — set to the place)
-        var off = want - p.getBoundingClientRect().top;
+        if (up) p.classList.add("jr-anchored-up");
+        // (CSS takes an inline highlight's top a few px off from its client rect — live dom-test: 4 px — set to the place;
+        // a bottom inset grows upward)
+        var nr = p.getBoundingClientRect(), off = (want - (up ? nr.bottom : nr.top)) * (up ? -1 : 1);
         if (Math.abs(off) >= 0.5) {
           p.style.setProperty("--jr-anchor-dy", (dy + off) + "px");
-          p.style.setProperty("--jr-anchor-fb", ((parseFloat(p.style.top) || 0) - dy - off) + "px"); // (no anchor: still there)
+          p.style.setProperty("--jr-anchor-fb", (stays - dy - off) + "px"); // (no anchor: still there)
         }
         p._jrAnchorHl = hl;
       });
@@ -915,8 +930,11 @@
     /** Back to a plain top where it is now (the send's end, or its highlight gone). */
     function unanchor(p, keep) {
       if (!p._jrAnchorHl) return;
-      if (p.isConnected) p.style.top = p.offsetTop + "px"; // (same place: then the class goes)
-      p.classList.remove("jr-anchored");
+      if (p.isConnected) { // (same place: then the class goes)
+        p.style.top = p.offsetTop + "px";
+        if (p.classList.contains("jr-anchored-up")) p._jrBottomAnchor = p.offsetTop + p.offsetHeight;
+      }
+      p.classList.remove("jr-anchored", "jr-anchored-up");
       ["--jr-anchor", "--jr-anchor-dy", "--jr-anchor-fb"].forEach(function (v) { p.style.removeProperty(v); });
       var hl = p._jrAnchorHl;
       p._jrAnchorHl = null;
@@ -942,7 +960,10 @@
         if (p._jrAnchorHl) { // tied by CSS: only its highlight must still be there (re-wrapped: the new one)
           // its place to the anchor while tied, for when the tie breaks (live B3, ChatGPT: the highlight's turn redrawn
           // while the list above was re-laid — untied, it fell back to its top from before the re-lay, 22 000 px off)
-          if (p._jrAnchorHl.isConnected) { if (p._jrAnchorHl.getBoundingClientRect().height) glued.set(p, offs(p.getBoundingClientRect().top)); return; }
+          if (p._jrAnchorHl.isConnected) {
+            if (p._jrAnchorHl.getBoundingClientRect().height) { var tr = p.getBoundingClientRect(); glued.set(p, offs(p.classList.contains("jr-anchored-up") ? tr.bottom : tr.top)); }
+            return;
+          }
           var id = p._jrAnchorHl.getAttribute("data-jr-highlight-id"), now = id && document.querySelector('[data-jr-highlight-id="' + id + '"]');
           if (now && now.getBoundingClientRect().height) {
             now.style.setProperty("--jr-anchor-name", p.style.getPropertyValue("--jr-anchor"));
@@ -1058,7 +1079,7 @@
       return true;
     }
 
-    var nCorrect = 0, diag = location.hash.indexOf("jr-poslog") !== -1;
+    var nCorrect = 0;
     function correct() {
       if (reaching) return; // (its search scrolls the list: not held against it)
       if (diag) html.setAttribute("data-jr-correct-n", ++nCorrect); // (#jr-poslog: how often the hold looks)

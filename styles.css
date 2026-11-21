@@ -475,6 +475,11 @@ html [data-jr-pressing][data-jr-pressing] { visibility: visible !important; opac
   position-anchor: var(--jr-anchor);
   top: calc(anchor(top, var(--jr-anchor-fb)) + var(--jr-anchor-dy)) !important;
 }
+/* an "above" popup: its bottom on the highlight's top — it grows up from there */
+.jr-popup.jr-anchored.jr-anchored-up {
+  top: auto !important;
+  bottom: calc(anchor(top, var(--jr-anchor-fb)) + var(--jr-anchor-dy)) !important;
+}
 
 .jr-retry-btn {
   display: flex;

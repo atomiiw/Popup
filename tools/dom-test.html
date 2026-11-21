@@ -1130,6 +1130,37 @@ asyncChecks.push(new Promise(function (done) {
   sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
 })();
 
+// live NT7 11-21 (ChatGPT): an "above" popup, glued by the hold's look, was drawn off screen ~0.3 s while the site re-laid
+// its list at the send. It is tied too — its bottom on its highlight's top, growing up from there; after: a plain top
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='host' style='height:4000px;position:relative'><div class='row' style='height:56px'></div><div class='sp' style='height:1000px'></div>" +
+    "<div class='a' data-turn-key='anc-up' style='height:50px'>x <span class='jr-source-highlight' data-jr-highlight-id='anc-up-hl'>hl</span></div>" +
+    "<div class='jr-popup' style='position:absolute;top:900px;height:80px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 900;
+  var span = sc.querySelector(".jr-source-highlight"), pop = sc.querySelector(".jr-popup"), raf = window.requestAnimationFrame;
+  pop._jrLockedDirection = "above"; pop._jrBottomAnchor = 980;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [span];
+  function gap() { return span.getBoundingClientRect().top - pop.getBoundingClientRect().bottom; }
+  var gap0 = gap();
+  window.requestAnimationFrame = function () { return 0; }; // (no frame runs: only the browser's layout can keep it)
+  var unlock = JR.lockScroll(sc, span);
+  var tied = pop.classList.contains("jr-anchored-up");
+  sc.querySelector(".row").style.height = "4px"; // the row above collapses (52 px)
+  var gap1 = gap();
+  pop.style.height = "140px"; // (the answer coming in)
+  var gap2 = gap(), at = pop.getBoundingClientRect().bottom;
+  unlock();
+  window.requestAnimationFrame = raf;
+  var after = pop.getBoundingClientRect().bottom, bottomAt = pop._jrBottomAnchor;
+  check("send: an above popup stays on its highlight by its bottom (CSS anchor), grows up; then a plain top where it is",
+    tied && Math.abs(gap1 - gap0) <= 1 && Math.abs(gap2 - gap0) <= 1 && Math.abs(after - at) <= 1 && !pop.classList.contains("jr-anchored") &&
+      Math.abs(bottomAt - (pop.offsetTop + pop.offsetHeight)) <= 1,
+    [tied, gap0, gap1, gap2, at, after, bottomAt].map(function (v) { return typeof v === "number" ? Math.round(v) : v; }).join(" "));
+  sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
 // live B3 / old Chrome 11-21 (ChatGPT): during a send the site re-laid the list above (a 21 000 px turn re-estimated) and
 // redrew the highlight's turn — the tie lost its highlight, the popup fell back to its top from before the re-lay
 // (22 000 px off screen) and the glue held it there ~12 s. It stays where it was to the reader's place.
