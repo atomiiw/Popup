@@ -974,8 +974,24 @@
       el.removeEventListener("pointerdown", markUser);
     }
 
+    // The reader's turn gone from the list and the list settled without it (live NT2 G2, 4 runs, ChatGPT: at the send
+    // it rebuilt its list — 75 196 → 50 945 px, the reader's 19 500 px turn back to an estimate — and scrolled to
+    // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
+    // held where the reader saw it (its drift, below). Twice at most per send.
+    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0;
+    function reachBack(now) {
+      if (!lostAt) lostAt = now;
+      if (container.scrollHeight !== settledH) { settledH = container.scrollHeight; settledAt = now; }
+      if (reaches >= 2 || now - lostAt < 600 || now - settledAt < 600 || !JR.scrollToTurnKey) return false;
+      reaching = true; reaches++;
+      JR.posLog("reach-back", document.documentElement, { key: String(anchorKey).slice(0, 8), top: Math.round(container.scrollTop) });
+      JR.scrollToTurnKey(anchorKey, function () { reaching = false; lostAt = 0; savedTop = container.scrollTop; });
+      return true;
+    }
+
     var nCorrect = 0, diag = location.hash.indexOf("jr-poslog") !== -1;
     function correct() {
+      if (reaching) return; // (its search scrolls the list: not held against it)
       if (diag) html.setAttribute("data-jr-correct-n", ++nCorrect); // (#jr-poslog: how often the hold looks)
       if (!container.isConnected) {
         var fresh = JR.site.scrollContainer();
@@ -999,6 +1015,8 @@
         // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
         savedAnchorY = anchor ? anchor.getBoundingClientRect().top : null;
       } else {
+        if (anchor) lostAt = 0;
+        else if (anchorKey && savedAnchorY !== null && reachBack(Date.now())) return;
         if (anchor && savedAnchorY === null) {
           savedAnchorY = anchor.getBoundingClientRect().top;
         } else if (anchor) {

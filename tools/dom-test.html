@@ -2308,6 +2308,33 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(f);
 }, 6000); })); // (its own time: 6–8 s, nothing else then — as the one at 3 s)
 
+// live NT2 G2 (ChatGPT, 4 runs): at the send the site rebuilt its list shorter, the reader's turn went back to an
+// estimate and out of the list, and it scrolled past it — no height estimate knows where it went: once the list
+// settles without it, it is reached again by its key (as ∧ does) and held where the reader saw it
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:200px;overflow:auto;position:relative";
+  sc.innerHTML = "<div style='height:3000px;position:relative'><div data-turn-key='rb-1' style='position:absolute;top:1500px;height:400px'>x</div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1450;
+  var list = sc.firstElementChild, turn = list.firstElementChild, saw = turn.getBoundingClientRect().top;
+  var rafR = window.requestAnimationFrame, cafR = window.cancelAnimationFrame, realReach = JR.scrollToTurnKey, asked = [];
+  window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
+  JR.scrollToTurnKey = function (key, cb) { // (its search: found further up in the rebuilt list)
+    asked.push(key);
+    setTimeout(function () { var t = document.createElement("div"); t.setAttribute("data-turn-key", "rb-1"); t.style.cssText = "position:absolute;top:700px;height:400px";
+      list.appendChild(t); sc.scrollTop = 600; cb(true); }, 50);
+  };
+  var unlock = JR.lockScroll(sc, turn);
+  setTimeout(function () {
+    turn.remove(); list.style.height = "2000px"; sc.scrollTop = 1700; // (rebuilt shorter, the site's scroll past it)
+    setTimeout(function () {
+      var now = list.querySelector("[data-turn-key='rb-1']"), y = now && now.getBoundingClientRect().top;
+      check("the reader's turn gone in a rebuilt list: reached again by key once it settles, back where the reader saw it",
+        asked.join() === "rb-1" && now && Math.abs(y - saw) <= 2, asked.join() + " " + (now ? Math.round(y) + " vs " + Math.round(saw) : "not back"));
+      unlock(); JR.scrollToTurnKey = realReach; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
+    }, 1400);
+  }, 100);
+}, 13000); })); // (its own time: 13–14.6 s, nothing else then — it stubs frames)
+
 // user 11-21 ("整个鼠标检测鼠标clicking太乱了"): whose press is one rule (press.js), each case once
 (function () {
   var pop = document.createElement("div"); pop.className = "jr-popup";

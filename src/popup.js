@@ -631,7 +631,7 @@
 
   function showDeleteConfirmation(hlId, entry, own) {
     // The trash of a popup with popups open inside it: those close, and it asks on its own popup (user, 2026-11-18:
-    // it asked on the newest one). (The trash stops its mousedown, so the popup's own close-to-this-level doesn't run.)
+    // it asked on the newest one). (The popup's own close-to-this-level skips its buttons: press.js "control".)
     while (own && st.activePopup && st.activePopup !== own && st.popupStack.length > 0) JR.removePopup();
     if (!st.activePopup) return;
     var popup = st.activePopup;

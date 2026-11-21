@@ -34,7 +34,7 @@
     return !!(el && el.matches && el.matches(SCROLLER));
   }
 
-  // What was blocked (testing): the last 30 calls in #jr-scrolllog[data-json] — on the page, so DOM-only tools can read it
+  // What was blocked, and let through during a send (testing): the last 30 calls in #jr-scrolllog[data-json] — on the page, so DOM-only tools can read it
   var blocked = [];
   function note(what, arg) {
     blocked.push({ t: Math.round(performance.now()), what: what, arg: String(arg === undefined ? "" : typeof arg === "object" ? JSON.stringify(arg) : arg).slice(0, 80),
@@ -106,8 +106,10 @@
     return top >= max - el.clientHeight;
   }
   var passed = 0;
-  function letThrough(el) {
-    if (lockOn() && isThreadScroller(el)) document.documentElement.setAttribute("data-jr-site-scroll", String(++passed));
+  function letThrough(el, what, v) {
+    if (!lockOn() || !isThreadScroller(el)) return;
+    document.documentElement.setAttribute("data-jr-site-scroll", String(++passed));
+    note("let " + what, v); // (who moved the chat during a send: NT2 G2 — its list rebuilt, the scroll went far)
   }
   function targetTop(el, name, args) {
     var a = args[0], top = a && typeof a === "object" ? a.top : args[1];
@@ -123,7 +125,7 @@
     P[name] = function () {
       var top = targetTop(this, name, arguments);
       if (top !== undefined && blocks(this, top)) return note(name, arguments[0]);
-      if (top !== undefined) letThrough(this);
+      if (top !== undefined) letThrough(this, name, Math.round(top));
       return orig.apply(this, arguments);
     };
   });
@@ -142,7 +144,7 @@
       get: desc.get,
       set: function (v) {
         if (blocks(this, v)) return note("scrollTop=", Math.round(v));
-        letThrough(this);
+        letThrough(this, "scrollTop=", Math.round(v));
         desc.set.call(this, v);
       },
     });
