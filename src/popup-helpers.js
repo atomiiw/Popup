@@ -1518,7 +1518,14 @@
       (function openChild() {
         var target = st.activePopup && (child.wholeResponse ? st.activePopup.querySelector(".jr-reply-whole-btn")
           : st.activePopup.querySelector('[data-jr-highlight-id="' + child.quoteId + '"]'));
-        if (!target || !st.completedHighlights.has(child.quoteId)) return wait("level " + (k + 1) + " highlight", openChild);
+        if (!target || !st.completedHighlights.has(child.quoteId)) {
+          // its parent's answer still loading (from the hidden copy: 20 s, live NT1 claude.ai — the jump stopped at the
+          // parent): the highlight comes with it — waited for till that answer is in or can't be (its own deadline)
+          var parentLoading = st.activePopup && st.activePopup.querySelector(".jr-popup-response--waiting") &&
+            !st.activePopup.querySelector(".jr-popup-unreachable");
+          if (parentLoading && gen === navGen) { waited = 0; return setTimeout(openChild, 100); }
+          return wait("level " + (k + 1) + " highlight", openChild);
+        }
         // a Reply once this one's answer is in, as a highlight (which is in it) is: its button is there before — opened
         // on, this one stayed on "Loading…" as a parent (only the active popup follows; live P0-2, dev.151) — 5 s at most
         var waiting = child.wholeResponse && st.activePopup.querySelector(":scope > .jr-popup-response--waiting");
