@@ -1361,6 +1361,41 @@ asyncChecks.push(new Promise(function (done) {
   JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
 })();
 
+// live NT13 G2 (ChatGPT): it measured the 21 000 px turns above anew, kept another turn in place, and the reader's turn
+// went 9 000 px down, off the page — no search (each laid the list out as placeholders again): where it is comes from a
+// near turn drawn whole and the heights between; scrolled there, it is drawn again where the reader saw it
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto;position:relative";
+  sc.innerHTML = "<div class='ch-list' style='height:9000px;position:relative'>" +
+    "<div data-turn-key='ch-a' style='position:absolute;top:1000px;height:500px;width:10px'></div>" +
+    "<div data-turn-key='ch-b' style='position:absolute;top:1500px;height:400px;width:10px'></div>" +
+    "<div data-turn-key='ch-r' style='position:absolute;top:1900px;height:600px;width:10px'>x</div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 1850;
+  var list = sc.firstElementChild, r = list.querySelector("[data-turn-key='ch-r']"), saw = r.getBoundingClientRect().top, frames = [], raf = window.requestAnimationFrame;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = null; JR.state.popupStack = []; JR.state.activeSourceHighlights = [];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, r);
+  window.requestAnimationFrame = raf;
+  run(2);
+  // (the turns above measured anew: 2 000 px more above; the site kept its scroll, the reader's turn off the page)
+  list.querySelector("[data-turn-key='ch-a']").style.top = "3000px"; list.querySelector("[data-turn-key='ch-b']").style.top = "3500px";
+  r.remove();
+  run(1);
+  r.style.top = "3900px"; // (drawn again where it is now — only when scrolled near it, as ChatGPT's list does)
+  if (sc.scrollTop > 3900 - 900 && sc.scrollTop < 3900 + 600) list.appendChild(r);
+  run(1);
+  var y = r.getBoundingClientRect().top;
+  check("send: the reader's turn off the page after the site measured the turns above — placed by its neighbours' heights, back where the reader saw it",
+    Math.abs(y - saw) <= 1, Math.round(y) + " vs " + Math.round(saw) + " top " + sc.scrollTop);
+  unlock(); sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

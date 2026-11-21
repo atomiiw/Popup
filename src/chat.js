@@ -837,6 +837,35 @@
       pointEl = same[point.nth] || same[0] || null;
       return pointEl;
     }
+    // The turns around the reader's in page order, each with its height as drawn (the largest seen — ChatGPT draws a turn
+    // it lays out anew as a 130 px placeholder first). Where the reader's turn is taken off the page, a turn near it
+    // that is drawn whole tells where it is: by the heights between (live NT13 G2, ChatGPT: it measured the 21 000 px
+    // turns above anew, kept another turn in place, and the reader's went 9 000 px down and off the page; each search
+    // for it laid the list out as placeholders again — three rounds, then another osmosis answer on screen)
+    var chain = [], tall = {};
+    function pageTurns() { return Array.prototype.slice.call(container.querySelectorAll(JR.SEL.turn)); }
+    function learnChain() {
+      chain = pageTurns().map(function (t) {
+        var k = JR.site.turnKey(t), h = t.getBoundingClientRect().height;
+        if (k && h > (tall[k] || 0)) tall[k] = h;
+        return k;
+      });
+    }
+    /** Where the reader's turn's top is on screen now, from a near turn drawn whole; null if none. */
+    function placeFromChain() {
+      var i = chain.indexOf(anchorKey), best = null;
+      if (i < 0) return null;
+      pageTurns().forEach(function (t) {
+        var k = JR.site.turnKey(t), j = chain.indexOf(k), r;
+        if (j < 0 || j === i || !tall[k] || Math.abs((r = t.getBoundingClientRect()).height - tall[k]) > 2) return; // (a placeholder)
+        if (!best || Math.abs(j - i) < Math.abs(best.j - i)) best = { j: j, top: r.top };
+      });
+      if (!best) return null;
+      var y = best.top, m;
+      if (best.j < i) for (m = best.j; m < i; m++) y += tall[chain[m]] || 0;
+      else for (m = i; m < best.j; m++) y -= tall[chain[m]] || 0;
+      return y;
+    }
     /** The anchor's places on screen now (the turn's and the passage's), for what they are to be held at. */
     function takePlaces(turn) {
       var b = findPoint(turn);
@@ -1085,6 +1114,7 @@
 
     var nCorrect = 0;
     function correct() {
+      var chainY;
       if (reaching) return; // (its search scrolls the list: not held against it)
       if (diag) html.setAttribute("data-jr-correct-n", ++nCorrect); // (#jr-poslog: how often the hold looks)
       if (!container.isConnected) {
@@ -1133,7 +1163,12 @@
           pickPoint(tm, moved === "jump" ? JR.viewAnchor() : null); takePlaces(tm); anchor = liveAnchor();
           moved = false;
         }
-        if (anchor) lostAt = 0;
+        if (anchor) { lostAt = 0; learnChain(); }
+        else if (anchorKey && saved.turn !== null && (chainY = placeFromChain()) !== null && Math.abs(chainY - saved.turn) > 1) {
+          JR.posLog("lock-chain", document.documentElement, { d: Math.round(chainY - saved.turn), top: Math.round(container.scrollTop) });
+          container.scrollTop += chainY - saved.turn; // (there it is drawn again; then held as before)
+          return;
+        }
         else if (anchorKey && (saved.turn !== null || saved.block !== null) && reachBack(Date.now())) return;
         if (anchor && saved[kind] === null) {
           saved[kind] = anchor.getBoundingClientRect().top;
