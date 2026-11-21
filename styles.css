@@ -572,21 +572,32 @@ html [data-jr-pressing][data-jr-pressing] { visibility: visible !important; opac
   margin-left: 4px;
   position: relative;
   border: none;
-  border-bottom: 1px solid var(--jr-highlight-border);
-  padding-bottom: 2px;
-  transition: border-color 0.15s ease;
+  --jr-q-line: var(--jr-highlight-border);
+}
+/* Its underline, kept at the bottom of what is seen of it: a long question scrolls inside the ask area, and a line under
+   its last line was out of view (user 11-21, Claude Code: "where is my blue underline") */
+.jr-popup-question-text::after {
+  content: "";
+  display: block;
+  position: sticky;
+  bottom: 0;
+  height: 1px;
+  margin-top: 2px;
+  background: var(--jr-q-line);
+  transition: background-color 0.15s ease;
+  pointer-events: none;
 }
 
 .jr-popup-question--editing .jr-popup-question-text,
 .jr-popup-question-text:focus {
-  border-bottom-color: var(--jr-action);
+  --jr-q-line: var(--jr-action);
   outline: none;
   cursor: text;
 }
 
 /* Hover turns underline blue — but not during generation */
 .jr-popup:not(.jr-popup--generating) .jr-popup-question-text:hover {
-  border-bottom-color: var(--jr-action);
+  --jr-q-line: var(--jr-action);
   cursor: text;
 }
 

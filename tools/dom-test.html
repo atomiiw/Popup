@@ -1468,6 +1468,21 @@ asyncChecks.push(new Promise(function (done) {
   }, 30);
 }));
 
+// user 11-21 (Claude Code: "where is my blue underline"): a long question scrolls inside the ask area — its underline
+// is kept at the bottom of what is seen (sticky), blue while it is edited
+(function () {
+  var p = document.createElement("div"); p.className = "jr-popup"; p.style.cssText = "position:fixed;left:0;top:0;width:300px";
+  p.innerHTML = '<div class="jr-popup-upper"><div class="jr-popup-ask" style="max-height:60px;overflow:auto"><div class="jr-popup-question jr-popup-question--editing">' +
+    '<div class="jr-popup-question-inner"><span class="jr-popup-question-text" contenteditable="true">' + new Array(30).join("a long question ") + '</span></div></div></div></div>';
+  document.body.appendChild(p);
+  var q = p.querySelector(".jr-popup-question-text"), line = getComputedStyle(q, "::after"), action = getComputedStyle(p).getPropertyValue("--jr-action").trim();
+  var probe = document.createElement("i"); probe.style.color = action; document.body.appendChild(probe); var blue = getComputedStyle(probe).color; probe.remove();
+  check("a long question's underline stays at the bottom of what is seen (sticky), blue while edited; the text itself has no border",
+    line.position === "sticky" && line.bottom === "0px" && line.backgroundColor === blue && getComputedStyle(q).borderBottomStyle === "none",
+    [line.position, line.bottom, line.backgroundColor, blue, getComputedStyle(q).borderBottomStyle].join(" "));
+  p.remove();
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {
