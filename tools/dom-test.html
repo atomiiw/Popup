@@ -1166,6 +1166,7 @@ asyncChecks.push(new Promise(function (done) {
   JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [span];
   function gap() { return span.getBoundingClientRect().top - pop.getBoundingClientRect().bottom; }
   var gap0 = gap();
+  pop.style.height = "130px"; // (Return made it taller; its top follows a moment later — live NT9: tied then, 49 px low)
   window.requestAnimationFrame = function () { return 0; }; // (no frame runs: only the browser's layout can keep it)
   var unlock = JR.lockScroll(sc, span);
   var tied = pop.classList.contains("jr-anchored-up");

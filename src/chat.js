@@ -907,7 +907,9 @@
         var hl = sourceOf(p);
         if (!hl || !hl.isConnected || !hl.getBoundingClientRect().height) return;
         var pr = p.getBoundingClientRect(), hr = hl.getBoundingClientRect(), name = "--jr-a" + (++anchorSeq);
-        var dy = up ? hr.top - pr.bottom : pr.top - hr.top, want = up ? pr.bottom : pr.top;
+        // (an above one by the bottom it is placed to, not as drawn — live NT9: tied the moment Return made it taller,
+        // before its top followed, it was held 49 px low, over its highlight, for the whole send)
+        var want = up ? pr.top - (parseFloat(p.style.top) || 0) + p._jrBottomAnchor : pr.top, dy = up ? hr.top - want : pr.top - hr.top;
         // (no anchor: where it is — a below one's top; an above one's bottom, as an inset from its container's bottom)
         var stays = up ? (p.offsetParent ? p.offsetParent.clientHeight : 0) - p._jrBottomAnchor : (parseFloat(p.style.top) || 0);
         hl.style.setProperty("--jr-anchor-name", name);
