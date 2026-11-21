@@ -1,3 +1,5 @@
+**2026-11-21 00:35: overnight plan collab/PLAN-overnight-1120.md in progress — TODO "OVERNIGHT 11-20 → 21" has the state. Not zipped.**
+
 **2026-11-20 19:15: live round done except ChatGPT on Chrome Beta (the account got a ChatGPT "temporary limit" from test traffic — don't test ChatGPT until it is gone; then C2, C4, one recorded send, few requests). TODO "REDESIGN" has the state. Not zipped.**
 
 **2026-11-20 evening: REDESIGN built and offline-tested (docs/DESIGN-availability.md; TODO "REDESIGN") — the live round is owed before 1.2.15 is zipped; the user reloads Chrome Beta only when told.**
