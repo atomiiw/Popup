@@ -1576,11 +1576,16 @@
       var p = st.activePopup, hr = span.isConnected ? span.getBoundingClientRect() : null;
       if (p && p.isConnected && hr && hr.height) {
         var pr = p.getBoundingClientRect(), gap = p._jrLockedDirection === "above" ? hr.top - pr.bottom : pr.top - hr.bottom;
-        if (!base || base.el !== p) base = { el: p, gap: gap };
+        if (!base || base.el !== p) base = { el: p, gap: gap }; // (as it opened: never taken again from a moved place)
         else if (Math.abs(gap - base.gap) > 50) {
           JR.posLog("settle-place", p, { gap: Math.round(gap), was: Math.round(base.gap) });
+          // placed by the highlight on the page now (the one it had may be gone with the turn's old drawing — live NT20:
+          // placed by that one, nothing moved), and again each frame while it is still off
+          if (p === st.activePopup && !(st.activeSourceHighlights[0] && st.activeSourceHighlights[0].isConnected)) {
+            st.activeSourceHighlights = Array.prototype.filter.call(document.querySelectorAll('[data-jr-highlight-id="' + id + '"]'),
+              function (x) { return !x.closest(".jr-popup"); });
+          }
           JR.repositionAll();
-          base = null; // (measured again next frame)
         }
       }
       requestAnimationFrame(watch);

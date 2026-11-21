@@ -1379,8 +1379,8 @@ asyncChecks.push(new Promise(function (done) {
   function run(n) { while (n--) frames.splice(0).forEach(function (f) { f(); }); }
   var pop = document.createElement("div"); pop.className = "jr-popup"; pop.style.cssText = "position:absolute;height:50px;width:100px";
   JR.createPopup = function () { var hr = box.querySelector("[data-jr-highlight-id]").getBoundingClientRect(); pop.style.top = (hr.top + box.scrollTop - 60) + "px";
-    pop._jrLockedDirection = "above"; box.firstElementChild.appendChild(pop); st.activePopup = pop; };
-  var span = box.querySelector("[data-jr-highlight-id]");
+    pop._jrLockedDirection = "above"; box.firstElementChild.appendChild(pop); st.activePopup = pop; st.activeSourceHighlights = [span]; };
+  var span = box.querySelector("[data-jr-highlight-id]"), savedHl = st.activeSourceHighlights;
   st.completedHighlights.set("nt19A", { spans: [span], items: [] });
   JR.scrollToAndOpenPopup("nt19A");
   run(2);
@@ -1391,7 +1391,12 @@ asyncChecks.push(new Promise(function (done) {
   p.innerHTML = 'A passage with a highlight in it: <span data-jr-highlight-id="nt19A">here</span>'; // (wrapped anew)
   fake += 300; run(3);
   fake += 2500; run(2); // (settled)
-  check("a jump's popup, its highlight laid out anew elsewhere after a moment off the page: placed again (live NT19)", placed >= 1, "placed " + placed);
+  var now19 = box.querySelector("[data-jr-highlight-id]");
+  // (live NT20: placed by the old highlight — gone — nothing moved, and the off place taken as the new normal: placed by
+  // the one on the page now, and again while it is still off)
+  check("a jump's popup, its highlight laid out anew elsewhere after a moment off the page: placed again by the highlight now on the page, while still off (live NT19/NT20)",
+    placed >= 2 && st.activeSourceHighlights[0] === now19, "placed " + placed + " " + (st.activeSourceHighlights[0] === now19));
+  st.activeSourceHighlights = savedHl;
   window.requestAnimationFrame = real.raf; Date.now = real.now;
   st.activePopup = null; st.completedHighlights.delete("nt19A"); box.remove();
   JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
@@ -2705,7 +2710,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
       JR.repositionAll = realAll;
       var y = a.getBoundingClientRect().top;
       check("after a jump the passage it went to is held while the site moves its list; its popup places itself; parted from its highlight, placed again",
-        Math.abs(y - y0) <= 2 && placed === 1, Math.round(y) + " vs " + Math.round(y0) + " placed " + placed);
+        Math.abs(y - y0) <= 2 && placed >= 1, Math.round(y) + " vs " + Math.round(y0) + " placed " + placed); // (its stub moves nothing: asked again while off — NT20)
       st.activePopup = null; st.completedHighlights.delete("stA"); box.remove();
       JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
       setTimeout(function () { window.requestAnimationFrame = real.raf; window.cancelAnimationFrame = real.caf; done(); }, 150); // (its hold over: box gone)
