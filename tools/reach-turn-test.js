@@ -105,6 +105,28 @@ function fakeList(heights, opts) {
   r = await reach(L, "k20", L.order, { wait: fast });
   check("…and one near the start", r.turn && r.turn.key === "k20", r);
 
+  // live NT4 A2 / NT5 (ChatGPT, a long chat): scrolled near the end, the site collapses its list (73 183 → 38 995 px,
+  // nothing drawn where it was) and builds it again; a scroll meanwhile sets it rebuilding again. The search waits for
+  // the list to settle — no step on a list being rebuilt — and reaches the turn next to the end
+  {
+    const L2 = fakeList(hs);
+    let tick = 0, until = -1, during = 0;
+    const full = { height: L2.height, mounted: L2.mounted, setTop: L2.setTop };
+    const rebuilding = () => tick < until;
+    L2.setTop = (v) => {
+      if (rebuilding()) during++;
+      full.setTop(v);
+      if (v >= full.height() - 4 * L2.view() || rebuilding()) until = tick + 4; // (near the end, or mid-rebuild: (again))
+    };
+    L2.height = () => rebuilding() ? Math.round(full.height() / 2) : full.height();
+    // (mid-rebuild: a few turns mounted elsewhere — nothing where it is scrolled)
+    L2.mounted = () => rebuilding() ? [0, 1, 2].map((j) => ({ key: "k" + j, top: j * 900, height: 900 })) : full.mounted();
+    L2.find = (k) => L2.mounted().some((m) => m.key === k) ? { key: k } : null;
+    L2.setTop(full.height() / 2); tick = 10; // (the reader mid-chat; no rebuild yet)
+    const r2 = await reach(L2, "k198", L2.order, { wait: () => { tick++; return Promise.resolve(); } });
+    check("the list rebuilt near the end: no step while it is (each set it rebuilding again), reached", r2.turn && r2.turn.key === "k198" && during <= 1, { r: r2, during, tick });
+  }
+
   console.log(failed ? failed + " FAILED" : "all passed");
   process.exit(failed ? 1 : 0);
 })();

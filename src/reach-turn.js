@@ -20,7 +20,7 @@
     order = order || [];
     var pos = opts.position || function (k) { return order.indexOf(k); };
     var target = pos(key), noOrder = target < 0 && !order.length;
-    var atTop = 0, topHeight = -1, blank = 0;
+    var atTop = 0, topHeight = -1, blank = 0, lastH = list.height(), settling = 0;
     var below = 0, above = Infinity, height = -1; // scroll positions where it was seen to be further down / up
     // (no order: nothing to aim with — a screen a step, no gap left unseen)
     var stride = noOrder ? 1 : 0.8, lastDir = 0; // a step, in screens: halved each time the direction turns (it went to and fro past it)
@@ -36,13 +36,20 @@
       var t = list.find(key);
       if (t) return Promise.resolve({ turn: t });
       if (cancel()) return Promise.resolve({ why: "cancelled" });
+      // the list changed a lot since the last look (live NT4 A2 / NT5, ChatGPT: scrolled near the end it collapses its
+      // list, draws nothing where it was, and builds it again — a step meanwhile, on that list, set it rebuilding again,
+      // step after step): looked at again once it holds still (~3 s at most), not stepped on
+      var h = list.height(), moved = Math.abs(h - lastH) > 0.1 * Math.max(lastH, 1);
+      lastH = h;
+      if (moved && settling < 20) { settling++; return pause(150).then(function () { return step(n); }); }
       if (n <= 0) return Promise.resolve({ why: target < 0 && !noOrder ? "not-in-order" : "not-found" });
       var all = list.mounted(), top = list.top(), view = list.view();
-      // the list draws nothing where it is scrolled to, step after step: stuck (live 11-20, the hidden copy) — not a long
-      // turn filling the screen (its own turn is there, only the set didn't change)
+      // the list draws nothing where it is scrolled to: being built — looked at again, not stepped on; that for ~1.2 s:
+      // stuck (live 11-20, the hidden copy) — not a long turn filling the screen (its own turn is there)
       var drawn = all.some(function (m) { return m.top < top + view && m.top + m.height > top; });
       blank = drawn || !all.length ? 0 : blank + 1; // (turns mounted, none where it is: a list with none is no sign)
       if (blank >= 8) return Promise.resolve({ why: "stuck" });
+      if (blank) return pause(150).then(function () { return step(n); });
       // (the turns around where it is: claude.ai keeps the last turn mounted wherever the list is — taken for one of the
       // turns here it said "past the target" and the search went up to the top: live NT1, couldn't be loaded)
       var at = all.filter(function (m) { return m.top < top + 3 * view && m.top + m.height > top - 2 * view; })
