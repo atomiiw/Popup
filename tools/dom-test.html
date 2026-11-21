@@ -1154,6 +1154,31 @@ asyncChecks.push(new Promise(function (done) {
     Math.abs(at - 4950) <= 60, at); // (an estimate: there its turn mounts and its drift takes over)
 })();
 
+// live NT2 G2: the list came back shorter (the site dropped earlier turns above when the send went out): to its place
+// minus what went above — not the old place clamped to the end (the reader was left at the bottom)
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='list' style='position:relative'><div class='sp' style='height:5000px'></div>" +
+    "<div class='a' data-turn-key='shrink-a' style='height:50px'>x</div><div class='below' style='height:900px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 4950;
+  var a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  a.remove(); sc.querySelector(".sp").style.height = "2000px"; // unmounted; 3000 px of earlier turns dropped above
+  sc.scrollTop = 99999;                                          // the site's own place: the end
+  run(3);
+  var at = sc.scrollTop;
+  unlock(); sc.remove();
+  check("a send's hold: the list came back shorter above, the reader's turn not mounted — to its place − what went above",
+    Math.abs(at - 1950) <= 60, at);
+})();
+
 // ...and when the anchor's turn is unmounted and comes back elsewhere in a list the site laid out anew (live N1d): the
 // popups' places are taken at the start of the send, not at the anchor's first sight later (it went 2658 px off)
 (function () {

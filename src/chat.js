@@ -1007,7 +1007,9 @@
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
           }
-        } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight > startH) {
+        } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight !== startH) {
+          // (taller: earlier turns came above — live Beta C2; shorter: the site dropped earlier turns above when the
+          // send went out — live NT2 G2, the old place lay past the new end and the hold left the reader at the bottom)
           lastH = container.scrollHeight; // (once per height: there it mounts, and the anchor's own drift takes over)
           var est = startTop + (container.scrollHeight - startH);
           if (Math.abs(container.scrollTop - est) > container.clientHeight) { container.scrollTop = est; savedTop = est; }
