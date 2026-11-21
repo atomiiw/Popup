@@ -635,7 +635,7 @@ function place3(contentH, y, scrollTop) {
   host3.style.height = contentH + "px"; hl3.style.top = y + "px"; sc3.scrollTop = scrollTop;
   return hl3.getBoundingClientRect();
 }
-function dir3(contentH, y, scrollTop) { return JR.bestDirection(place3(contentH, y, scrollTop), 8); }
+function dir3(contentH, y, scrollTop) { return JR.bestDirection(place3(contentH, y, scrollTop), H70, 8); }
 function popup3(answer) {
   var p = document.createElement("div");
   p.className = "jr-popup";
@@ -654,6 +654,10 @@ check("R18: scrolled to the end, highlight high on screen → below", dir3(C3, C
 check("R18: scrolled to the end, highlight low on screen → above", dir3(C3, C3 - 0.2 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.2 * W3, C3 - W3));
 // user 11-21: the room on screen only — what the chat could scroll to isn't room (a popup hung behind the send box)
 check("R18: start of the chat, highlight in the lower half → above (the room on screen, not what it could scroll to)", dir3(C3, 0.55 * W3, 0) === "above", dir3(C3, 0.55 * W3, 0));
+// user 11-21 ("see that ahead of time and open it upward"): below whenever its height limit fits there — above only
+// when it doesn't (here a limit the user dragged smaller: it fits below, though above has more room)
+check("height limit fits below → below, even with more room above", JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8) === "below",
+  JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8));
 check("R18: short chat, highlight in the upper half → below", dir3(W3 + 50, 50 + 0.45 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.45 * W3, 50));
 
 // R16/R26: a popup with an answer is as tall as the answer, up to 70vh; a longer answer scrolls inside; never capped lower

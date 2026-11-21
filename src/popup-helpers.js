@@ -451,14 +451,16 @@
   };
 
   /**
-   * Which side of the highlight a popup opens on: the one with more room on screen, between the site's header and its
-   * send box (high on screen → below, low → above, 2026-11-18) — where it fits whole that is the side; where it fits on
-   * neither it is no taller than that room (capToRoom: user 11-21 "下面顶格了不应该向上开吗 都顶了就改高度" — a popup
-   * below hung behind the send box, counted as room because the chat could scroll there).
+   * Which side of the highlight a popup of height limit maxH opens on, by the room on screen between the site's header
+   * and its send box (user 11-21: "when the maximum allowed height goes beyond what the bottom can support, see that
+   * ahead of time and open it upward"; "都顶了就改高度"): below if maxH fits there, else above if it fits there, else the
+   * side with more room, no taller than that room (capToRoom).
    */
-  JR.bestDirection = function (highlightRect, gap) {
+  JR.bestDirection = function (highlightRect, maxH, gap) {
     if (!highlightRect) return "below";
     var room = roomBy(highlightRect, gap);
+    if (room.below >= maxH) return "below";
+    if (room.above >= maxH) return "above";
     return room.below >= room.above ? "below" : "above";
   };
   /** The room on screen above and below a highlight: to the header, to just above the send box (it may cover what the
@@ -570,7 +572,8 @@
     JR.watchUpper(popup); // before measuring: on a tiny window the height limit depends on it
     if (forceDirection === "above" || forceDirection === "below") popup._jrLockedDirection = forceDirection;
     else {
-      popup._jrLockedDirection = JR.bestDirection(rect, gap);
+      // (its height limit — 70vh or the height the user dragged to — not its height now: it grows to its answer)
+      popup._jrLockedDirection = JR.bestDirection(rect, parseFloat(getComputedStyle(popup).maxHeight) || popup.offsetHeight, gap);
     }
     capToRoom(popup, rect, gap);
     placeAt(popup, rect, spans, containerRect);
