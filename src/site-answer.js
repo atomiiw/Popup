@@ -104,6 +104,17 @@
   }
 
   var live = null; // { copyEl, keys, key, turn, observer, onChange, fromPage, tries, asked }
+  // The copy as last shown, per Q&A — memory only, this page session: reopened, it shows at once, and the site's own place
+  // (ChatGPT's hidden copy: a whole page of the site loaded each time — live 11-20, the account was rate-limited) is
+  // looked in only when a control in it is used (it needs the live original). Not stored.
+  var shownBefore = new Map();
+  function remember(l) {
+    if (!l.turn || !l.copyEl.textContent.replace(/Reply/g, "").trim()) return;
+    var k = l.keys.join();
+    shownBefore.delete(k);
+    shownBefore.set(k, l.copyEl.cloneNode(true));
+    if (shownBefore.size > 30) shownBefore.delete(shownBefore.keys().next().value);
+  }
 
   function patch() {
     var l = live;
@@ -163,6 +174,15 @@
     var keys = l.key ? [l.key].concat(l.keys.filter(function (k) { return k !== l.key; })) : l.keys;
     var hit = JR.locator.onPage(keys);
     if (hit) return follow(l, hit.turn, hit.key, true);
+    // shown before in this session: that copy at once; the live original only when a control needs it (counterpart)
+    var before = !l.wantLive && shownBefore.get(l.keys.join());
+    if (before) {
+      syncChildren(Array.prototype.slice.call(before.cloneNode(true).childNodes), l.copyEl);
+      l.fromMemory = true;
+      if (l.id) JR.availability.on(l.id, { t: "found", via: "memory" });
+      if (l.onChange) l.onChange(l.copyEl, null, null);
+      return;
+    }
     // one search at a time: the site redrawing meanwhile asked again for each change (a test: without end)
     if (!JR.site.original || l.finding || !locating(l)) return;
     l.finding = true;
@@ -227,6 +247,8 @@
       var l = live;
       // (not one the site has replaced: a click there does nothing — live B6, ChatGPT redrew the frame's turn just after
       // it was found again; it is being found again now)
+      // (a copy shown from before — memory: its live original is looked for now; the next click goes to it)
+      if (l && l.fromMemory && !l.turn && !l.wantLive) { l.wantLive = true; find(l); return null; }
       if (!l || !l.turn || !l.turn.isConnected || el === l.copyEl) return null;
       // (across a shadow root: an element the site draws into its own — its host, then on inside the original's root)
       var path = [];
@@ -257,6 +279,7 @@
       var l = live;
       live = null;
       if (!l) return;
+      remember(l);
       if (l.unwatch) l.unwatch();
       if (l.observer) l.observer.disconnect();
       // every one asked for: one still being found is let go too (else the frame would keep it for good)

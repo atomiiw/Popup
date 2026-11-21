@@ -815,7 +815,9 @@
     var missing = loadingKeys.filter(function (k) { return !JR.qa.get([k]); });
     if (missing.length) {
       JR.qa.ensure(missing);
-      if (JR.siteRenderPrewarm) JR.siteRenderPrewarm(); // (ChatGPT, claude.ai) opening one then takes ~1 s, not 5–15
+      // (claude.ai: opening one then takes ~1 s, not 5–15. Not ChatGPT: its copy opens at the answer asked for — one loaded
+      // ahead, at the end, was a whole page of requests for nothing; live 11-20 the account got a temporary limit)
+      if (JR.siteRenderPrewarm && JR.site.name !== "chatgpt") JR.siteRenderPrewarm();
     }
     if (!unlinked) return;
     JR.qa.popupTurnsFromApi().then(function (turns) {

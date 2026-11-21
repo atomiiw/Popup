@@ -35,8 +35,14 @@
   // at: the id of the question after the answer looked for — the copy opens at that answer (net-tap.js: its first page
   // ends there); null: at the end, as the chat is
   var frameAt = null;
+  // At most 5 copies loaded in 2 minutes: each is a whole page of the site (ChatGPT: a dozen requests and the whole
+  // conversation — live 11-20, opening old popups one after another got the account a temporary limit). Over it: none.
+  var boots = [];
   function frameFor(conv, at) {
     if (frame && frameConv === conv && frame.isConnected && (at === undefined || frameAt === (at || null))) return frame;
+    boots = boots.filter(function (t) { return Date.now() - t < 120000; });
+    if (boots.length >= 5) return null;
+    boots.push(Date.now());
     frameAt = at || null;
     dropFrame();
     frame = document.createElement("iframe");
@@ -167,7 +173,7 @@
    */
   // holding: { key, release }; wanted: the keys asked for and not released yet (a Set — one wanted key let a second ask
   // cancel the first: that popup stayed Loading… for good, architecture review 11-20); missWhy: why a key wasn't found
-  var holding = null, wanted = new Set(), missWhy = {}, reloadedFor = new Set();
+  var holding = null, wanted = new Set(), missWhy = {}, reloadedFor = new Set(), lastReread = 0;
   // the keys a fresh frame was loaded for once (a Set: two answers asked in turn would reload it for each again)
   JR.site.originalPlace = "frame";
   /** Why the last search for key found nothing: copy-not-ready, copy-stuck, not-loaded (earlier turns never came),
@@ -196,7 +202,8 @@
         // a Q&A newer than the order read (sent since): the order read again, and a copy newer than it (live Beta C2: the
         // copy and the order from before the send — looked for at the end of an old copy until the deadline)
         var known = (JR.qa.turnOrderCache || []).indexOf(key) >= 0;
-        if (!known && JR.site.name === "chatgpt" && JR.qa.resetApi) { JR.qa.resetApi(); dropFrame(); }
+        // (the whole conversation read again: at most every 30 s)
+        if (!known && JR.site.name === "chatgpt" && JR.qa.resetApi && Date.now() - lastReread > 30000) { lastReread = Date.now(); JR.qa.resetApi(); dropFrame(); }
         return (JR.qa.turnOrder ? JR.qa.turnOrder() : Promise.resolve([])).then(function (order) {
           // ChatGPT: the copy opened at the answer (its network tap there, net-tap.js) — the answer drawn last, at once;
           // no scrolling the copy to it (its list didn't follow a scroll: 20–40 s, or never — live 11-20). One already
@@ -204,13 +211,16 @@
           var i = (order || []).indexOf(key), d0 = doc();
           var at = JR.site.name === "chatgpt" && i >= 0 && i < order.length - 1 ? order[i + 1] : null;
           if (at && !/^[0-9a-f-]{36}$/.test(at)) at = null; // (a ChatGPT message id, as net-tap.js reads it from the URL)
-          if (!(frame && frameConv === conv && d0 && JR.site.frameTurn(d0, key))) frameFor(conv, at);
+          if (!(frame && frameConv === conv && d0 && JR.site.frameTurn(d0, key)) && !frameFor(conv, at)) {
+            missWhy[key] = "too-many"; // (over the copies' budget: none loaded — Try again in a minute)
+            return false;
+          }
           return frameReady().then(function (ready) {
             if (!ready || !at) return ready;
             return until(function () { var d = doc(); return d && JR.site.frameTurn(d, key); }, 200, 15).then(function () { return ready; });
           });
         })
-          .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; })
+          .then(function (ready) { if (!ready && missWhy[key] !== "too-many") missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting) : null; })
           .then(function (turn) {
             // not found: a fresh frame, once — the answer newer than the frame (sent after it loaded), or the frame's list
             // stuck (live 11-20, ChatGPT: after many sends it kept the same 3 turns mounted wherever it scrolled — an older
@@ -219,11 +229,12 @@
             reloadedFor.add(key);
             // sent after the order and the frame were loaded: both again (review: else the search looks only at the end)
             JR.qa.resetApi();
-            dropFrame(); frameFor(conv);
+            dropFrame();
+            if (!frameFor(conv)) { missWhy[key] = "too-many"; return null; }
             run(loadAll); // (after this one: the next answer asked for is then found at once)
             return frameReady()
               .then(function (ready) { return ready && JR.qa.turnOrder ? JR.qa.turnOrder().then(function () { return ready; }) : ready; })
-              .then(function (ready) { if (!ready) missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting, true) : null; });
+              .then(function (ready) { if (!ready && missWhy[key] !== "too-many") missWhy[key] = "copy-not-ready"; return ready ? findTurn(key, onWaiting, true) : null; });
           })
           .then(function (turn) { return turn && wanted.has(key) ? revealCode(turn, key).then(function () { return turn; }) : turn; })
           .then(function (turn) {
