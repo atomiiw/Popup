@@ -2188,6 +2188,29 @@ asyncChecks.push(new Promise(function (done) {
   failedT.remove(); imgT.remove();
 })();
 
+// live NT3: a dialog the site centers in the hidden copy (ChatGPT's Share panel) is centered on the page, not moved by
+// the control's offset (it went off screen)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var f = document.createElement("iframe");
+  f.style.cssText = "position:fixed;left:0;top:0;width:420px;height:900px;opacity:0;pointer-events:none";
+  f.srcdoc = '<div style="height:3000px"></div><button id="t" style="position:absolute;top:2850px">Share</button><script>document.getElementById("t").addEventListener("pointerdown", function () {' +
+    ' var d = document.createElement("div"); d.id = "dlg"; d.setAttribute("role", "dialog"); d.style.cssText = "position:fixed;left:50%;top:50%;width:200px;height:100px;margin:-50px 0 0 -100px";' +
+    ' document.body.appendChild(d); });<\/script>';
+  f.onload = function () {
+    f.contentWindow.scrollTo(0, 2000); // (its control near the bottom of the copy, far from where it centers dialogs)
+    var copyCtrl = document.createElement("button"); copyCtrl.style.cssText = "position:fixed;left:600px;top:100px"; document.body.appendChild(copyCtrl);
+    JR.siteControl.forward(f.contentDocument.getElementById("t"), copyCtrl);
+    setTimeout(function () {
+      var d = document.querySelector(".jr-site-overlay [role=dialog]"), r = d && d.getBoundingClientRect();
+      var cx = r && r.left + r.width / 2, cy = r && r.top + r.height / 2;
+      check("a dialog the site centers in the hidden copy: centered on the page", r && Math.abs(cx - innerWidth / 2) < 3 && Math.abs(cy - innerHeight / 2) < 3,
+        r ? [Math.round(cx), Math.round(cy), innerWidth / 2, innerHeight / 2].join(" ") : "none");
+      JR.siteControl.closeAll(); copyCtrl.remove(); f.remove(); done();
+    }, 300);
+  };
+  document.body.appendChild(f);
+}, 23600); })); // (its own time: 23.6–24.1 s)
+
 // live G4: Esc while the user is in a dialog the site opened (its Share panel, its editor) is the site's — the popup stays
 (function () {
   var pop = document.createElement("div"); pop.className = "jr-popup"; document.body.appendChild(pop);

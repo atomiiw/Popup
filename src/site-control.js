@@ -60,11 +60,15 @@
     var wrap = document.createElement("div");
     wrap.className = "jr-site-overlay";
     // (a frame of the copy's size, moved by where the control is: what the site places in its viewport lands by the
-    // control in the popup — a transform makes it the containing block of the site's fixed elements)
-    wrap.style.setProperty("--jr-ov-x", (cr.left - or.left) + "px");
-    wrap.style.setProperty("--jr-ov-y", (cr.top - or.top) + "px");
-    wrap.style.setProperty("--jr-ov-w", fw.innerWidth + "px");
-    wrap.style.setProperty("--jr-ov-h", fw.innerHeight + "px");
+    // control in the popup — a transform makes it the containing block of the site's fixed elements). Only what the
+    // site placed by its control (a popover); a dialog it centers is centered on the page (live NT3: ChatGPT's Share
+    // panel moved by the control's offset — off screen)
+    var b = orig.getBoundingClientRect();
+    var near = b.left < or.right + 120 && b.right > or.left - 120 && b.top < or.bottom + 120 && b.bottom > or.top - 120;
+    wrap.style.setProperty("--jr-ov-x", near ? (cr.left - or.left) + "px" : "0px");
+    wrap.style.setProperty("--jr-ov-y", near ? (cr.top - or.top) + "px" : "0px");
+    wrap.style.setProperty("--jr-ov-w", (near ? fw.innerWidth : window.innerWidth) + "px");
+    wrap.style.setProperty("--jr-ov-h", (near ? fw.innerHeight : window.innerHeight) + "px");
     var copy = orig.cloneNode(true);
     wrap.appendChild(copy);
     document.body.appendChild(wrap);
