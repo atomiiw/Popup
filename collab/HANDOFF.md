@@ -1,3 +1,5 @@
+**2026-11-21 03:00: overnight plan done as far as it goes — TODO "MORNING 11-21" lists what passed and the open ChatGPT items. Not zipped.**
+
 **2026-11-21 00:35: overnight plan collab/PLAN-overnight-1120.md in progress — TODO "OVERNIGHT 11-20 → 21" has the state. Not zipped.**
 
 **2026-11-20 19:15: live round done except ChatGPT on Chrome Beta (the account got a ChatGPT "temporary limit" from test traffic — don't test ChatGPT until it is gone; then C2, C4, one recorded send, few requests). TODO "REDESIGN" has the state. Not zipped.**
