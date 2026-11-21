@@ -13,9 +13,10 @@ var CONV = "6afbb274-2044-83e9-8e7d-12b5a352465b";
 var pages = {
   A: { messages: popupPair(5).concat(popupPair(6)), page_info: { has_previous_page: true, has_next_page: true } },
   pu5: { messages: popupPair(3).concat(popupPair(4)), page_info: { has_previous_page: true, has_next_page: true } },       // before pu5
-  pu3: { messages: [msg("u1", "user", "hello", "x1"), msg("a1", "assistant", "hi", "x1")].concat(popupPair(2)), page_info: { has_previous_page: true, has_next_page: true } }, // before pu3
+  pu3: { messages: [msg("u1", "user", "hello", "x1"), msg("a1", "assistant", "hi", "x1")].concat(popupPair(2)), page_info: { has_previous_page: false, has_next_page: true } }, // before pu3: the chat's start
   V: { messages: [msg("u9", "user", "q", "x9"), msg("a9", "assistant", "y", "x9")].concat(popupPair(10)), page_info: { has_previous_page: true, has_next_page: false } },
   E: { messages: popupPair(20), page_info: { has_previous_page: false, has_next_page: true } },
+  u9: { messages: [msg("u7", "user", "p", "x7"), msg("a7", "assistant", "z", "x7")].concat(popupPair(8)), page_info: { has_previous_page: false, has_next_page: true } }, // before u9
 };
 var busy = 0; // 429s still to answer (too many requests)
 window.fetch = function (input, init) {
@@ -39,7 +40,7 @@ function ask(page) {
 ask("A").then(function (j) {
   var ids = j.messages.map(function (m) { return m.id; }).join();
   check("a page of only Popup Q&As: the pages before it are fetched until one keeps a message, given as that page",
-    ids === "u1,a1" && j.page_info.has_previous_page === true && j.page_info.has_next_page === true, ids + " " + JSON.stringify(j.page_info));
+    ids === "u1,a1" && j.page_info.has_previous_page === false && j.page_info.has_next_page === true, ids + " " + JSON.stringify(j.page_info));
   check("...asked before the oldest message of each, with the page's own login",
     calls.length === 3 && /before=pu5/.test(calls[1].url) && /before=pu3/.test(calls[2].url) && calls[1].headers && calls[1].headers.Authorization === "Bearer t",
     JSON.stringify(calls.map(function (c) { return c.url.replace(/^.*messages\?/, ""); })));
@@ -50,7 +51,10 @@ ask("A").then(function (j) {
     j.messages.map(function (m) { return m.id; }).join() === "u1,a1" && calls.length === 4, calls.length + " " + j.messages.length);
   return ask("V");
 }).then(function (j) {
-  check("a page keeping a message: as it is, nothing more fetched", j.messages.map(function (m) { return m.id; }).join() === "u9,a9" && calls.length === 1, calls.length);
+  // live 11-21: one question after nine Popup Q&As — the page showed that one turn, nothing to scroll, older ones never loaded
+  check("a page keeping fewer turns than asked: the visible ones before it put before it (as if the Popup Q&As weren't there)",
+    j.messages.map(function (m) { return m.id; }).join() === "u7,a7,u9,a9" && calls.length === 2 && j.page_info.has_previous_page === false && j.page_info.has_next_page === false,
+    j.messages.map(function (m) { return m.id; }).join() + " " + calls.length + " " + JSON.stringify(j.page_info));
   return ask("E");
 }).then(function (j) {
   check("a page of only Popup Q&As at the start of the chat: empty, nothing more fetched", j.messages.length === 0 && calls.length === 1, j.messages.length + " " + calls.length);
@@ -67,7 +71,10 @@ ask("A").then(function (j) {
         w.fetch("/backend-api/conversations/" + CONV + "/messages?before=x&num_turns=10&include_has_versions=true");
         w.fetch("/backend-api/conversation/" + CONV);
         w.fetch("/backend-api/conversations/" + CONV + "?num_turns=10&include_has_versions=true");
-        var seen = w.seen.slice(); f.remove(); done(seen);
+        var told = 0; f.addEventListener("jr-copy-send-blocked", function () { told++; });
+        w.fetch("/backend-api/f/conversation", { method: "POST", body: "{}" }).then(function () { return "sent"; }, function () { return "refused"; }).then(function (r) {
+          var seen = w.seen.slice(); seen.send = r + " " + told; f.remove(); done(seen);
+        });
       };
       document.body.appendChild(f);
     });
@@ -76,6 +83,8 @@ ask("A").then(function (j) {
     check("render frame: a 10-turn history page is asked 100 at a time, other requests as they are",
       /num_turns=100&include_has_versions=true$/.test(seen[0]) && seen[1] === "/backend-api/conversation/" + CONV &&
       /\?num_turns=100&/.test(seen[2]), JSON.stringify(seen));
+    check("render frame: a message sent from it is refused, the page told (user 11-21: its panel on the page sends nothing)",
+      seen.send === "refused 1" && seen.length === 3, seen.send + " " + seen.length);
     return inFrame("");
   }).then(function (seen) {
     check("another frame of the site: untouched", /num_turns=10&/.test(seen[0]), JSON.stringify(seen));

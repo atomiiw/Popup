@@ -4,7 +4,7 @@
 // is up (a popup, its lightbox, the ask button).
 window.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" || e.isComposing) return;
-  if (!document.querySelector(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn, .jr-site-overlay")) return;
+  if (!document.querySelector(".jr-popup, .jr-lightbox, .jr-highlight-trigger-btn, .jr-site-overlay, .jr-render-frame--shown")) return;
   // the user is in something the site opened (its dialog, menu, editor — one of its controls used in a popup, live G4:
   // Esc closed the popup and left ChatGPT's Share panel / image editor open): the site's Esc
   var a = document.activeElement;

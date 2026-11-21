@@ -28,6 +28,12 @@
     var before = render && /[#&]jr-before=([0-9a-f-]{36})/.exec(location.hash);
     if (render) window.fetch = function (input, init) {
       var url = typeof input === "string" ? input : input && input.url;
+      // the copy sends nothing to the conversation (user 11-21: its side panel is shown on the page — an image edit
+      // from there would be a message the page never sees, and its next one would branch the chat): refused, said
+      if (sendsMessage(url, (init && init.method) || (input && input.method))) {
+        try { window.frameElement.dispatchEvent(new CustomEvent("jr-copy-send-blocked")); } catch (e) { /* gone */ }
+        return Promise.reject(new TypeError("Popup: the hidden copy of the chat sends no messages"));
+      }
       var first = before && url && /\/backend-api\/conversations\/([0-9a-f-]{36})\?/.exec(url);
       if (first && (!init || !init.method || init.method === "GET")) {
         var id = first[1], reqInit = init || (typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
@@ -54,6 +60,12 @@
       return origFetch.call(this, input, init);
     };
     return;
+  }
+
+  /** A request that adds to the conversation (a message, an image edit): POST to /backend-api/[f/]conversation… —
+   *  not the reads (/conversations/<id>, plural) nor a share (/share/create). */
+  function sendsMessage(url, method) {
+    return String(method || "GET").toUpperCase() === "POST" && /\/backend-api\/(f\/)?conversation(\/|\?|$)/.test(String(url || ""));
   }
 
   var POPUP_PREFIXES = ["Regarding this part of your response:", "Regarding your entire response below:", "Regarding your entire response above:"];
@@ -302,23 +314,27 @@
   }
 
   /**
-   * filterPage, but no empty page while older ones exist. A page of only Popup Q&As came out empty: ChatGPT's next
-   * request starts before the oldest message it has — still the same one — so it asked for the same page again and
-   * showed "Couldn't load earlier messages" (live 2026-11-20: its new front end pages the history 10 turns at a time,
-   * and the test chat had pages of 20 Popup messages). The pages before it are fetched here (fetchOlder(id): the page
-   * before message id, as JSON) until one keeps a message, or there is none before, and given as that one page.
+   * filterPage, but as many turns as the page asked for (`want`, its num_turns) while older ones exist — as if the Popup
+   * Q&As weren't there. A page of only Popup Q&As came out empty: ChatGPT's next request starts before the oldest
+   * message it has — still the same one — so it asked for the same page again and showed "Couldn't load earlier
+   * messages" (live 2026-11-20: its new front end pages the history 10 turns at a time, and the test chat had pages of
+   * 20 Popup messages). A page keeping one turn of 10 (live 11-21: one question after nine Popup Q&As) showed that one,
+   * shorter than the window: nothing to scroll, "Loading older messages…" for good. The pages before it are fetched
+   * here (fetchOlder(id): the page before message id, as JSON) and put before it.
    */
-  function filled(convId, j, firstScreen, fetchOlder, depth) {
+  function filled(convId, j, firstScreen, fetchOlder, depth, want) {
     var out = filterPage(convId, j, firstScreen);
     var msgs = out ? out.messages : (j && j.messages) || [];
     var more = j && j.page_info && j.page_info.has_previous_page;
     var oldest = j && j.messages && j.messages.length && j.messages[0] && j.messages[0].id;
-    if (msgs.length || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
+    var turns = msgs.filter(function (m) { return m && m.author && m.author.role === "user"; }).length;
+    want = want || 10;
+    if (turns >= want || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
     return fetchOlder(oldest).then(function (older) {
       if (!older || !Array.isArray(older.messages)) return out;
-      return filled(convId, older, false, fetchOlder, (depth || 0) + 1).then(function (o) {
+      return filled(convId, older, false, fetchOlder, (depth || 0) + 1, want - turns).then(function (o) {
         var page = o || older, res = Object.assign({}, j);
-        res.messages = page.messages;
+        res.messages = page.messages.concat(msgs);
         res.page_info = Object.assign({}, page.page_info, { has_next_page: j.page_info.has_next_page });
         return res;
       });
@@ -389,7 +405,7 @@
       return origFetch.apply(this, arguments).then(function (res) {
         if (!res.ok) return res;
         return res.clone().json().then(function (j) {
-          return filled(conv[1], j, url.indexOf("/messages") === -1, fetchOlder).then(function (filtered) {
+          return filled(conv[1], j, url.indexOf("/messages") === -1, fetchOlder, 0, +((/[?&]num_turns=(\d+)/.exec(url) || [])[1]) || 10).then(function (filtered) {
             if (!filtered) return res;
             return new Response(JSON.stringify(filtered), { status: res.status, statusText: res.statusText, headers: res.headers });
           });

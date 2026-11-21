@@ -441,6 +441,32 @@ html [data-jr-pressing][data-jr-pressing] { visibility: visible !important; opac
   z-index: 2147483000;
 }
 .jr-site-overlay > * { pointer-events: auto; }
+/* The hidden copy's own panel shown on the page (site-control.js dock): the copy at the page's size, above it, cut
+   to the panel (nothing until it is measured) */
+.jr-render-frame.jr-render-frame--shown {
+  width: 100vw;
+  height: 100vh;
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2147483000;
+  clip-path: var(--jr-clip, inset(50%));
+}
+.jr-site-note {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 14px;
+  background: var(--jr-bg);
+  color: var(--jr-text);
+  border: 1px solid var(--jr-border);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow);
+  font-size: 14px;
+  z-index: 2147483001;
+  pointer-events: none;
+}
 
 /* During a send a "below" popup is tied to its highlight with CSS anchor positioning (chat.js lockScroll): the browser
    places it as it lays out each frame — the site moving its list can't leave it off its highlight for a frame */

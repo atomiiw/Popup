@@ -159,15 +159,143 @@
       return;
     }
     var before = new Set(Array.prototype.slice.call(doc.body.children)), t0 = Date.now();
+    var watch = addedIn(doc);
     press(o);
+    var menus = [];
     (function look() {
-      var added = Array.prototype.filter.call(doc.body.children, function (c) {
-        return !before.has(c) && !/^(SCRIPT|STYLE|LINK|IFRAME)$/.test(c.tagName) && !open.some(function (x) { return x.orig === c; });
+      // a panel of the site's own layout (ChatGPT's image editor, a link's side panel — not a body child: user 11-21
+      // "直接衔接侧边栏"): the hidden copy itself shown where the site puts it, only that panel of it (and what it opened
+      // over it, shown there as the site's own — not as menus)
+      var panel = panelOf(doc, watch.nodes);
+      if (panel) {
+        watch.stop();
+        open.filter(function (x) { return menus.indexOf(x.orig) >= 0; }).forEach(function (x) { x.close(); });
+        dock(doc, panel, watch);
+        return;
+      }
+      // what it added to the body: a menu, a dialog — shown now, still looking for a panel (live 11-21: a toast area
+      // ChatGPT added took the press, the editor opened unseen)
+      Array.prototype.forEach.call(doc.body.children, function (c) {
+        if (before.has(c) || menus.indexOf(c) >= 0 || /^(SCRIPT|STYLE|LINK|IFRAME)$/.test(c.tagName) || open.some(function (x) { return x.orig === c; })) return;
+        var r = c.getBoundingClientRect();
+        if (!r.width && !r.height && !c.querySelector("*")) return;
+        menus.push(c);
+        show(c, doc, copyCtrl, o);
       });
-      var drawn = added.filter(function (c) { var r = c.getBoundingClientRect(); return r.width || r.height || c.querySelector("*"); });
-      if (drawn.length) { drawn.forEach(function (c) { show(c, doc, copyCtrl, o); }); return; }
-      if (Date.now() - t0 < 1500) setTimeout(look, 50);
+      if (Date.now() - t0 < 1500) setTimeout(look, 50); else watch.stop();
     })();
+  }
+
+  /** Elements added anywhere in doc from now: { nodes, stop() }. */
+  function addedIn(doc) {
+    var w = { nodes: [], mo: new MutationObserver(function (ms) {
+      ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) { if (n.nodeType === 1) w.nodes.push(n); }); });
+    }) };
+    w.mo.observe(doc.body, { childList: true, subtree: true });
+    w.stop = function () { w.mo.disconnect(); };
+    return w;
+  }
+
+  /** Among nodes (added to doc), a panel the site opened in its layout: drawn over half its window each way, outside
+   *  the chat's list (its turns load and go as it scrolls) and not a body child (shown as a menu: show) — or null. */
+  function panelOf(doc, nodes) {
+    var fw = doc.defaultView, sc, best = null;
+    if (!fw) return null; // (the copy dropped)
+    nodes.forEach(function (n) {
+      if (!n.isConnected || n.parentElement === doc.body || (best && best.contains(n))) return;
+      var r = n.getBoundingClientRect();
+      if (r.width < fw.innerWidth / 2 || r.height < fw.innerHeight / 2) return;
+      if (sc === undefined) sc = JR.site.frameScroller(doc);
+      if (!(sc && sc.contains(n))) best = n;
+    });
+    return best;
+  }
+
+  /**
+   * Show the hidden copy's own panel on the page: the copy at the page's size, above it, cut to the panel and to what
+   * the site opens over it (a Share dialog, a menu) — the site's own, used as such (hover, keys, its Download). Closed
+   * when the site closes it, on Esc, or with the copy. Its sends are refused (net-tap.js: an edit would be a message the
+   * page never sees — the user's call 11-21: view, download and share only), with a note why.
+   */
+  function dock(doc, panel, watch) {
+    var frame = doc.defaultView.frameElement;
+    if (!frame || open.some(function (x) { return x.frame === frame; })) return;
+    frame.classList.add("jr-render-frame--shown");
+    var lost = 0, raf = 0, w2 = addedIn(doc), note = null;
+    (function follow() {
+      if (!panel || !panel.isConnected) panel = panelOf(doc, w2.nodes.concat(watch.nodes)); // (redrawn at the new size)
+      var r = panel && panel.getBoundingClientRect();
+      if (!r || !r.width || !r.height) {
+        if (!lost) lost = Date.now(); else if (Date.now() - lost > 300) return close();
+      } else {
+        lost = 0;
+        var parts = [r].concat(layers().map(function (l) { return l.getBoundingClientRect(); }));
+        frame.style.setProperty("--jr-clip", "path('" + parts.map(function (b) {
+          return "M" + Math.round(b.left) + " " + Math.round(b.top) + "H" + Math.round(b.right) + "V" + Math.round(b.bottom) + "H" + Math.round(b.left) + "Z";
+        }).join("") + "')");
+      }
+      raf = requestAnimationFrame(follow);
+    })();
+    function blocked() {
+      if (note) return;
+      note = document.createElement("div");
+      note.className = "jr-site-note";
+      note.textContent = "Edits can't be sent from here: this answer isn't on the page. View, download and share work.";
+      document.body.appendChild(note);
+      setTimeout(function () { if (note) note.remove(); note = null; }, 5000);
+    }
+    frame.addEventListener("jr-copy-send-blocked", blocked);
+    /**
+     * What the site opened over the panel since the press (its Share dialog, a menu, a toast): in what it added outside
+     * the panel and the chat's list, the first layers (fixed, with a z-index) drawn and not the whole window — not the
+     * full-window holder or backdrop around a dialog, nor its layout redrawn at the new size (live 11-21: its left
+     * column and its chat, absolute; an empty holder, fixed but not clickable — they'd show the copy's own chat).
+     * Looked for again only when something was added.
+     */
+    var layerEls = [], seen = -1;
+    function layers() {
+      if (!panel) return [];
+      var all = w2.nodes.concat(watch.nodes);
+      if (all.length !== seen || layerEls.some(function (l) { return !l.isConnected; })) {
+        seen = all.length;
+        var fw = doc.defaultView, sc = JR.site.frameScroller(doc), whole = fw.innerWidth * fw.innerHeight * 0.9;
+        layerEls = [];
+        (function walk(list) {
+          list.forEach(function (n) {
+            if (!n.isConnected || n.contains(panel) || panel.contains(n) || (sc && sc.contains(n)) ||
+                layerEls.some(function (l) { return l.contains(n); })) return;
+            var b = n.getBoundingClientRect(), cs = fw.getComputedStyle(n);
+            if (cs.position === "fixed" && cs.zIndex !== "auto" && cs.pointerEvents !== "none" && b.width > 20 && b.height > 20 && b.width * b.height < whole) layerEls.push(n);
+            else walk(Array.prototype.slice.call(n.children));
+          });
+        })(all);
+      }
+      return layerEls.filter(function (l) { var b = l.getBoundingClientRect(); return b.width > 20 && b.height > 20; });
+    }
+    // Esc on the page (the panel not focused): one layer, as on the site — what it opened over the panel closed by the
+    // site's Esc; else the panel, by its Esc or its own close button
+    function key(e) {
+      e.stopImmediatePropagation();
+      var fw = doc.defaultView, had = layers().length;
+      send(doc.activeElement || doc.body, new fw.KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
+      setTimeout(function () {
+        if (had && layers().length < had) return;
+        var x = panel && panel.isConnected && panel.querySelector('button[aria-label^="Close" i]');
+        if (x) x.click();
+        close();
+      }, 300);
+    }
+    window.addEventListener("jr-escape", key, true);
+    function close() {
+      cancelAnimationFrame(raf); w2.stop();
+      frame.classList.remove("jr-render-frame--shown");
+      frame.style.removeProperty("--jr-clip");
+      frame.removeEventListener("jr-copy-send-blocked", blocked);
+      window.removeEventListener("jr-escape", key, true);
+      if (note) { note.remove(); note = null; }
+      open = open.filter(function (x) { return x.frame !== frame; });
+    }
+    open.push({ orig: panel, frame: frame, close: close });
   }
 
   /**

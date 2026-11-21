@@ -2211,6 +2211,62 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(f);
 }, 23600); })); // (its own time: 23.6–24.1 s)
 
+// user 11-21 ("直接衔接侧边栏"): a panel the site opens in its own layout in the hidden copy (ChatGPT's image editor —
+// not a body child: nothing was shown) is the copy itself shown on the page, cut to that panel; a toast area the site
+// added first is no menu (live 11-21); a send refused there says why; Esc on the page closes one layer at a time (its
+// Share dialog, then the panel by its own Close)
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var f = document.createElement("iframe");
+  f.className = "jr-render-frame";
+  f.srcdoc = '<div id="app"><div id="thread" style="height:200px;overflow:auto"><button id="t">Edit</button></div></div><script>' +
+    'document.getElementById("t").addEventListener("click", function () { var a = document.createElement("aside");' +
+    ' var toast = document.createElement("section"); toast.innerHTML = "<ol></ol>"; document.body.appendChild(toast);' + // (live: a toast area first)
+    ' a.innerHTML = "<button aria-label=\\"Close viewer\\">x</button>"; a.querySelector("button").onclick = function () { a.remove(); };' +
+    ' a.style.cssText = "position:fixed;right:0;top:0;width:70%;height:100%;background:#fff"; setTimeout(function () { document.getElementById("app").appendChild(a); }, 120); });' +
+    'document.addEventListener("keydown", function (e) { var d = document.getElementById("dlg"); if (e.key === "Escape" && d) d.remove(); });<\/script>';
+  var realScroller = JR.site.frameScroller;
+  JR.site.frameScroller = function (d) { return d.getElementById("thread"); };
+  var rafD = window.requestAnimationFrame, cafD = window.cancelAnimationFrame; // (headless virtual time draws few frames)
+  window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
+  var pop = document.createElement("div"); pop.className = "jr-popup"; document.body.appendChild(pop); // (Esc is Popup's while one is up)
+  function esc() { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); }
+  f.onload = function () {
+    var copyCtrl = document.createElement("button"); document.body.appendChild(copyCtrl);
+    var fd = f.contentDocument;
+    JR.siteControl.forward(fd.getElementById("t"), copyCtrl);
+    setTimeout(function () {
+      var shown = f.classList.contains("jr-render-frame--shown"), clip = f.style.getPropertyValue("--jr-clip"), r = f.getBoundingClientRect();
+      var menu = !!document.querySelector(".jr-site-overlay");
+      f.dispatchEvent(new CustomEvent("jr-copy-send-blocked"));
+      var note = !!document.querySelector(".jr-site-note");
+      // its Share dialog, in a full-window holder (live: ChatGPT's — the holder not shown: it'd show the copy's own chat)
+      var holder = fd.createElement("div"); holder.style.cssText = "position:fixed;inset:0;pointer-events:none";
+      var dlg = fd.createElement("div"); dlg.id = "dlg"; dlg.style.cssText = "position:fixed;z-index:50;pointer-events:auto;left:10px;top:10px;width:100px;height:100px";
+      holder.appendChild(fd.createElement("div")).appendChild(dlg); fd.body.appendChild(holder);
+      var col = fd.createElement("div"); col.style.cssText = "position:absolute;left:0;top:0;width:200px;height:100%"; fd.getElementById("app").appendChild(col); // (its layout at the new size)
+      var empty = fd.createElement("div"); empty.style.cssText = "position:fixed;z-index:41;pointer-events:none;left:200px;top:0;width:300px;height:100%"; fd.body.appendChild(empty); // (an empty holder)
+      setTimeout(function () {
+        var clip2 = f.style.getPropertyValue("--jr-clip");
+        esc();
+        setTimeout(function () {
+          var afterOne = f.classList.contains("jr-render-frame--shown") && !fd.getElementById("dlg") && !!fd.querySelector("aside") && pop.isConnected;
+          esc();
+          setTimeout(function () {
+            check("a panel the site opens in the hidden copy's layout: shown on the page at its size, cut to it and what it opens; a refused send says why; Esc a layer at a time",
+              shown && !menu && /^path\('M\d+ 0H\d+V\d+H\d+Z'\)$/.test(clip) && Math.round(r.width) === innerWidth && note &&
+              /ZM10 10H110V110H10Z'\)$/.test(clip2) && afterOne &&
+              !f.classList.contains("jr-render-frame--shown") && !fd.querySelector("aside") && !document.querySelector(".jr-site-note") && pop.isConnected,
+              [shown, menu, clip, Math.round(r.width), innerWidth, note, clip2, afterOne, f.classList.contains("jr-render-frame--shown"), !!fd.querySelector("aside"), !!document.querySelector(".jr-site-note"), pop.isConnected].join(" "));
+            JR.site.frameScroller = realScroller; window.requestAnimationFrame = rafD; window.cancelAnimationFrame = cafD;
+            JR.siteControl.closeAll(); copyCtrl.remove(); pop.remove(); f.remove(); done();
+          }, 450);
+        }, 450);
+      }, 100);
+    }, 300);
+  };
+  document.body.appendChild(f);
+}, 15000); })); // (its own time: 15–16.5 s — the shown copy covers the page)
+
 // live G4: Esc while the user is in a dialog the site opened (its Share panel, its editor) is the site's — the popup stays
 (function () {
   var pop = document.createElement("div"); pop.className = "jr-popup"; document.body.appendChild(pop);

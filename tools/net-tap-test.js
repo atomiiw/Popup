@@ -6,10 +6,10 @@ function run(argv) {
   function cut(start, end) { var a = src.indexOf(start), b = src.indexOf(end, a); if (a < 0 || b < 0) throw new Error("marker missing: " + start); return src.slice(a, b); }
   var code = [
     "var location = { hash: '' }; var document = { getElementById: function () { return null; }, body: null };",
-    cut("  var POPUP_PREFIXES", "  function emit("),
+    cut("  /** A request that adds", "  function emit("),
     cut("  function filterOn()", "  window.fetch ="),
     cut("  function Accumulator()", "  async function tap("),
-    "return { Accumulator: Accumulator, filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, questionFromBody: questionFromBody, status: function () { return filterStatus; } };",
+    "return { sendsMessage: sendsMessage, Accumulator: Accumulator, filterPage: filterPage, correctParent: correctParent, fixRequest: fixRequest, questionFromBody: questionFromBody, status: function () { return filterStatus; } };",
   ].join("\n");
   var api = (new Function(code))();
 
@@ -21,6 +21,12 @@ function run(argv) {
     var ok = got === want; if (!ok) failed++;
     out.push((ok ? "PASS " : "FAIL ") + name + " -> " + got + (ok ? "" : "   [want " + want + "]"));
   }
+
+  // The hidden copy sends nothing (user 11-21): a message or an edit refused; reads and a share pass
+  check("hidden copy: a send is refused", [api.sendsMessage("/backend-api/f/conversation", "POST"), api.sendsMessage("https://chatgpt.com/backend-api/conversation", "post"),
+    api.sendsMessage("/backend-api/f/conversation/prepare", "POST")].join(), "true,true,true");
+  check("hidden copy: reads and a share pass", [api.sendsMessage("/backend-api/conversations/abc?num_turns=10", "GET"), api.sendsMessage("/backend-api/conversation/abc", "GET"),
+    api.sendsMessage("/backend-api/share/create", "POST"), api.sendsMessage("/backend-api/conversations/abc/messages", "POST")].join(), "false,false,false,false");
 
   // A Popup question sent with an image: parts = [image pointer, text] (Step 2).
   var withImage = JSON.stringify({ messages: [{ content: { content_type: "multimodal_text", parts: [
