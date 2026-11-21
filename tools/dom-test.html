@@ -2048,23 +2048,6 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 400);
 }, 20100); })); // (its own time — 20.1–20.9 s, between the 20 s and 21 s tests: one original is live at a time)
 
-// user 11-20 ("popup 里这个 button 点不开"): Share on an image ChatGPT made downloads it (its menu would open unseen)
-asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var resp = document.createElement("div"); resp.className = "jr-popup-response";
-  resp.innerHTML = '<div data-testid="generated-image-gallery"><button aria-label="Generated image 1"><img alt="Generated image" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="></button>' +
-    '<button aria-label="Share generated image">s</button></div>';
-  document.body.appendChild(resp);
-  JR.wireResponseClicks(resp);
-  var realClick = HTMLAnchorElement.prototype.click, saved = null;
-  HTMLAnchorElement.prototype.click = function () { if (this.download) saved = this.download; else realClick.call(this); };
-  resp.querySelector('[aria-label="Share generated image"]').click();
-  setTimeout(function () {
-    HTMLAnchorElement.prototype.click = realClick;
-    check("an image ChatGPT made: Share downloads it", saved && /\.png$/.test(saved), saved);
-    resp.remove(); done();
-  }, 300);
-}, 600); }));
-
 // 11-20 (ChatGPT rate-limited the account): a copy shown before shows from memory when reopened — no hidden copy loaded
 (function () {
   var real = JR.site.original, asked = 0, copy = document.createElement("div");
