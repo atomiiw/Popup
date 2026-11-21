@@ -978,8 +978,9 @@
     // it rebuilt its list — 75 196 → 50 945 px, the reader's 19 500 px turn back to an estimate — and scrolled to
     // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
     // held where the reader saw it (its drift, below). Twice at most per send.
-    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0;
+    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, moved = false;
     function reachBack(now) {
+      if (moved) return false; // (the reader went elsewhere during the send: not pulled back to where they were)
       if (!lostAt) lostAt = now;
       if (container.scrollHeight !== settledH) { settledH = container.scrollHeight; settledAt = now; }
       if (reaches >= 2 || now - lostAt < 600 || now - settledAt < 600 || !JR.scrollToTurnKey) return false;
@@ -1007,7 +1008,8 @@
       if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
-      if (userScrolling) {
+      if (userScrolling || (JR.jumping && JR.jumping())) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
+        moved = true;
         savedTop = container.scrollTop;
         // (where the user went is the new start: a later height change estimates from there, not the send's start —
         // review: a reader who scrolled away was thrown back)

@@ -1570,9 +1570,15 @@
   // popup up comes as "jr-escape": escape-guard.js.)
   window.addEventListener("keydown", function (e) { if (e.key === "Escape") navGen++; }, true);
   document.addEventListener("jr-escape", function () { navGen++; }, true);
+  // A jump is the user going elsewhere: a send's hold takes where it goes as the reader's place, not the place to go
+  // back to (live NT3 H2: ∧ during a send — the hold pulled the chat back, the popup it opened was off screen)
+  var jumpUntil = 0;
+  JR.jumping = function () { return Date.now() < jumpUntil; };
+  function jumpEnds() { jumpUntil = Date.now() + 500; } // (the popup placed meanwhile)
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
     var gen = navGen;
+    jumpUntil = Infinity;
     var entry = st.completedHighlights.get(hlId);
     var connected = entry && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected;
     var sc0 = JR.site.scrollContainer();
@@ -1582,19 +1588,20 @@
         JR.navTrace += " → y=" + Math.round(entry.spans[0].getBoundingClientRect().top) + " scrollTop=" + Math.round(sc0 ? sc0.scrollTop : -1);
         JR.createPopup({ completedId: hlId });
       });
+      jumpEnds();
       return;
     }
     // Highlight's turn isn't in the DOM (virtualized): scroll until ChatGPT
     // mounts it, wait for the highlight to be re-applied, then open it.
     var q = entry || JR.pendingL1Quotes().filter(function (p) { return p.quoteId === hlId; })[0];
-    if (!q || !q.sourceTurnKey) { JR.navTrace += ", no turn key"; return; }
+    if (!q || !q.sourceTurnKey) { JR.navTrace += ", no turn key"; jumpEnds(); return; }
     JR.navTrace += ", turn " + q.sourceTurnKey.slice(0, 8) + " at " + turnPosition(JR.qa.turnOrderCache)(q.sourceTurnKey) + "/" + (JR.qa.turnOrderCache || []).length;
     JR.scrollToTurnKey(q.sourceTurnKey, function (ok) {
       JR.navTrace += ", reached=" + ok + (gen !== navGen ? " (dropped)" : "");
-      if (!ok || gen !== navGen) return;
+      if (!ok || gen !== navGen) return jumpEnds();
       var waited = 0;
       (function open() {
-        if (gen !== navGen) return; // the user went elsewhere meanwhile (user, 2026-11-18: two popups at once)
+        if (gen !== navGen) return jumpEnds(); // the user went elsewhere meanwhile (user, 2026-11-18: two popups at once)
         var e = st.completedHighlights.get(hlId);
         if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
           openAt(e.spans[0], function () {
@@ -1602,11 +1609,11 @@
             JR.createPopup({ completedId: hlId });
           });
           JR.updateNavWidget();
-          return;
+          return jumpEnds();
         }
         // (6 s: ChatGPT's new front end draws a turn just mounted in parts — its highlight was put back after 2 s: the jump
         // reached the turn and opened nothing, live C4 11-20)
-        if ((waited += 100) > 6000) { JR.navTrace += ", highlight not back"; return; }
+        if ((waited += 100) > 6000) { JR.navTrace += ", highlight not back"; return jumpEnds(); }
         if (JR.reapplyHighlights) JR.reapplyHighlights();
         setTimeout(open, 100);
       })();
