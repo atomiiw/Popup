@@ -614,7 +614,7 @@
     if (opts.url && !sameChat(opts.url)) { st.messageQueue.length = 0; return; }
     // its availability: sending from here — its files' upload included (a reopen meanwhile saw idle and stored it
     // failed — ponytail review); once per send (sendQueued comes back here after the files)
-    var avId = qw.preRegisteredItemId;
+    var avId = qw.preRegisteredItemId || (qw.editOpts && qw.editOpts.itemId); // (an edit's version too)
     if (avId && !opts.availSent) { opts.availSent = true; JR.availability.on(avId, { t: "send", files: !!(opts.files && opts.files.length) }); }
     // the user's own files leave the box now, at the real send (TODO 4e): handed back after it, done or not
     if (!opts.attached && !opts.aside && JR.site.composerHasAttachments(JR.site.composer())) {
@@ -682,7 +682,7 @@
     var watch = JR.waitForResponse(w.popup, w.turnsBefore, w.text, w.sentence, w.blockTypes, w.unlockScroll,
       w.parentId, w.question, w.editOpts, w.preRegisteredHlId, w.preRegisteredItemId, opts.message,
       w.wholeResponse, w.wholeResponseFull, sentFiles);
-    var vid = w.preRegisteredItemId; // (its availability: sending since sendQueued began, streaming once in)
+    var vid = w.preRegisteredItemId || (w.editOpts && w.editOpts.itemId); // (its availability: sending since sendQueued began, streaming once in)
     JR.injectAndSend(opts.message, function (r) {
       endAttaching();
       if (r.ok && vid) JR.availability.on(vid, { t: "sent" });
@@ -696,7 +696,8 @@
    */
   function immediateTimeout(w, url) { // url: the chat it was asked in (another may be open now — ponytail review)
     url = url || location.href;
-    if (w.preRegisteredItemId) JR.availability.on(w.preRegisteredItemId, { t: "failed", reason: "not-sent" });
+    var avFail = w.preRegisteredItemId || (w.editOpts && w.editOpts.itemId);
+    if (avFail) JR.availability.on(avFail, { t: "failed", reason: "not-sent" });
     JR.unfreezeChat();
     if (w.unlockScroll) w.unlockScroll();
     var hlId = w.editOpts ? w.editOpts.hlId : (w.preRegisteredHlId || null);
@@ -1016,6 +1017,7 @@
     if (r.stage === "insert") return "Popup couldn’t type into " + JR.site.label + "’s input box — nothing was sent";
     if (r.stage === "submit") return "Popup couldn’t press Send — nothing was sent";
     if (r.stage === "offline") return "You’re offline — nothing was sent";
+    if (r.stage === "rejected") return JR.site.label + " was still answering and didn\u2019t take the question \u2014 nothing was sent";
     if (r.stage === "turn-not-found") return JR.site.label + " answered, but Popup couldn’t find the answer on the page";
     return "Couldn’t get a response";
   };
@@ -1167,7 +1169,7 @@
     }
 
     function finishWithTimeout() {
-      if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "failed", reason: "no-answer" });
+      if (linkItemId) JR.availability.on(linkItemId, { t: "failed", reason: "no-answer" });
       cleanup();
       saveTimeoutVersion();
       st.cancelResponseWatch = null;
@@ -1296,14 +1298,15 @@
     }
 
     function captureResponse() {
-      if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "done" });
+      if (linkItemId) JR.availability.on(linkItemId, { t: "done" });
       var spans = detached ? detachedSpans : st.activeSourceHighlights;
 
       var turn = liveResponseTurn();
       // the answer's text, for ordering highlights in it only (the popup shows the site answer from its original)
       var answerText = domAnswerUsable() ? JR.site.assistantText(turn).trim()
         : mirrorDiv ? mirrorDiv.textContent.trim() : ""; // (the hidden turn is gone: what the popup showed of it, R36f)
-      if (!answerText && turn && !net.text.trim()) {
+      if (JR.sendOutcome.settle({ answerText: answerText, turn: turn ? { answered: JR.locator.answered(turn) } : null,
+          net: { text: net.text.trim(), media: !!net.media } }) === "empty") {
         // Empty answer (user stopped, error): failed
         finishWithTimeout();
         return;
@@ -1524,88 +1527,33 @@
       var turn = liveResponseTurn();
       var generating = JR.isGenerating();
 
-      // 2. Done: ChatGPT stopped generating and the answer has text.
-      if (turn && !generating && JR.site.assistantText(turn).trim().length > 0) {
-        setTimeout(captureResponse, 300);
-        return;
-      }
-      // Done per the network stream while the DOM answer isn't usable
-      // (turn never mounted, or ChatGPT's "couldn't load").
-      if (net.done && (net.text.trim() || net.media) && !domAnswerUsable()) {
-        setTimeout(captureResponse, 300);
-        return;
-      }
-      // Done while the answer is scrolled out of the DOM (keys known, content later).
-      if (responseKey && !turn && !generating && !net.matched) {
-        setTimeout(captureResponse, 300);
-        return;
-      }
-
       // Progress: the answer grew in the DOM or in the network stream.
       var currentContent = turn ? JR.site.assistantText(turn) : "";
       if (currentContent !== lastContentSnapshot || net.text.length !== lastNetLength) {
         lastContentSnapshot = currentContent;
         lastNetLength = net.text.length;
         // (its availability: the deadline moves on as it grows — told at most every 5 s)
-        if (preRegisteredItemId && Date.now() - (told.progress || 0) > 5000) { told.progress = Date.now(); JR.availability.on(preRegisteredItemId, { t: "progress" }); }
+        if (linkItemId && Date.now() - (told.progress || 0) > 5000) { told.progress = Date.now(); JR.availability.on(linkItemId, { t: "progress" }); }
         lastProgress = Date.now();
       }
 
-      // Stale-content safeguard: generating flag stuck but the (mounted) answer stopped changing.
-      // (not while the network stream is still open: ChatGPT may be searching or running code)
-      if (turn && generating && !(net.matched && !net.done)) {
-        if (currentContent.trim() && Date.now() - lastProgress >= STALE_THRESHOLD) {
-          console.warn("[Popup] Response stale for " + STALE_THRESHOLD + "ms — force capturing");
-          setTimeout(captureResponse, 300);
-          return;
-        }
+      // 2. What now: one place decides (send-outcome.js); here only what is known, and the decision carried out
+      var checkBox = !qaKeys.length && !net.matched && !rejected.pending && !submitting && Date.now() - startTime >= JR.sendOutcome.LIMITS.refusal;
+      var composer = checkBox ? JR.site.composer() : null, probe = norm60(message).slice(0, 30);
+      var d = JR.sendOutcome.decide({
+        now: Date.now(), start: startTime, lastProgress: lastProgress, generating: generating,
+        keys: qaKeys.length, responseKey: !!responseKey,
+        turn: turn ? { text: !!currentContent.trim(), answered: JR.locator.answered(turn) } : null,
+        domUsable: domAnswerUsable(), submitting: submitting,
+        composerHasOurs: !!(composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1),
+        canResend: !(files && files.length) && !lastHadAside, rejected: rejected,
+        net: { matched: net.matched, done: net.done, text: !!net.text.trim(), media: !!net.media, resuming: net.resuming || 0 },
+        resume: resumeLook,
+      });
+      if (d.report && (!st.lastSendReport || st.lastSendReport.ok)) {
+        st.lastSendReport = { ok: false, stage: d.report, detail: "the site is answering but the new turn is not on the page", when: new Date().toISOString() };
       }
-
-      // ChatGPT refused the send ("wait for this response to finish") and put
-      // our message back in its input box: clear it at once (the user must never
-      // see it), then send again when ChatGPT is really idle — once.
-      if (!qaKeys.length && !net.matched && !rejected.pending && !submitting && Date.now() - startTime >= 1500) {
-        var composer = JR.site.composer();
-        var probe = norm60(message).slice(0, 30);
-        if (composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1) {
-          clearComposer(composer, files);
-          putDraftBack(composer, lastDraft); // (the user's own text came back to the box with it)
-          handBackFiles();
-          // With files, a resend would go out as text only: fail instead (Retry resends the files). With the user's
-          // own files set aside, they were handed back at the first send: a resend would carry them, hidden (audit)
-          if (rejected.count >= 1 || (files && files.length) || lastHadAside) {
-            st.lastSendReport = { ok: false, stage: "rejected", detail: "ChatGPT refused the message twice", when: new Date().toISOString() };
-            finishWithTimeout();
-            return;
-          }
-          rejected.count++;
-          rejected.pending = true;
-          st.lastSendReport = { ok: false, stage: "retrying", detail: "ChatGPT was still busy; will resend", when: new Date().toISOString() };
-          (function resendWhenIdle(tries) {
-            if (JR.isGenerating() && tries < 120) { setTimeout(function () { resendWhenIdle(tries + 1); }, 500); return; }
-            snap = JR.snapshotTurns();
-            startTime = Date.now();
-            rejected.pending = false;
-            JR.injectAndSend(message, function (r) { if (!r.ok) watch.failInjection(r); });
-          })(0);
-        }
-      }
-      if (rejected.pending) { timerId = setTimeout(poll, 300); return; }
-
-      // Quick timeout: nothing appeared and ChatGPT isn't generating.
-      if (!qaKeys.length && !net.matched && !generating && Date.now() - startTime >= 3000) {
-        finishWithTimeout();
-        return;
-      }
-
-      // ChatGPT is answering but our turn never mounted (user scrolled far away).
-      if (!qaKeys.length && !net.matched && generating && Date.now() - startTime >= 4000 && (!st.lastSendReport || st.lastSendReport.ok)) {
-        st.lastSendReport = { ok: false, stage: "turn-not-found", detail: "ChatGPT is generating but the new turn is not in the DOM", when: new Date().toISOString() };
-      }
-
-      // The send's stream ended before the answer (ChatGPT's thinking models resume it on another connection, live
-      // 11-20): once ChatGPT is done, the Q&A and its answer from the conversation (up to 6 looks, 3 s apart)
-      if (net.resuming && !net.done && !generating && !resumeLook.busy && resumeLook.n < 6 && Date.now() - net.resuming >= 1500) {
+      if (d.readResume) { // (the send's stream ended before the answer — a thinking model resumes it elsewhere, live 11-20)
         resumeLook.busy = true; resumeLook.n++;
         JR.qa.answerFor(message).then(function (a) {
           resumeLook.busy = false;
@@ -1614,21 +1562,33 @@
           net.text = a.text; net.media = a.media; net.done = true;
         }, function () { resumeLook.busy = false; });
       }
-
-      // Hard 10-second timeout: no answer text and ChatGPT isn't working on it.
-      if (Date.now() - startTime >= 10000) {
-        var hasRealContent = (turn && JR.site.assistantText(turn).trim().length >= 1) || net.text.trim().length >= 1 || net.media;
-        if (!hasRealContent && !generating && !(net.matched && !net.done)) {
-          finishWithTimeout();
-          return;
+      if (d.act === "capture") { setTimeout(captureResponse, 300); return; }
+      if (d.act === "fail" || d.act === "stop-fail") {
+        // the site refused it (busy) and put it back in its box: out of the box at once (never seen), files handed back
+        if (d.stage === "rejected") {
+          clearComposer(composer, files); putDraftBack(composer, lastDraft); handBackFiles();
+          st.lastSendReport = { ok: false, stage: "rejected", detail: JR.site.label + " refused the message", when: new Date().toISOString() };
         }
-      }
-
-      if (Date.now() - Math.max(startTime, lastProgress) >= (generating ? GENERATING_LIMIT_MS : IDLE_LIMIT_MS)) {
-        stopGeneration();
+        if (d.act === "stop-fail") stopGeneration();
         finishWithTimeout();
         return;
       }
+      if (d.act === "resend") {
+        clearComposer(composer, files);
+        putDraftBack(composer, lastDraft); // (the user's own text came back to the box with it)
+        handBackFiles();
+        rejected.count++;
+        rejected.pending = true;
+        st.lastSendReport = { ok: false, stage: "retrying", detail: JR.site.label + " was still busy; will resend", when: new Date().toISOString() };
+        (function resendWhenIdle(tries) {
+          if (JR.isGenerating() && tries < 120) { setTimeout(function () { resendWhenIdle(tries + 1); }, 500); return; }
+          snap = JR.snapshotTurns();
+          startTime = Date.now();
+          rejected.pending = false;
+          JR.injectAndSend(message, function (r) { if (!r.ok) watch.failInjection(r); });
+        })(0);
+      }
+      if (rejected.pending) { timerId = setTimeout(poll, 300); return; }
 
       // Poll fast initially to catch new turns quickly, then slow down
       var interval = responseKey ? 500 : 80;
@@ -1641,7 +1601,7 @@
       /** The injection itself failed: stop watching, undo, and say why in the popup. */
       failInjection: function () {
         injectionFailed = true;
-        if (preRegisteredItemId) JR.availability.on(preRegisteredItemId, { t: "failed", reason: "not-sent" });
+        if (linkItemId) JR.availability.on(linkItemId, { t: "failed", reason: "not-sent" });
         if (timerId) clearTimeout(timerId);
         cleanup();
         saveTimeoutVersion();

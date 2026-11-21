@@ -103,6 +103,7 @@
         "src/site-adapter.js",
         "src/qa-content.js",
         "src/availability.js",
+        "src/send-outcome.js",
         "src/locator.js",
         "src/reach-turn.js",
         "src/site-overlay.js",
