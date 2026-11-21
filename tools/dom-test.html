@@ -2508,18 +2508,18 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // user 2026-11-18 (screenshot, dev.112): a frame original's generated code styles apply only in a marked copy — the
 // rebuilt popup's copy it is handed to is marked too (it lost them: no monospace, no indentation)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope }, marked = [];
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteFrameStyles.scope }, marked = [];
   var fdoc = document.implementation.createHTMLDocument("frame");
   fdoc.body.innerHTML = '<div data-turn-key="sd-1"><div data-message-author-role="assistant"><div class="markdown"><p>code</p></div></div></div>';
   JR.site.original = function () { return Promise.resolve(fdoc.body.firstChild); };
   JR.site.releaseOriginal = function () {};
-  JR.siteOriginalScope = function (el) { if (marked.indexOf(el) === -1) marked.push(el); };
+  JR.siteFrameStyles.scope = function (el, inFrame) { if (inFrame && marked.indexOf(el) === -1) marked.push(el); };
   var c1 = document.createElement("div"), c2 = document.createElement("div");
   JR.siteAnswer.follow(c1, ["sd-1"], null);
   setTimeout(function () {
     JR.siteAnswer.follow(c2, ["sd-1"], null); // its popup rebuilt
     check("site answer: a frame original's copy is marked for its styles, also the rebuilt popup's", marked.indexOf(c1) !== -1 && marked.indexOf(c2) !== -1 && /code/.test(c2.textContent), marked.length);
-    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
+    JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteFrameStyles.scope = real.s;
     done();
   }, 50);
 }, 21000); }));
@@ -2527,19 +2527,19 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // live 2026-11-18 (dev.115 trace): the site replaces the whole turn of a followed original (ChatGPT redraws it in the
 // frame) — nothing changes inside the old one; the copy follows the new one
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope };
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteFrameStyles.scope };
   var fdoc = document.implementation.createHTMLDocument("frame"), turnHTML = function (t) { return '<div data-turn-key="se-1"><div data-message-author-role="assistant"><div class="markdown"><p>' + t + '</p></div></div></div>'; };
   fdoc.body.innerHTML = turnHTML("old drawing");
   JR.site.original = function () { return Promise.resolve(fdoc.body.querySelector("[data-turn-key]")); };
   JR.site.releaseOriginal = function () {};
-  JR.siteOriginalScope = function () {};
+  JR.siteFrameStyles.scope = function () {};
   var c = document.createElement("div");
   JR.siteAnswer.follow(c, ["se-1"], null);
   setTimeout(function () {
     fdoc.body.innerHTML = turnHTML("new drawing"); // replaced, not changed
     setTimeout(function () {
       check("site answer: the site replaced the whole original — the copy follows the new one", /new drawing/.test(c.textContent), c.textContent);
-      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
+      JR.siteAnswer.stop(); JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteFrameStyles.scope = real.s;
       done();
     }, 50);
   }, 50);
@@ -2548,12 +2548,12 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
 // review of dev.125: opening a child popup stops its parent's follow (only the active popup follows; the parent's
 // patches redrew its paragraphs and took away the highlight the child was opened from)
 asyncChecks.push(new Promise(function (done) { setTimeout(function () {
-  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteOriginalScope }, st = JR.state;
+  var real = { o: JR.site.original, r: JR.site.releaseOriginal, s: JR.siteFrameStyles.scope }, st = JR.state;
   var saved = { stack: st.popupStack.slice(), p: st.activePopup, h: st.activeSourceHighlights, id: st.activeHighlightId };
   var fdoc = document.implementation.createHTMLDocument("frame");
   fdoc.body.innerHTML = '<div data-turn-key="sf-1"><div data-message-author-role="assistant"><div class="markdown"><p>parent</p></div></div></div>';
   JR.site.original = function () { return Promise.resolve(fdoc.body.firstChild); };
-  JR.site.releaseOriginal = function () {}; JR.siteOriginalScope = function () {};
+  JR.site.releaseOriginal = function () {}; JR.siteFrameStyles.scope = function () {};
   var c = document.createElement("div");
   JR.siteAnswer.follow(c, ["sf-1"], null);
   setTimeout(function () {
@@ -2562,7 +2562,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     check("site answer: opening a child popup stops the parent's follow", before && JR.siteAnswer.current() === null, before);
     st.popupStack.length = 0; Array.prototype.push.apply(st.popupStack, saved.stack);
     st.activePopup = saved.p; st.activeSourceHighlights = saved.h; st.activeHighlightId = saved.id;
-    JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteOriginalScope = real.s;
+    JR.site.original = real.o; JR.site.releaseOriginal = real.r; JR.siteFrameStyles.scope = real.s;
     done();
   }, 50);
 }, 23000); }));

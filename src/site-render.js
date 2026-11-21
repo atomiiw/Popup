@@ -265,11 +265,35 @@
   JR.siteRenderState = function () {
     return { frame: !!(frame && frame.isConnected), busy: busy, jobs: jobs.length, holding: holding && holding.key, wanted: Array.from(wanted) };
   };
-  /** A copy of a frame original: scoped to this frame load's generated styles (JR.scopeFrameRules). */
-  JR.siteOriginalScope = function (copyEl) {
-    copyFrameStyles();
-    if (!copyEl.classList.contains("jr-frame-answer")) copyEl.classList.add("jr-frame-answer");
-    if (copyEl.getAttribute("data-jr-frame") !== String(frameId)) copyEl.setAttribute("data-jr-frame", String(frameId));
+  /**
+   * A copy's look when its original is the hidden copy's drawing: the frame's generated (ͼ) rules, scoped to this frame
+   * load (JR.scopeFrameRules) — all of it here (overnight plan A3: site-answer.js handled the marks too).
+   * scope(copyEl, inFrame): marked for this load's rules (inFrame), or unmarked (a page original: the frame's rules mean
+   * other things there). take(copyEl) → what to keep with a copy from memory (null: nothing); put(copyEl, taken): back.
+   */
+  JR.siteFrameStyles = {
+    scope: function (copyEl, inFrame) {
+      if (!inFrame) {
+        if (copyEl.hasAttribute("data-jr-frame")) { copyEl.classList.remove("jr-frame-answer"); copyEl.removeAttribute("data-jr-frame"); }
+        return;
+      }
+      copyFrameStyles();
+      if (!copyEl.classList.contains("jr-frame-answer")) copyEl.classList.add("jr-frame-answer");
+      if (copyEl.getAttribute("data-jr-frame") !== String(frameId)) copyEl.setAttribute("data-jr-frame", String(frameId));
+    },
+    take: function (copyEl) {
+      var id = copyEl.getAttribute("data-jr-frame");
+      if (!id) return null;
+      var style = document.querySelector('style[data-jr-frame-styles="' + id + '"]');
+      return { id: id, style: style && style.cloneNode(true) };
+    },
+    put: function (copyEl, taken) {
+      if (!taken) return;
+      copyEl.classList.add("jr-frame-answer");
+      copyEl.setAttribute("data-jr-frame", taken.id);
+      // (its load's rules may have gone with that load: back while a copy uses them — copyFrameStyles drops them after)
+      if (taken.style && !document.querySelector('style[data-jr-frame-styles="' + taken.id + '"]')) document.head.appendChild(taken.style.cloneNode(true));
+    },
   };
 
 

@@ -112,12 +112,11 @@
   function memoryKey(keys) { return JR.site.conversationId() + "|" + keys.join(); }
   function remember(l) {
     if (!l.turn || !l.copyEl.textContent.replace(/Reply/g, "").trim()) return;
-    var k = memoryKey(l.keys), frameId = l.copyEl.getAttribute("data-jr-frame");
-    // (a copy of the hidden copy's drawing: its scoped rules with it — claude.ai's code blocks, R36g; Popup's Reply not)
-    var style = frameId && document.querySelector('style[data-jr-frame-styles="' + frameId + '"]');
+    var k = memoryKey(l.keys);
     shownBefore.delete(k);
+    // (a copy of the hidden copy's drawing: its scoped rules with it — claude.ai's code blocks, R36g; Popup's Reply not)
     shownBefore.set(k, { nodes: Array.prototype.filter.call(l.copyEl.cloneNode(true).childNodes, function (n) { return !kept(n); }),
-      frameId: frameId, style: style && style.cloneNode(true) });
+      look: JR.siteFrameStyles ? JR.siteFrameStyles.take(l.copyEl) : null });
     if (shownBefore.size > 30) shownBefore.delete(shownBefore.keys().next().value);
   }
 
@@ -133,10 +132,7 @@
     var later = l.fromPage && JR.site.findTurnByKey(l.key);
     if (later && later !== l.turn) return follow(l, later, l.key, true);
     // a frame original's generated styles apply only inside a marked copy — every copy it goes to (a rebuilt popup's too)
-    if (l.turn.ownerDocument !== document) { if (JR.siteOriginalScope) JR.siteOriginalScope(l.copyEl); }
-    else if (l.copyEl.hasAttribute("data-jr-frame")) { // now a page original: the frame's generated (ͼ) rules mean other things here
-      l.copyEl.classList.remove("jr-frame-answer"); l.copyEl.removeAttribute("data-jr-frame");
-    }
+    if (JR.siteFrameStyles) JR.siteFrameStyles.scope(l.copyEl, l.turn.ownerDocument !== document);
     if (!syncInto(l.copyEl, l.turn)) return;
     if (l.id) JR.availability.on(l.id, { t: "found", via: l.via });
     if (l.onChange) l.onChange(l.copyEl, l.turn, l.key);
@@ -182,11 +178,7 @@
     // shown before in this session: that copy at once; the live original only when a control needs it (counterpart)
     var before = !l.wantLive && shownBefore.get(memoryKey(l.keys));
     if (before) {
-      if (before.frameId) {
-        l.copyEl.classList.add("jr-frame-answer");
-        l.copyEl.setAttribute("data-jr-frame", before.frameId);
-        if (before.style && !document.querySelector('style[data-jr-frame-styles="' + before.frameId + '"]')) document.head.appendChild(before.style.cloneNode(true));
-      }
+      if (JR.siteFrameStyles) JR.siteFrameStyles.put(l.copyEl, before.look);
       syncChildren(before.nodes.map(function (n) { return n.cloneNode(true); }), l.copyEl);
       l.fromMemory = true;
       if (l.id) JR.availability.on(l.id, { t: "found", via: "memory" });
