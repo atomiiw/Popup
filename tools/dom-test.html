@@ -2844,7 +2844,7 @@ asyncChecks.push(new Promise(function (done) {
 // 2026-11-19: the scroll guard lapses after 2 min; an answer that takes longer (thinking) keeps it while its watch runs
 (function () {
   var st = JR.state, html = document.documentElement, realSet = window.setInterval, realClear = window.clearInterval, tick = null, cleared = false;
-  window.setInterval = function (fn) { tick = fn; return 4242; };
+  window.setInterval = function (fn) { if (!tick) tick = fn; return 4242; }; // (the first: the renewal; then the chat check)
   window.clearInterval = function (id) { if (id === 4242) cleared = true; else realClear(id); };
   var w = {};
   try { JR.prepareSend(w); } finally { window.setInterval = realSet; window.clearInterval = realClear; }

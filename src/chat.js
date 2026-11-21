@@ -507,14 +507,21 @@
     var renew = setInterval(function () {
       if (st.responseWatchActive && html.hasAttribute("data-jr-scroll-lock")) html.setAttribute("data-jr-scroll-lock", String(Date.now()));
     }, 30000);
-    return function () {
+    // another chat opened: nothing of it is held (the hold outlives a closed popup till its send ends — NT2 G2)
+    var conv = JR_HOST.convKey(location.href), done = false;
+    var away = setInterval(function () { if (JR_HOST.convKey(location.href) !== conv) release(); }, 500);
+    function release() {
+      if (done) return;
+      done = true;
+      clearInterval(away);
       clearInterval(renew);
       // claude.ai keeps following its newest message after a send (pinned to the bottom): let go first, or its next
       // change scrolls the reader there once the guard is off (live 2026-11-19, Claude Code: to the end of the chat)
       if (JR.site.unpin) JR.site.unpin();
       document.documentElement.removeAttribute("data-jr-scroll-lock");
       if (unlock) unlock();
-    };
+    }
+    return release;
   }
 
   // --- Message queue ---
@@ -1258,21 +1265,11 @@
       detachedSpans = st.activeSourceHighlights.slice();
       detached = true;
 
-      if (editOpts) {
-        // Edit mode detach — spans and entry already exist
-        // detachedHlId already set from editOpts.hlId
-        // Keep observer running — streaming continues in background
-        if (unlockScroll) unlockScroll();
-        unlockScroll = null;
-        st.cancelResponseWatch = null;
-        return;
-      }
-
-      detachedHlId = preRegisteredHlId; // (every send pre-registers its version: popup.js doSend / Retry — A1b)
-
+      // the reader's place stays held till the send ends (cleanup): closed while it waited for the site (the site busy
+      // with the main answer — sent again when idle), the send came later with nothing held and the chat jumped
+      // (live NT2 G2, both Chromes; the hold follows the user's own scrolling)
+      if (!editOpts) detachedHlId = preRegisteredHlId; // (every send pre-registers its version: popup.js doSend / Retry — A1b)
       // Keep observer running — streaming continues in background
-      if (unlockScroll) unlockScroll();
-      unlockScroll = null;
       st.cancelResponseWatch = null;
     };
     // its popup closed while the send waited in the queue (peer audit A1): the watch starts detached, as if closed now —
