@@ -810,6 +810,20 @@ r19 = p19.getBoundingClientRect(); w19 = p19.offsetWidth;
 drag3(p19, r19.right - 2, r19.top + 2, 40, 0);
 check("R20: the trash button's corner (top right) never changes the width", p19.offsetWidth === w19, p19.offsetWidth + " vs " + w19);
 p19.remove();
+// user 11-21 ("diagonal stretching好像失效了"): a popup capped to the room where it opened, the chat scrolled on since — a
+// corner drag changes its height too, up to the room where it is now
+var p20 = popup3(new Array(200).join("<p>line</p>"));
+p20.style.animation = "none";
+JR.positionPopup(p20, place3(C3, 1500, 1500 - 0.35 * W3), host3, null, []);
+JR.addResizeHandlers(p20);
+var h20 = p20.offsetHeight, w20 = p20.offsetWidth;
+sc3.scrollTop += 100; // (the chat scrolled: the popup 100 px higher, more room below it)
+var r20 = p20.getBoundingClientRect();
+drag3(p20, r20.right - 2, r20.bottom - 2, -40, 60);
+check("a capped popup, the chat scrolled since: a corner drag changes width and height (up to the room now)",
+  h20 < H70 - 40 && Math.abs(p20.offsetWidth - (w20 - 40)) <= 2 && Math.abs(p20.offsetHeight - Math.min(h20 + 60, H70)) <= 2,
+  [h20, p20.offsetHeight, w20, p20.offsetWidth, Math.round(H70)].join(" "));
+p20.remove();
 var pa = popup3(new Array(200).join("<p>line</p>"));
 JR.positionPopup(pa, place3(C3, 1500, 1500 - 0.8 * W3), host3, null, []);
 JR.addResizeHandlers(pa);
