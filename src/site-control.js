@@ -108,9 +108,18 @@
   function forward(o, copyCtrl) {
     var doc = o.ownerDocument;
     if (doc === document || !doc.body) {
-      var shown = doc === document && reveal(o);
+      var shown = doc === document && reveal(o), had = new Set(Array.prototype.slice.call(document.body.children));
       press(o);
       if (shown) setTimeout(function () { shown.removeAttribute("data-jr-pressing"); }, 1000); // (a Copy may read a moment later)
+      // a menu the site opened for an original hidden on the page: placed by its 0 px trigger, unseen, and a modal one
+      // takes the page's pointer (Radix: body pointer-events none — no hover anywhere): closed again (audit)
+      if (shown) setTimeout(function () {
+        var opened = Array.prototype.some.call(document.body.children, function (c) {
+          return !had.has(c) && !/^(SCRIPT|STYLE|LINK)$/.test(c.tagName) && !c.classList.contains("jr-site-overlay") && !c.closest(".jr-popup");
+        });
+        if (opened) send(document, new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
+        if (document.body.style.pointerEvents === "none") document.body.style.pointerEvents = "";
+      }, 300);
       return;
     }
     var before = new Set(Array.prototype.slice.call(doc.body.children)), t0 = Date.now();
@@ -130,14 +139,20 @@
    * for up to 4 s; 20 s for a copy from memory — its original is looked for first), the hidden copy's document lent the
    * focus for the moment (a site's Copy writes the clipboard only from a focused document — site-render.js).
    */
+  var lastInput = 0; // the user's last press or key (trusted)
+  document.addEventListener("pointerdown", function (e) { if (e.isTrusted) lastInput = Date.now(); }, true);
+  document.addEventListener("keydown", function (e) { if (e.isTrusted) lastInput = Date.now(); }, true);
   function use(el, responseDiv) {
-    var memory = JR.siteAnswer.fromMemory();
+    var memory = JR.siteAnswer.fromMemory(), at = Date.now();
     (function attempt(tries) {
       var o = JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
       if (!o) {
         if (tries > 0 && JR.siteAnswer.current() === responseDiv) setTimeout(function () { attempt(tries - 1); }, 100);
         return;
       }
+      // found late, after the user went on (typed, pressed elsewhere) or 5 s on (a site's Copy needs the click's
+      // activation): not pressed — the focus lent to the hidden copy took their keys, a menu opened out of nowhere (audit)
+      if (Date.now() - at > 200 && (lastInput > at + 50 || Date.now() - at > 5000)) return;
       var w = o.ownerDocument.defaultView;
       if (w && w !== window) {
         if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
@@ -155,5 +170,8 @@
     if (JR.siteAnswer.current() === responseDiv && JR.siteAnswer.fromMemory()) JR.siteAnswer.counterpart(el);
   }
 
-  JR.siteControl = { use: use, warm: warm, forward: forward };
+  /** Close every site menu shown here (the hidden copy dropped: their originals went with it — audit). */
+  function closeAll() { open.slice().forEach(function (x) { x.close(); }); }
+
+  JR.siteControl = { use: use, warm: warm, forward: forward, closeAll: closeAll };
 })();

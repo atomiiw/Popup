@@ -3,12 +3,9 @@
   "use strict";
 
   var st = JR.state;
-  var mouseIsDown = false;
   var triggerBtn = null; // floating "open popup" button after highlight
   var triggerData = null; // saved selection data for the trigger
 
-  document.addEventListener("mousedown", function () { mouseIsDown = true; }, true);
-  document.addEventListener("mouseup", function () { mouseIsDown = false; }, true);
 
   // --- Trigger button helpers ---
 
@@ -384,7 +381,7 @@
 
   // Hover underline — when no popup is open, or for children of the innermost open popup
   document.addEventListener("mouseover", function (e) {
-    if (mouseIsDown) return;
+    if (e.buttons & 1) return; // (a button held — not a flag: after a native drag no mouseup came, it stayed set — audit)
     var span = e.target.closest(".jr-source-highlight-done");
     if (!span) {
       removeElems(hoverUnderlines);

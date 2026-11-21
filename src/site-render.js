@@ -28,6 +28,7 @@
   }
 
   function dropFrame() {
+    if (JR.siteControl) JR.siteControl.closeAll(); // (a site menu shown from it outlived it — audit)
     if (frame) frame.remove();
     frame = null; frameConv = null;
   }
