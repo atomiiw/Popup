@@ -1595,7 +1595,7 @@
   // { on: a jump is scrolling, seq: one more at each start and end } — a hold takes the place once after seq changed
   var jumpOn = false, jumpSeq = 0;
   JR.jumpState = function () { return { on: jumpOn, seq: jumpSeq, settling: !!settled }; };
-  function jumpEnds() { jumpOn = false; jumpSeq++; }
+  function jumpEnds() { jumpOn = false; jumpSeq++; JR.posLog("jump-end", document.documentElement, { trace: JR.navTrace }); } // (#jr-poslog: how it went)
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
     var gen = navGen;
