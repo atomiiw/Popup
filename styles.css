@@ -425,6 +425,9 @@ ol.jr-popup-context-list .jr-depth-2 { list-style-type: lower-roman; }
    reads its text, but transparent and still 0 px — nothing shows */
 html [data-jr-pressing][data-jr-pressing] { visibility: visible !important; opacity: 0 !important; }
 
+/* What the site opened for a hidden page control, placed by it: moved next to the popup's control (site-control.js) */
+[data-jr-site-moved] { translate: var(--jr-open-x, 0) var(--jr-open-y, 0); }
+
 /* What a site opens for one of its controls used in a popup, shown here (site-control.js): the hidden copy's viewport,
    moved to where the control is in the popup; above the popups */
 .jr-site-overlay {

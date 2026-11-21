@@ -453,6 +453,7 @@
   // --- SPA navigation ---
 
   function onNavigate() {
+    if (st.releaseHold) st.releaseHold(); // (a send's hold on the old chat: not on this one — review)
     var currentUrl = location.href;
     if (currentUrl === st.lastKnownUrl) return;
     var sameChat = JR_HOST.convKey(currentUrl) === JR_HOST.convKey(String(st.lastKnownUrl));

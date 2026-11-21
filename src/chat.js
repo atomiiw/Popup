@@ -510,9 +510,11 @@
     // another chat opened: nothing of it is held (the hold outlives a closed popup till its send ends — NT2 G2)
     var conv = JR_HOST.convKey(location.href), done = false;
     var away = setInterval(function () { if (JR_HOST.convKey(location.href) !== conv) release(); }, 500);
+    st.releaseHold = release; // (content.js onNavigate: at once, not up to 500 ms later — review)
     function release() {
       if (done) return;
       done = true;
+      if (st.releaseHold === release) st.releaseHold = null;
       clearInterval(away);
       clearInterval(renew);
       // claude.ai keeps following its newest message after a send (pinned to the bottom): let go first, or its next
@@ -991,6 +993,9 @@
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
       if (userScrolling) {
         savedTop = container.scrollTop;
+        // (where the user went is the new start: a later height change estimates from there, not the send's start —
+        // review: a reader who scrolled away was thrown back)
+        startTop = container.scrollTop; startH = lastH = container.scrollHeight;
         // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts
         savedAnchorY = anchor ? anchor.getBoundingClientRect().top : null;
       } else {
@@ -1007,7 +1012,10 @@
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
           }
-        } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight !== startH) {
+        } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight !== startH &&
+                   Math.abs(container.scrollTop - savedTop) > 1) {
+          // (only when the place moved — the site scrolled, or the end came above it: a list growing below the reader,
+          // the answer streaming, moved nothing — review: the estimate pushed them down by what came below)
           // (taller: earlier turns came above — live Beta C2; shorter: the site dropped earlier turns above when the
           // send went out — live NT2 G2, the old place lay past the new end and the hold left the reader at the bottom)
           lastH = container.scrollHeight; // (once per height: there it mounts, and the anchor's own drift takes over)
@@ -1269,8 +1277,18 @@
 
       // the reader's place stays held till the send ends (cleanup): closed while it waited for the site (the site busy
       // with the main answer — sent again when idle), the send came later with nothing held and the chat jumped
-      // (live NT2 G2, both Chromes; the hold follows the user's own scrolling)
+      // (live NT2 G2, both Chromes) — until the user does something (a jump, a click, a key): then it is theirs (review:
+      // ∧ ∨, the keyboard, a scrollbar drag were pulled back for the rest of the send)
       if (!editOpts) detachedHlId = preRegisteredHlId; // (every send pre-registers its version: popup.js doSend / Retry — A1b)
+      if (unlockScroll) {
+        var held = unlockScroll;
+        var letGo = function (e) {
+          if (!e.isTrusted || e.key === "Escape" || (e.target.closest && e.target.closest(".jr-popup"))) return;
+          window.removeEventListener("pointerdown", letGo, true); window.removeEventListener("keydown", letGo, true);
+          if (unlockScroll === held) { unlockScroll = null; held(); }
+        };
+        window.addEventListener("pointerdown", letGo, true); window.addEventListener("keydown", letGo, true);
+      }
       // Keep observer running — streaming continues in background
       st.cancelResponseWatch = null;
     };

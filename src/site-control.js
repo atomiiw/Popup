@@ -125,18 +125,31 @@
       // the popup (content.js)
       if (shown) (function look(t0) {
         Array.prototype.forEach.call(document.body.children, function (c) {
-          if (had.has(c) || c._jrMoved || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || c.classList.contains("jr-site-overlay") || c.closest(".jr-popup")) return;
+          if (had.has(c) || c._jrMoved || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || /^jr-/.test(c.id) ||
+              String(c.className).indexOf("jr-") === 0 || c.closest(".jr-popup")) return;
+          var b = c.getBoundingClientRect();
+          if (!b.width && !b.height) return; // (not drawn yet: next look)
           c._jrMoved = true;
           c.setAttribute("data-jr-site-opened", ""); // (escape-guard.js: Esc in it is the site's)
-          c.style.translate = Math.round(cRect.left - oRect.left) + "px " + Math.round(cRect.top - oRect.top) + "px";
           c.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+          // moved only when placed by the hidden control (a popover): a centered dialog, a toast, a portal root stay
+          // where the site put them (review)
+          var near = b.left < oRect.right + 120 && b.right > oRect.left - 120 && b.top < oRect.bottom + 120 && b.bottom > oRect.top - 120;
+          if (!near) return;
+          c.setAttribute("data-jr-site-moved", "");
+          c.style.setProperty("--jr-open-x", Math.round(cRect.left - oRect.left) + "px");
+          c.style.setProperty("--jr-open-y", Math.round(cRect.top - oRect.top) + "px");
         });
         // …or where it put the focus (ChatGPT's image editor: a side panel of its own layout, no new element): Esc there
         // is the site's (escape-guard.js)
-        var f = document.activeElement;
-        // (not a text box — the site's own input: Esc there stays Popup's, Claude Code takes Esc Esc as Rewind)
-        if (f && f !== document.body && f.closest && !f.closest(".jr-popup") && !f.isContentEditable && !/^(INPUT|TEXTAREA)$/.test(f.tagName))
-          (f.closest("[role]") || f).setAttribute("data-jr-site-opened", "");
+        var f = document.activeElement, chat = JR.site.scrollContainer();
+        // (not a text box — the site's own input: Esc there stays Popup's, Claude Code takes Esc Esc as Rewind; not in
+        // the chat — the hidden original itself, focus given back to it; only the element, not a page-wide ancestor)
+        if (f && f !== document.body && f.closest && !f.closest(".jr-popup") && !f.isContentEditable && !/^(INPUT|TEXTAREA)$/.test(f.tagName) &&
+            !(chat && chat.contains(f)) && !f.hasAttribute("data-jr-site-opened")) {
+          f.setAttribute("data-jr-site-opened", "");
+          f.addEventListener("focusout", function () { f.removeAttribute("data-jr-site-opened"); }, { once: true });
+        }
         if (Date.now() - t0 < 1500) setTimeout(function () { look(t0); }, 50);
       })(Date.now());
       return;
@@ -155,7 +168,7 @@
 
   /**
    * The user clicked el, a site control in responseDiv (the live copy): its original pressed when it is there (looked
-   * for up to 4 s; 20 s for a copy from memory — its original is looked for first), the hidden copy's document lent the
+   * for up to 4 s; 5 s for a copy from memory — its original is looked for first), the hidden copy's document lent the
    * focus for the moment (a site's Copy writes the clipboard only from a focused document — site-render.js).
    */
   var lastInput = 0; // the user's last press or key (trusted)
@@ -181,7 +194,7 @@
         if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
       }
       forward(o, el);
-    })(memory ? 200 : 40);
+    })(memory ? 50 : 40); // (a press found later than 5 s is dropped anyway — above)
   }
 
   /** The pointer came to el, a site control in responseDiv: a copy from memory starts looking for its original now. */

@@ -1179,6 +1179,33 @@ asyncChecks.push(new Promise(function (done) {
     Math.abs(at - 1950) <= 60, at);
 })();
 
+// review: the user scrolled away during a send (its turn unmounted); a later height change estimates from where the
+// user went, not from the send's start (they were thrown back)
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='list'><div class='sp' style='height:3000px'></div><div class='a' data-turn-key='away-a' style='height:50px'>x</div><div class='tail' style='height:6000px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 2950;
+  var a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame;
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  sc.dispatchEvent(new WheelEvent("wheel", { bubbles: true })); sc.scrollTop = 7000; a.remove(); // the user went down
+  run(2);
+  asyncChecks.push(new Promise(function (done) { setTimeout(function () { // (the user stopped: past its 800 ms)
+    sc.querySelector(".tail").style.height = "6400px"; // the answer streams on: the list grows below
+    run(3);
+    var at = sc.scrollTop;
+    unlock(); sc.remove();
+    check("a send's hold: after the user scrolled away, a height change doesn't throw them back", Math.abs(at - 7000) <= 60, at);
+    done();
+  }, 900); }));
+})();
+
 // ...and when the anchor's turn is unmounted and comes back elsewhere in a list the site laid out anew (live N1d): the
 // popups' places are taken at the start of the send, not at the anchor's first sight later (it went 2658 px off)
 (function () {
