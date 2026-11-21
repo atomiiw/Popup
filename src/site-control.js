@@ -1,5 +1,6 @@
-// site-overlay.js — Using a site's control in a popup, one way for every site and control (GLOSSARY.md: site answer,
-// original, copy): the control in the original is pressed as a pointer presses it (menus open on pointerdown), and what
+// site-control.js — Using a site's control in a popup, one way for every site and control (GLOSSARY.md: site answer,
+// original, copy; overnight plan A2 — was spread over popup.js, site-answer.js and site-overlay.js): the control in the
+// original, found once it is there (a copy shown from memory: looked for first), is pressed as a pointer presses it (menus open on pointerdown), and what
 // the site opens for it in another document — the hidden copy of the chat holding the original: a menu, a dialog, an
 // editor added to that document's body — is shown in the page next to the control in the popup, kept in step with it,
 // and used as the site's own (user 11-20: a generated image's Edit / Share opened unseen in the hidden copy).
@@ -124,5 +125,35 @@
     })();
   }
 
-  JR.siteOverlay = { forward: forward };
+  /**
+   * The user clicked el, a site control in responseDiv (the live copy): its original pressed when it is there (looked
+   * for up to 4 s; 20 s for a copy from memory — its original is looked for first), the hidden copy's document lent the
+   * focus for the moment (a site's Copy writes the clipboard only from a focused document — site-render.js).
+   */
+  function use(el, responseDiv) {
+    var memory = JR.siteAnswer.fromMemory();
+    (function attempt(tries) {
+      var o = JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
+      if (!o) {
+        if (tries > 0 && JR.siteAnswer.current() === responseDiv) setTimeout(function () { attempt(tries - 1); }, 100);
+        return;
+      }
+      var w = o.ownerDocument.defaultView;
+      if (w && w !== window) {
+        if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
+        // the control itself, not the frame's own focused composer: a key meanwhile goes nowhere (review)
+        try { o.focus({ preventScroll: true }); } catch (er) {}
+        var fd = o.ownerDocument;
+        if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
+      }
+      forward(o, el);
+    })(memory ? 200 : 40);
+  }
+
+  /** The pointer came to el, a site control in responseDiv: a copy from memory starts looking for its original now. */
+  function warm(el, responseDiv) {
+    if (JR.siteAnswer.current() === responseDiv && JR.siteAnswer.fromMemory()) JR.siteAnswer.counterpart(el);
+  }
+
+  JR.siteControl = { use: use, warm: warm, forward: forward };
 })();

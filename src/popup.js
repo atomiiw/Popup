@@ -24,7 +24,7 @@
     // (a copy shown from memory: its original looked for as the pointer comes to a site control — by the click it may be in)
     responseDiv.addEventListener("pointerover", function (e) {
       var c = e.target.closest && e.target.closest("button, [role=button]");
-      if (c && JR.siteAnswer && JR.siteAnswer.current() === responseDiv && (JR.siteAnswer.state() || {}).fromMemory) JR.siteAnswer.counterpart(c);
+      if (c) JR.siteControl.warm(c, responseDiv);
     });
     responseDiv.addEventListener("click", function (e) {
       // --- Whatever the site handles — a control it drew (a code block's Run / Copy / wrap / Download, whatever it adds),
@@ -48,7 +48,7 @@
       if (siteEl) {
         e.preventDefault();
         e.stopPropagation();
-        forwardToOriginal(siteEl, responseDiv);
+        JR.siteControl.use(siteEl, responseDiv); // (site-control.js: found, pressed, what it opens shown here)
         return;
       }
 
@@ -83,25 +83,6 @@
    * clipboard only from a focused document (live 2026-11-18: ChatGPT's Copy in a popup copied nothing) — the frame has
    * it for the click, then the page again.
    */
-  function forwardToOriginal(el, responseDiv) {
-    (function forward(tries) {
-      var o = JR.siteAnswer && JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
-      if (!o) {
-        if (tries > 0 && JR.siteAnswer && JR.siteAnswer.current() === responseDiv) setTimeout(function () { forward(tries - 1); }, 100);
-        return;
-      }
-      var w = o.ownerDocument.defaultView;
-      if (w && w !== window) {
-        if (JR.siteOriginalFocus) JR.siteOriginalFocus(500);
-        // the control itself, not the frame's own focused composer: a key meanwhile goes nowhere (review)
-        try { o.focus({ preventScroll: true }); } catch (er) {}
-        var fd = o.ownerDocument;
-        if (fd.activeElement !== o) { try { w.focus(); if (fd.activeElement && fd.activeElement !== fd.body) fd.activeElement.blur(); } catch (er) {} }
-      }
-      // pressed as a pointer presses it, and what the site opens for it in the hidden copy shown here (site-overlay.js)
-      JR.siteOverlay.forward(o, el);
-    })(JR.siteAnswer && (JR.siteAnswer.state() || {}).fromMemory ? 200 : 40); // (a copy from memory: its original is looked for first)
-  }
 
 
   /**

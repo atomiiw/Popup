@@ -295,7 +295,7 @@
     fd.addEventListener("focusin", function () { setTimeout(giveFocusBack, 0); }, true);
     // a key while a forwarded click has the frame is the page's (review: Esc right after Copy didn't close the popup)
     fd.addEventListener("keydown", function (e) {
-      if (e._jrPressed) return; // (Esc sent to the site's menu there — site-overlay.js; else it came back as the page's: a loop)
+      if (e._jrPressed) return; // (Esc sent to the site's menu there — site-control.js; else it came back as the page's: a loop)
       e.preventDefault(); e.stopPropagation();
       focusUntil = 0; giveFocusBack();
       document.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey,

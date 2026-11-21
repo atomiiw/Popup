@@ -28,7 +28,7 @@
 <script src="../src/send-outcome.js"></script>
 <script src="../src/locator.js"></script>
 <script src="../src/reach-turn.js"></script>
-<script src="../src/site-overlay.js"></script>
+<script src="../src/site-control.js"></script>
 <script src="../src/site-answer.js"></script>
 <script src="../src/chat.js"></script>
 <script src="../src/popup.js"></script>
@@ -2059,7 +2059,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     ' m.querySelector("#item").addEventListener("click", function () { window.picked = true; m.remove(); }); document.body.appendChild(m); });<\/script>';
   f.onload = function () {
     var copyCtrl = document.createElement("button"); copyCtrl.textContent = "Share"; document.body.appendChild(copyCtrl);
-    JR.siteOverlay.forward(f.contentDocument.getElementById("trig"), copyCtrl);
+    JR.siteControl.forward(f.contentDocument.getElementById("trig"), copyCtrl);
     setTimeout(function () {
       var ov = document.querySelector(".jr-site-overlay"), item = ov && ov.querySelector("button");
       var shown = !!item && item.textContent === "Download";
@@ -2074,7 +2074,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
         function onJrEsc() { popupClosed = true; }
         document.addEventListener("jr-escape", onJrEsc);
         f.contentDocument.addEventListener("keydown", function (e) { if (e.key === "Escape") escs++; });
-        JR.siteOverlay.forward(f.contentDocument.getElementById("trig"), copyCtrl);
+        JR.siteControl.forward(f.contentDocument.getElementById("trig"), copyCtrl);
         setTimeout(function () {
           var shown2 = !!document.querySelector(".jr-site-overlay");
           var mdOutside = 0;
@@ -2128,7 +2128,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(turn);
   var copied = null;
   turn.querySelector("button").addEventListener("click", function () { copied = turn.querySelector("code").innerText; });
-  JR.siteOverlay.forward(turn.querySelector("button"), document.createElement("button"));
+  JR.siteControl.forward(turn.querySelector("button"), document.createElement("button"));
   check("Copy on an original in a hidden turn: the site reads its text", copied === "print(42)", JSON.stringify(copied));
   asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     check("…and the turn is hidden again after the press", !turn.hasAttribute("data-jr-pressing"), "still revealed"); turn.remove(); done();

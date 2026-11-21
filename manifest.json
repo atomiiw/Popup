@@ -106,7 +106,7 @@
         "src/send-outcome.js",
         "src/locator.js",
         "src/reach-turn.js",
-        "src/site-overlay.js",
+        "src/site-control.js",
         "src/site-answer.js",
         "src/dom-helpers.js",
         "src/text-extraction.js",
