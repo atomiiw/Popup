@@ -2558,11 +2558,19 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   setTimeout(function () {
     turn.remove(); list.style.height = "2000px"; sc.scrollTop = 1700; // (rebuilt shorter, the site's scroll past it)
     setTimeout(function () {
-      var now = list.querySelector("[data-turn-key='rb-1']"), y = now && now.getBoundingClientRect().top;
-      check("the reader's turn gone in a rebuilt list: reached again by key once it settles, back where the reader saw it",
-        asked.join() === "rb-1" && now && Math.abs(y - saw) <= 2, asked.join() + " " + (now ? Math.round(y) + " vs " + Math.round(saw) : "not back"));
-      unlock(); JR.scrollToTurnKey = realReach; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
-    }, 1400);
+      var now = list.querySelector("[data-turn-key='rb-1']"), y = now && now.getBoundingClientRect().top, first = asked.length;
+      // live NT12 G2: reached, then the site measured the 21 000 px turns above, its own scroll 6 000 px off — the turn
+      // pushed out again: reached again (a reach that found it may be followed by another, up to 3)
+      if (now) now.remove();
+      list.style.height = "2400px"; sc.scrollTop = 1900;
+      setTimeout(function () {
+        var again = list.querySelector("[data-turn-key='rb-1']"), y2 = again && again.getBoundingClientRect().top;
+        check("the reader's turn gone in a rebuilt list: reached again by key once it settles, back where the reader saw it; gone again: reached again",
+          first === 1 && now && Math.abs(y - saw) <= 2 && asked.length === 2 && again && Math.abs(y2 - saw) <= 2,
+          [first, asked.length, now ? Math.round(y) : "-", again ? Math.round(y2) : "not back", Math.round(saw)].join(" "));
+        unlock(); JR.scrollToTurnKey = realReach; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
+      }, 900);
+    }, 800);
   }, 100);
 }, 13000); })); // (its own time: 13–14.6 s, nothing else then — it stubs frames)
 

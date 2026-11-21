@@ -1058,15 +1058,16 @@
     // it rebuilt its list — 75 196 → 50 945 px, the reader's 19 500 px turn back to an estimate — and scrolled to
     // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
     // held where the reader saw it (its drift, below). Once per send.
-    var pickedAt = 0, moved = false, lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, jumped = false, unlocked = false;
+    var pickedAt = 0, moved = false, lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, reachFailed = false, jumped = false, unlocked = false;
     var seenJump = JR.jumpState ? JR.jumpState().seq : 0;
     function reachBack(now) {
       if (jumped) return false; // (the reader jumped elsewhere during the send: not pulled back to where they were)
       if (!lostAt) lostAt = now;
       if (container.scrollHeight !== settledH) { settledH = container.scrollHeight; settledAt = now; }
-      // (once: live NT5, each search near the chat's end set ChatGPT rebuilding its list again — two searches, two
-      // more rebuilds the reader saw)
-      if (reaches >= 1 || now - lostAt < 600 || now - settledAt < 600 || !JR.scrollToTurnKey) return false;
+      // (up to 3, each once the list held still 600 ms — live NT12 G2: reached, then ChatGPT measured the 21 000 px turns
+      // above it and its own scroll was 6 000 px off: pushed out again; the search no longer steps on a list being
+      // rebuilt, reach-turn.js. None after one that didn't find it)
+      if (reaches >= 3 || reachFailed || now - lostAt < 600 || now - settledAt < 600 || !JR.scrollToTurnKey) return false;
       reaching = true; reaches++;
       JR.posLog("reach-back", document.documentElement, { key: String(anchorKey).slice(0, 8), top: Math.round(container.scrollTop) });
       var from = savedTop;
@@ -1074,6 +1075,7 @@
       // review: it held the reader where the search stopped, the top of a long chat)
       JR.scrollToTurnKey(anchorKey, function (ok) {
         reaching = false; lostAt = 0;
+        if (!ok) reachFailed = true;
         if (unlocked) return;
         if (!ok && !userScrolling) container.scrollTop = from;
         savedTop = container.scrollTop;
