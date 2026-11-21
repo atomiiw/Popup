@@ -138,6 +138,19 @@
     return origIntoView.apply(this, arguments);
   };
 
+  // The site moving to another chat (pushState / replaceState — a content script can't see them): told at once as
+  // "jr-navigate" on window, so Popup lets go of the old chat before the new one is drawn (TODO #7: its hiding by the
+  // old chat's keys stayed up to 0.5 s — DeepSeek's message ids repeat across chats: turns of the new one hidden)
+  ["pushState", "replaceState"].forEach(function (name) {
+    var orig = history[name];
+    if (typeof orig !== "function") return;
+    history[name] = function () {
+      var r = orig.apply(this, arguments);
+      window.dispatchEvent(new Event("jr-navigate"));
+      return r;
+    };
+  });
+
   var desc = Object.getOwnPropertyDescriptor(P, "scrollTop");
   if (desc && desc.set && desc.configurable) {
     Object.defineProperty(P, "scrollTop", {

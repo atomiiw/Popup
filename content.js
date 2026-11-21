@@ -487,6 +487,7 @@
   }
 
   window.addEventListener("popstate", onNavigate);
+  window.addEventListener("jr-navigate", onNavigate); // (the site's pushState, at once: scroll-guard.js)
 
   // Navigation detection: content scripts can't hook the page's history.pushState
   // (isolated world), so poll the URL.

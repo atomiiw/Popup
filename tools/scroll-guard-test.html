@@ -69,6 +69,14 @@ other.scrollTo({ top: 500 });
 check("locked: another scroller (a popup's answer, a code block) is never blocked", other.scrollTop === 500, other.scrollTop);
 html.removeAttribute("data-jr-scroll-lock");
 
+// TODO #7: the site moving to another chat is told at once (before it draws the new one), not at the next 0.5 s poll
+var told = 0; window.addEventListener("jr-navigate", function () { told++; });
+var here = location.href;
+history.pushState(null, "", "#jr-nav-test");
+var atOnce = told;
+history.replaceState(null, "", here);
+check("the site's pushState / replaceState: 'jr-navigate' at once", atOnce === 1 && told === 2, atOnce + " " + told);
+
 out.push(failed ? failed + " FAILED" : "all passed");
 document.getElementById("out").textContent = out.join("\n");
 document.title = failed ? "FAIL" : "PASS";
