@@ -23,6 +23,22 @@
     el.click();
   }
 
+  /**
+   * An original on the page sits in a turn Popup hides (visibility: hidden, 0 px — site-hosts.js): its text is no
+   * element's innerText there, so the site's Copy copied nothing (live NT1, DeepSeek). For the press, that turn is
+   * rendered but transparent (still 0 px: nothing shows) — styles.css [data-jr-pressing]. Returns it, or null.
+   */
+  function reveal(el) {
+    for (var n = el; n && n !== document.body; n = n.parentElement) {
+      if (getComputedStyle(n).visibility !== "hidden") continue;
+      var up = n.parentElement;
+      if (up && getComputedStyle(up).visibility === "hidden") continue;
+      n.setAttribute("data-jr-pressing", "");
+      return n;
+    }
+    return null;
+  }
+
   /** el's place under root as child indexes, or null. */
   function pathOf(root, el) {
     var p = [];
@@ -90,7 +106,12 @@
    */
   function forward(o, copyCtrl) {
     var doc = o.ownerDocument;
-    if (doc === document || !doc.body) { press(o); return; }
+    if (doc === document || !doc.body) {
+      var shown = doc === document && reveal(o);
+      press(o);
+      if (shown) setTimeout(function () { shown.removeAttribute("data-jr-pressing"); }, 1000); // (a Copy may read a moment later)
+      return;
+    }
     var before = new Set(Array.prototype.slice.call(doc.body.children)), t0 = Date.now();
     press(o);
     (function look() {

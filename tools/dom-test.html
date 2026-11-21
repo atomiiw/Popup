@@ -2107,6 +2107,22 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   failedT.remove(); imgT.remove();
 })();
 
+// live NT1 (DeepSeek): a site's Copy on an original in a hidden turn copied nothing (innerText of visibility: hidden is
+// ""): for the press the turn is rendered (transparent, 0 px) — the site reads the text; afterwards hidden again
+(function () {
+  var turn = document.createElement("div");
+  turn.style.cssText = "height:0;overflow:clip;visibility:hidden";
+  turn.innerHTML = '<pre><code>print(42)</code></pre><button>Copy</button>';
+  document.body.appendChild(turn);
+  var copied = null;
+  turn.querySelector("button").addEventListener("click", function () { copied = turn.querySelector("code").innerText; });
+  JR.siteOverlay.forward(turn.querySelector("button"), document.createElement("button"));
+  check("Copy on an original in a hidden turn: the site reads its text", copied === "print(42)", JSON.stringify(copied));
+  asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+    check("…and the turn is hidden again after the press", !turn.hasAttribute("data-jr-pressing"), "still revealed"); turn.remove(); done();
+  }, 1200); }));
+})();
+
 // review 11-20 night: a memory copy of a popup's version (an id): a site control looks for its original (it was "shown",
 // and find looks only while locating — the controls were dead); memory is per chat (DeepSeek's ids are 1, 2, 3 per chat)
 (function () {
