@@ -846,12 +846,6 @@
       var startHeight = popup.offsetHeight;
       var startLeft = parseFloat(popup.style.left) || 0;
       var dir = popup._jrLockedDirection;
-      // its height limit: the room on its side where it is now (the chat may have moved since it opened) — up to just
-      // above the send box, or the header (user 11-21: capped where it opened, the corners changed the width only)
-      if (edge.y) {
-        var band = JR.site.visibleBand(), pr = popup.getBoundingClientRect(), edgeGap = 8;
-        popup.style.setProperty("--jr-popup-cap", Math.floor(dir === "above" ? pr.bottom - band.top - edgeGap : band.bottom - edgeGap - pr.top) + "px");
-      }
       // For "above" popups, anchor the bottom edge so the arrow doesn't move
       var anchorBottom = (dir === "above")
         ? (popup._jrBottomAnchor != null ? popup._jrBottomAnchor : (parseFloat(popup.style.top) || 0) + popup.offsetHeight)
