@@ -43,7 +43,10 @@
       var drawn = all.some(function (m) { return m.top < top + view && m.top + m.height > top; });
       blank = drawn || !all.length ? 0 : blank + 1; // (turns mounted, none where it is: a list with none is no sign)
       if (blank >= 8) return Promise.resolve({ why: "stuck" });
-      var at = all.map(function (m) { return { i: pos(m.key), top: m.top }; })
+      // (the turns around where it is: claude.ai keeps the last turn mounted wherever the list is — taken for one of the
+      // turns here it said "past the target" and the search went up to the top: live NT1, couldn't be loaded)
+      var at = all.filter(function (m) { return m.top < top + 3 * view && m.top + m.height > top - 2 * view; })
+        .map(function (m) { return { i: pos(m.key), top: m.top }; })
         .filter(function (p) { return p.i >= 0; }).sort(function (a, b) { return a.i - b.i; });
       var last = at[at.length - 1];
       var down = noOrder ? dir0 > 0 : target >= 0 && at.length > 0 && last.i < target;

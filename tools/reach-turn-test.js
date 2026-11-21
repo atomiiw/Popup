@@ -29,7 +29,14 @@ function fakeList(heights, opts) {
     },
     height, view: () => view,
     // stuck (live 11-20, the hidden copy): the same last turns mounted wherever it is scrolled
-    mounted: () => stuck ? tops().slice(-3).map((t) => ({ key: "k" + t.i, top: t.top, height: t.height })) : tops().filter((t) => t.top < top + view + 400 && t.top + t.height > top - 400).map((t) => ({ key: "k" + t.i, top: t.top, height: t.height })),
+    mounted: () => {
+      if (stuck) return tops().slice(-3).map((t) => ({ key: "k" + t.i, top: t.top, height: t.height }));
+      const near = tops().filter((t) => t.top < top + view + 400 && t.top + t.height > top - 400);
+      // claude.ai keeps the last turn mounted wherever the list is (live NT1: the search took it for "the turns here")
+      const all = tops(), last = all[all.length - 1];
+      if (opts.stickyLast && near.indexOf(last) < 0) near.push(last);
+      return near.map((t) => ({ key: "k" + t.i, top: t.top, height: t.height }));
+    },
     find: (k) => L.mounted().some((m) => m.key === k) ? { key: k } : null,
     jam() { stuck = true; },
   };
@@ -76,6 +83,27 @@ function fakeList(heights, opts) {
   L.setTop = (v) => { tops.push(Math.round(v)); realSet(v); };
   r = await reach(L, "k40", [], { wait: fast, position: (k) => Number(k.slice(1)) });
   check("a place but no order (DeepSeek): reached, never scrolled to the end first", r.turn && r.turn.key === "k40" && !tops.some((t) => t > 60000), r.why || tops.slice(0, 5));
+
+  // claude.ai (live NT1, old Chrome): the last turn always mounted — the search went up past the target to the top
+  const skew = Array.from({ length: 120 }, (_, i) => (i < 90 ? 250 : 1800) + (i * 37) % 200); // short turns, then long ones
+  L = fakeList(skew, { stickyLast: true });
+  r = await reach(L, "k97", L.order, { wait: fast });
+  check("the last turn kept mounted, heights uneven (claude.ai, live NT1: 97 of 119): reached", r.turn && r.turn.key === "k97", r);
+  L = fakeList(skew, { stickyLast: true });
+  r = await reach(L, "k60", L.order, { wait: fast });
+  check("…and one among the short ones", r.turn && r.turn.key === "k60", r);
+  // long turns first, then short ones: the first estimate lands above the target; with the last turn always mounted
+  // the turns "here" seemed to reach past it — the search went up to the top (live NT1: 24 s, couldn't be loaded)
+  const skew2 = Array.from({ length: 120 }, (_, i) => (i < 90 ? 1900 : 300) + (i * 37) % 200);
+  L = fakeList(skew2, { stickyLast: true });
+  r = await reach(L, "k100", L.order, { wait: fast });
+  check("the last turn kept mounted, the estimate above the target: reached (not up to the top)", r.turn && r.turn.key === "k100", r);
+  L = fakeList(hs, { stickyLast: true });
+  r = await reach(L, "k150", L.order, { wait: fast });
+  check("the last turn kept mounted (claude.ai): still reached", r.turn && r.turn.key === "k150", r);
+  L = fakeList(hs, { stickyLast: true });
+  r = await reach(L, "k20", L.order, { wait: fast });
+  check("…and one near the start", r.turn && r.turn.key === "k20", r);
 
   console.log(failed ? failed + " FAILED" : "all passed");
   process.exit(failed ? 1 : 0);
