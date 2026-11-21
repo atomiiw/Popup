@@ -22,7 +22,8 @@
    *      turn: null | { text, answered } (our answer's turn on the page: has text; has an answer — text or an image),
    *      domUsable (the page's answer can be read), submitting, composerHasOurs (our message back in the site's box),
    *      canResend (no files: a resend would drop them), rejected: { count, pending },
-   *      net: { matched, done, text, media, resuming (time or 0) }, resume: { n, busy } }
+   *      net: { matched, done, text, media, resuming (time or 0) }, resume: { n, busy },
+   *      streamed (the site's answer stream is read: ChatGPT, DeepSeek) }
    * → { act: "wait" | "capture" | "resend" | "fail" | "stop-fail", stage?, readResume?, report? }
    *   stage: a failure's stage (failureText); readResume: read the answer from the conversation now (and go on);
    *   report: a stage to note for a later failure's reason.
@@ -35,8 +36,10 @@
     if (net.done && (net.text || net.media) && !f.domUsable) return { act: "capture" };
     // done while our answer is scrolled out of the page (keys known; its content comes from its original)
     if (f.responseKey && !turn && !f.generating && !net.matched) return { act: "capture" };
-    // the site says generating but the answer stopped changing (not while the stream is open: it may be searching)
-    if (turn && f.generating && !(net.matched && !net.done) && turn.text && f.now - f.lastProgress >= L.stale) return { act: "capture" };
+    // the site says generating but the answer stopped changing (not while the stream is open: it may be searching) — only
+    // where the stream is read (ChatGPT, DeepSeek): on claude.ai / Claude Code a tool step of minutes shows no new text
+    // while the site works on (TODO #15: its answer was taken half done after 60 s); there the site's own "done" decides
+    if (turn && f.generating && f.streamed && !(net.matched && !net.done) && turn.text && f.now - f.lastProgress >= L.stale) return { act: "capture" };
     // the site refused it (busy) and put it back in its box: sent again once when idle — not with files
     if (!f.keys && !net.matched && !f.rejected.pending && !f.submitting && el >= L.refusal && f.composerHasOurs) {
       if (f.rejected.count >= 1 || !f.canResend) return { act: "fail", stage: "rejected" };

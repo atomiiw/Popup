@@ -59,8 +59,11 @@ check("generating with progress: waits", O.decide(facts(500000, { generating: tr
 d = O.decide(facts(L.generating + 10, { generating: true, keys: 1, net: { matched: true } }));
 check("generating, nothing new for its limit: stopped and failed", d.act === "stop-fail", d);
 // the site says generating but the answer stopped changing: taken (stale), not while the stream is open
-check("stale on the page: taken", O.decide(facts(L.stale + 10, { generating: true, keys: 1, turn: { text: true }, net: { matched: false } })).act === "capture", "");
-check("stale but the stream still open: waits", O.decide(facts(L.stale + 10, { generating: true, keys: 1, turn: { text: true }, net: { matched: true } })).act === "wait", "");
+check("stale on the page: taken", O.decide(facts(L.stale + 10, { streamed: true, generating: true, keys: 1, turn: { text: true }, net: { matched: false } })).act === "capture", "");
+// TODO #15 (claude.ai / Claude Code: no stream read): a tool step of minutes with no new text is not taken as done
+check("no stream read (claude.ai): a long quiet step while the site works is waited for, not taken half done",
+  O.decide(facts(5 * L.stale, { streamed: false, generating: true, keys: 1, turn: { text: true }, net: { matched: false } })).act === "wait", "");
+check("stale but the stream still open: waits", O.decide(facts(L.stale + 10, { streamed: true, generating: true, keys: 1, turn: { text: true }, net: { matched: true } })).act === "wait", "");
 
 console.log(failed ? failed + " FAILED" : "all passed");
 process.exit(failed ? 1 : 0);

@@ -1624,7 +1624,7 @@
         composerHasOurs: !!(composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1),
         canResend: !(files && files.length) && !lastHadAside, rejected: rejected,
         net: { matched: net.matched, done: net.done, text: !!net.text.trim(), media: !!net.media, resuming: net.resuming || 0 },
-        resume: resumeLook,
+        resume: resumeLook, streamed: JR.site.name !== "claude",
       });
       if (d.report && (!st.lastSendReport || st.lastSendReport.ok)) {
         st.lastSendReport = { ok: false, stage: d.report, detail: "the site is answering but the new turn is not on the page", when: new Date().toISOString() };
