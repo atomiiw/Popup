@@ -44,5 +44,13 @@ const rec = (id, k) => ({ id, quoteId: "q" + id, text: "x", status: "done", url:
   before = gets;
   const seen = await A.getHighlightsByUrl("c1");
   check("...and the first tab sees it (read again)", gets === before + 1 && seen.length === 3, seen.length);
+  // audit #4: an edit's version stored when sent (pending), then done: one record, done, the old version inactive
+  await A.saveHighlight({ id: "e1", quoteId: "qa1", text: "x", status: "pending", url: "c1", turnKeys: [], active: true });
+  await A.saveHighlight({ id: "e1", quoteId: "qa1", text: "x", status: "done", url: "c1", turnKeys: ["t9"], active: true });
+  await tick();
+  const items = data["popup:conv:c1"].items, e1 = items.filter((r) => r.id === "e1");
+  check("an edit stored when sent, then done: one record (done), the old version inactive",
+    e1.length === 1 && e1[0].status === "done" && items.find((r) => r.id === "a1").active === false,
+    e1.length + " " + (e1[0] || {}).status);
   console.log(failed ? failed + " FAILED" : "all passed");
 })();

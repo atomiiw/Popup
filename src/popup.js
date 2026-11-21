@@ -972,10 +972,18 @@
       wholeResponse: !!entry.wholeResponse, mode: mode || "medium",
     });
 
+    // the new version stored now, pending: a reload before its answer kept its turn hidden with no version — the edit
+    // was gone (audit #4); done or failed, the same record is replaced
+    var editItemId = crypto.randomUUID();
+    saveHighlight({
+      id: editItemId, quoteId: hlId, text: text, status: "pending", question: newQuestion, url: location.href,
+      parentId: entry.parentId || null, parentItemId: entry.parentItemId || null, sourceTurnKey: entry.sourceTurnKey || null,
+      turnKeys: [], active: true, wholeResponse: !!entry.wholeResponse, attachments: files.length,
+    });
     var waitOpts = {
       popup: popup, text: text, sentence: sentence,
       blockTypes: entry.blockTypes, parentId: entry.parentId,
-      question: newQuestion, editOpts: { hlId: hlId }
+      question: newQuestion, editOpts: { hlId: hlId, itemId: editItemId }
     };
 
     JR.enqueueMessage({

@@ -233,7 +233,9 @@ function addRecord(doc, rec) {
   if (rec.active) {
     doc.items.forEach(function (it) { if (it.quoteId === rec.quoteId) it.active = false; });
   }
-  doc.items.push(rec);
+  // (the same version again — an edit stored when sent, then done or failed: replaced, not twice — audit #4)
+  var same = doc.items.findIndex(function (it) { return it.id === rec.id; });
+  if (same >= 0) doc.items.splice(same, 1, rec); else doc.items.push(rec);
 }
 
 async function saveHighlight(opts) {

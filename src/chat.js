@@ -1047,6 +1047,7 @@
     var detached = false;
     var detachedSpans = null;
     var detachedHlId = editOpts ? editOpts.hlId : null;
+    var linkItemId = preRegisteredItemId || (editOpts && editOpts.itemId) || null; // (the version stored when sent: its turns linked as they come)
     var injectionFailed = false;
 
     // Answer text from ChatGPT's network stream (net-tap.js, MAIN world). Used
@@ -1077,7 +1078,7 @@
           if (JR.site.keepMounted) JR.site.keepMounted(d.turnKey); // DeepSeek: draw it (unseen) to mirror its own rendering
           JR.hideTurnKeys([d.turnKey]);
           // (one write: kept hidden even if the item wasn't stored, and linked to the item)
-          addDeletedTurns(convUrl, [d.turnKey], !editOpts && preRegisteredItemId ? { id: preRegisteredItemId, turnKeys: qaKeys.slice() } : null);
+          addDeletedTurns(convUrl, [d.turnKey], linkItemId ? { id: linkItemId, turnKeys: qaKeys.slice() } : null);
         }
         return;
       }
@@ -1115,8 +1116,8 @@
       memEntry._jrFailReason = failureText(); // shown by this popup only, not by others
 
       if (editOpts) {
-        // Edit: create a new version item that failed
-        var newItemId = crypto.randomUUID();
+        // Edit: its version (stored when sent) failed
+        var newItemId = editOpts.itemId || crypto.randomUUID();
         memEntry.items.push({ id: newItemId, question: question, status: "failed", turnKeys: hideKeys,
           _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
         memEntry.activeItemIndex = memEntry.items.length - 1;
@@ -1322,7 +1323,7 @@
 
         // Update in-memory entry
         var memEntry = st.completedHighlights.get(hlId);
-        var newItemId = crypto.randomUUID();
+        var newItemId = editOpts.itemId || crypto.randomUUID(); // (stored when sent: replaced)
         if (memEntry) {
           memEntry.items.push({ id: newItemId, question: question, status: "done", turnKeys: qaKeys.slice(),
             _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
@@ -1504,7 +1505,7 @@
           st.watchingTurnKey = qaKeys[qaKeys.length - 1];
           // Persist right away so a reload mid-answer still hides the Q&A and
           // can read the answer back (the item loads instead of "failed").
-          addDeletedTurns(convUrl, added, !editOpts && preRegisteredItemId ? { id: preRegisteredItemId, turnKeys: qaKeys.slice() } : null);
+          addDeletedTurns(convUrl, added, linkItemId ? { id: linkItemId, turnKeys: qaKeys.slice() } : null);
           if (!savedKeys) { savedKeys = true; JR.repositionPopup(); }
         }
         if (!responseKey) {
