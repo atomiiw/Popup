@@ -86,13 +86,10 @@
       e.preventDefault(); e.stopPropagation();
       forward(t, e.target);
     }, true);
-    // a press in it is no press outside the popup (content.js closes the popups on one)
-    function inside(e) { e.stopPropagation(); }
-    wrap.addEventListener("mousedown", inside);
-    wrap.addEventListener("pointerdown", inside);
+    JR.press.mine(wrap); // (a press in it is no press outside the popup: press.js "site-opened")
     // away from it, or Esc (escape-guard.js: "jr-escape" — this first, the popup stays): as on the site, Esc to its document
     function escape() { send(doc, new fw.KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true })); }
-    function away(e) { if (!e._jrPressed && !wrap.contains(e.target)) { escape(); setTimeout(function () { if (orig.isConnected) close(); }, 300); } }
+    function away(e) { if (JR.press.of(e).owner !== "synthetic" && !wrap.contains(e.target)) { escape(); setTimeout(function () { if (orig.isConnected) close(); }, 300); } }
     function key(e) { e.stopImmediatePropagation(); escape(); close(); }
     document.addEventListener("pointerdown", away, true);
     window.addEventListener("jr-escape", key, true);
@@ -134,8 +131,7 @@
           var b = c.getBoundingClientRect();
           if (!b.width && !b.height) return; // (not drawn yet: next look)
           c._jrMoved = true;
-          c.setAttribute("data-jr-site-opened", ""); // (escape-guard.js: Esc in it is the site's)
-          c.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+          c.setAttribute("data-jr-site-opened", ""); // (escape-guard.js: Esc in it is the site's; press.js: a press in it is no press outside)
           // moved only when placed by the hidden control (a popover): a centered dialog, a toast, a portal root stay
           // where the site put them (review)
           var near = b.left < oRect.right + 120 && b.right > oRect.left - 120 && b.top < oRect.bottom + 120 && b.bottom > oRect.top - 120;
@@ -166,11 +162,11 @@
       // a panel of the site's own layout (ChatGPT's image editor, a link's side panel — not a body child: user 11-21
       // "直接衔接侧边栏"): the hidden copy itself shown where the site puts it, only that panel of it (and what it opened
       // over it, shown there as the site's own — not as menus)
-      var panel = panelOf(doc, watch.nodes);
+      var panel = panelOf(doc, watch.nodes, menus);
       if (panel) {
         watch.stop();
         open.filter(function (x) { return menus.indexOf(x.orig) >= 0; }).forEach(function (x) { x.close(); });
-        dock(doc, panel, watch);
+        dock(doc, panel, watch, menus);
         return;
       }
       // what it added to the body: a menu, a dialog — shown now, still looking for a panel (live 11-21: a toast area
@@ -196,17 +192,19 @@
     return w;
   }
 
-  /** Among nodes (added to doc), a panel the site opened in its layout: drawn over half its window each way, outside
-   *  the chat's list (its turns load and go as it scrolls) and not a body child (shown as a menu: show) — or null. */
-  function panelOf(doc, nodes) {
+  /** Among nodes (added to doc), a panel the site opened in its layout: drawn over half its window each way; not the
+   *  chat's list, in it or holding it (its main column redrawn — review); not a layer (fixed: a dialog's holder) nor in
+   *  one shown as a menu (show: a body child — review: a Share dialog's full-window wrapper) — or null. */
+  function panelOf(doc, nodes, menus) {
     var fw = doc.defaultView, sc, best = null;
     if (!fw) return null; // (the copy dropped)
     nodes.forEach(function (n) {
       if (!n.isConnected || n.parentElement === doc.body || (best && best.contains(n))) return;
       var r = n.getBoundingClientRect();
       if (r.width < fw.innerWidth / 2 || r.height < fw.innerHeight / 2) return;
+      if ((menus || []).some(function (m) { return m.contains(n); }) || fw.getComputedStyle(n).position === "fixed") return;
       if (sc === undefined) sc = JR.site.frameScroller(doc);
-      if (!(sc && sc.contains(n))) best = n;
+      if (!(sc && (sc.contains(n) || n.contains(sc)))) best = n;
     });
     return best;
   }
@@ -217,22 +215,24 @@
    * when the site closes it, on Esc, or with the copy. Its sends are refused (net-tap.js: an edit would be a message the
    * page never sees — the user's call 11-21: view, download and share only), with a note why.
    */
-  function dock(doc, panel, watch) {
+  function dock(doc, panel, watch, menus) {
     var frame = doc.defaultView.frameElement;
     if (!frame || open.some(function (x) { return x.frame === frame; })) return;
     frame.classList.add("jr-render-frame--shown");
-    var lost = 0, raf = 0, w2 = addedIn(doc), note = null;
+    frame.removeAttribute("aria-hidden"); // (the site's own panel, used as such — review)
+    var lost = 0, raf = 0, w2 = addedIn(doc), note = null, clip = "";
     (function follow() {
-      if (!panel || !panel.isConnected) panel = panelOf(doc, w2.nodes.concat(watch.nodes)); // (redrawn at the new size)
+      if (!panel || !panel.isConnected) panel = panelOf(doc, w2.nodes.concat(watch.nodes), menus); // (redrawn at the new size)
       var r = panel && panel.getBoundingClientRect();
       if (!r || !r.width || !r.height) {
         if (!lost) lost = Date.now(); else if (Date.now() - lost > 300) return close();
       } else {
         lost = 0;
         var parts = [r].concat(layers().map(function (l) { return l.getBoundingClientRect(); }));
-        frame.style.setProperty("--jr-clip", "path('" + parts.map(function (b) {
+        var c = "path('" + parts.map(function (b) {
           return "M" + Math.round(b.left) + " " + Math.round(b.top) + "H" + Math.round(b.right) + "V" + Math.round(b.bottom) + "H" + Math.round(b.left) + "Z";
-        }).join("") + "')");
+        }).join("") + "')";
+        if (c !== clip) frame.style.setProperty("--jr-clip", clip = c); // (only when it changed)
       }
       raf = requestAnimationFrame(follow);
     })();
@@ -257,6 +257,8 @@
       if (!panel) return [];
       var all = w2.nodes.concat(watch.nodes);
       if (all.length !== seen || layerEls.some(function (l) { return !l.isConnected; })) {
+        w2.nodes = w2.nodes.filter(function (n) { return n.isConnected; }); // (gone ones: no more walks over them)
+        all = w2.nodes.concat(watch.nodes);
         seen = all.length;
         var fw = doc.defaultView, sc = JR.site.frameScroller(doc), whole = fw.innerWidth * fw.innerHeight * 0.9;
         layerEls = [];
@@ -273,7 +275,9 @@
       return layerEls.filter(function (l) { var b = l.getBoundingClientRect(); return b.width > 20 && b.height > 20; });
     }
     // Esc on the page (the panel not focused): one layer, as on the site — what it opened over the panel closed by the
-    // site's Esc; else the panel, by its Esc or its own close button
+    // site's Esc; else the panel, by its Esc or its own close button. Gone from the page only when it is gone (follow):
+    // a panel that stayed open (no Esc of its, a close button in another language) stays shown, its X to close it
+    // (review: hidden, it stayed open unseen in the copy and the next Edit showed nothing)
     function key(e) {
       e.stopImmediatePropagation();
       var fw = doc.defaultView, had = layers().length;
@@ -282,13 +286,13 @@
         if (had && layers().length < had) return;
         var x = panel && panel.isConnected && panel.querySelector('button[aria-label^="Close" i]');
         if (x) x.click();
-        close();
       }, 300);
     }
     window.addEventListener("jr-escape", key, true);
     function close() {
       cancelAnimationFrame(raf); w2.stop();
       frame.classList.remove("jr-render-frame--shown");
+      frame.setAttribute("aria-hidden", "true");
       frame.style.removeProperty("--jr-clip");
       frame.removeEventListener("jr-copy-send-blocked", blocked);
       window.removeEventListener("jr-escape", key, true);

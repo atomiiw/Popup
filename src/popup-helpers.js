@@ -964,8 +964,7 @@
    * and spawns a chained popup.
    */
   JR.addPopupResponseSelectionHandler = function (popup) {
-    popup.addEventListener("mouseup", function (e) {
-      e.stopPropagation();
+    popup.addEventListener("mouseup", function (e) { // (the site doesn't get it: press.js mine)
       if (!e.target.closest(".jr-popup-response")) return;
       // Don't interfere with link/entity clicks — let the click handler handle them
       if (e.target.closest("a")) return;
@@ -1276,11 +1275,7 @@
       JR.navigateHighlight(1);
     });
 
-    widget.addEventListener("mousedown", function (e) {
-      e.stopPropagation();
-    });
-
-    return widget;
+    return JR.press.mine(widget);
   }
 
   /**

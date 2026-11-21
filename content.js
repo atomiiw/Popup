@@ -127,14 +127,11 @@
 
     // Inside a popup response the popup's own mouseup handler would re-create
     // the button (selection still exists) before this click lands.
+    JR.press.mine(triggerBtn);
     triggerBtn.addEventListener("mousedown", function (e) {
-      e.stopPropagation();
       // Keep the selection: in a popup answer (user-select: text) a press on the icon started a new
       // selection, the old one collapsed, the button was removed before mouseup — no click (T21)
       e.preventDefault();
-    });
-    triggerBtn.addEventListener("mouseup", function (e) {
-      e.stopPropagation();
     });
 
     host.appendChild(triggerBtn);
@@ -183,15 +180,12 @@
 
   // --- Dismissal ---
 
+  // Capture: whose press is decided by press.js, not by who stopped it on the way up (DeepSeek stops some on its messages)
   document.addEventListener("mousedown", function (e) {
-    if (e._jrPressed) return; // (a site control pressed for a popup — site-control.js — is no click outside it: review)
-    // Ignore clicks on the trigger button
-    if (e.target.closest(".jr-highlight-trigger-btn")) return;
-    // ...and the second click of a double-click (on the button: it closed the popup it had just opened — peer audit
-    // A6; elsewhere the first click already did), and a press on a scrollbar (scrolling, not leaving the popup)
-    if (e.detail > 1) return;
-    var tg = e.target;
-    if (tg.clientWidth && (e.offsetX > tg.clientWidth || e.offsetY > tg.clientHeight)) return;
+    // only a press outside: not in a popup, the ask button, the ∧ ∨ widget, what the site opened for a popup, the image
+    // viewer; not Popup's own press for a site control, the second click of a double-click (on the button it closed
+    // the popup it had just opened — peer audit A6), a scrollbar
+    if (JR.press.of(e).owner !== "outside") return;
     // Dismiss trigger button on click outside
     if (triggerBtn && !triggerBtn.contains(e.target)) {
       removeTriggerBtn();
@@ -216,7 +210,7 @@
       if (st.activeHighlightId && hlSpan.getAttribute("data-jr-highlight-id") === st.activeHighlightId) return;
     }
     JR.removeAllPopups();
-  });
+  }, true);
 
   document.addEventListener("jr-escape", function () { // (Esc, kept from the site: early-hide.js)
     if (triggerBtn) { removeTriggerBtn(); return; }
@@ -462,6 +456,7 @@
     // artifact with ?artifact=… — live T-f2: the popups closed and the hidden Q&A showed): keep everything
     if (sameChat) return;
 
+    if (JR.siteControl) JR.siteControl.closeAll(); // (a panel docked from the old chat's copy: not over this one — review)
     JR.removeAllPopups();
     JR.unfreezeChat();
     document.documentElement.removeAttribute("data-jr-scroll-lock");

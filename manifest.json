@@ -100,7 +100,7 @@
         "https://claude.ai/*"
       ],
       "js": [
-        "src/site-adapter.js",
+        "src/site-adapter.js", "src/press.js",
         "src/qa-content.js",
         "src/availability.js",
         "src/send-outcome.js",

@@ -63,9 +63,13 @@
   }
 
   /** A request that adds to the conversation (a message, an image edit): POST to /backend-api/[f/]conversation… —
-   *  not the reads (/conversations/<id>, plural) nor a share (/share/create). */
+   *  not the reads (/conversations/<id>, plural), a share (/share/create), the chat's boot (/conversation/init) nor
+   *  feedback (…/message_feedback, …/implicit_message_feedback — sent on Copy). Wider rather than narrower: a send let
+   *  through is a message the page never sees (review). */
   function sendsMessage(url, method) {
-    return String(method || "GET").toUpperCase() === "POST" && /\/backend-api\/(f\/)?conversation(\/|\?|$)/.test(String(url || ""));
+    var u = String(url || "").split("?")[0];
+    return String(method || "GET").toUpperCase() === "POST" && /\/backend-api\/(f\/)?conversation(\/|$)/.test(u) &&
+      !/\/conversation\/(init|[a-z_]*feedback)$/.test(u);
   }
 
   var POPUP_PREFIXES = ["Regarding this part of your response:", "Regarding your entire response below:", "Regarding your entire response above:"];
@@ -314,8 +318,8 @@
   }
 
   /**
-   * filterPage, but as many turns as the page asked for (`want`, its num_turns) while older ones exist — as if the Popup
-   * Q&As weren't there. A page of only Popup Q&As came out empty: ChatGPT's next request starts before the oldest
+   * filterPage, but at least half the turns the page asked for (`want`, its num_turns) while older ones exist — as if
+   * the Popup Q&As weren't there. A page of only Popup Q&As came out empty: ChatGPT's next request starts before the oldest
    * message it has — still the same one — so it asked for the same page again and showed "Couldn't load earlier
    * messages" (live 2026-11-20: its new front end pages the history 10 turns at a time, and the test chat had pages of
    * 20 Popup messages). A page keeping one turn of 10 (live 11-21: one question after nine Popup Q&As) showed that one,
@@ -329,8 +333,9 @@
     var oldest = j && j.messages && j.messages.length && j.messages[0] && j.messages[0].id;
     var turns = msgs.filter(function (m) { return m && m.author && m.author.role === "user"; }).length;
     want = want || 10;
-    if (turns >= want || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
-    return fetchOlder(oldest).then(function (older) {
+    // (nothing filtered, or half of what it asked for kept — enough to scroll: as it is, no extra request — review)
+    if (!out || turns >= Math.ceil(want / 2) || !more || !oldest || !fetchOlder || (depth || 0) >= 30) return Promise.resolve(out);
+    return fetchOlder(oldest, turns ? want - turns : 100).then(function (older) {
       if (!older || !Array.isArray(older.messages)) return out;
       return filled(convId, older, false, fetchOlder, (depth || 0) + 1, want - turns).then(function (o) {
         var page = o || older, res = Object.assign({}, j);
@@ -390,15 +395,16 @@
     var conv = /\/backend-api\/conversations\/([0-9a-f-]{36})(?:\/messages)?(?:[?#]|$)/.exec(url);
     if (method === "GET" && conv && filterOn()) {
       var reqInit = init || (input && typeof input === "object" ? { headers: input.headers, credentials: input.credentials } : undefined);
-      var fetchOlder = function (before, tries) { // (the page's own request headers: its login)
-        // 100 turns at a time (live: the test chat's run of ~100 Popup Q&As took a dozen 10-turn round trips and the
-        // page gave up: "Couldn't load earlier messages"; 100 turns: one, ~0.6 s; the server's limit is 100)
+      var fetchOlder = function (before, n, tries) { // (the page's own request headers: its login)
+        // 100 turns at a time after a page of only Popup Q&As (live: the test chat's run of ~100 took a dozen 10-turn
+        // round trips and the page gave up: "Couldn't load earlier messages"; 100 turns: one, ~0.6 s; the server's
+        // limit is 100); for a short page, what it lacks
         var t0 = Date.now();
         return origFetch.call(window, "/backend-api/conversations/" + conv[1] + "/messages?before=" + encodeURIComponent(before) +
-          "&num_turns=100&include_has_versions=true", reqInit).then(function (r) {
+          "&num_turns=" + (n || 100) + "&include_has_versions=true", reqInit).then(function (r) {
           filterStatus.fill = (filterStatus.fill || []).slice(-9).concat([{ before: String(before).slice(0, 8), status: r.status, ms: Date.now() - t0 }]);
           // too many requests at once (live round 5: a 429, and the page showed "Couldn't load"): again, a little later
-          if (r.status === 429 && (tries || 0) < 3) return new Promise(function (go) { setTimeout(go, 1000 * ((tries || 0) + 1)); }).then(function () { return fetchOlder(before, (tries || 0) + 1); });
+          if (r.status === 429 && (tries || 0) < 3) return new Promise(function (go) { setTimeout(go, 1000 * ((tries || 0) + 1)); }).then(function () { return fetchOlder(before, n, (tries || 0) + 1); });
           return r.ok ? r.json() : null;
         });
       };

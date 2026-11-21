@@ -16,6 +16,7 @@
 <script src="../src/escape-guard.js"></script>
 <script src="../src/jr-namespace.js"></script>
 <script src="../src/site-adapter.js"></script>
+<script src="../src/press.js"></script>
 <script src="../src/dom-helpers.js"></script>
 <script src="../src/text-extraction.js"></script>
 <script src="../src/highlight.js"></script>
@@ -2222,7 +2223,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     'document.getElementById("t").addEventListener("click", function () { var a = document.createElement("aside");' +
     ' var toast = document.createElement("section"); toast.innerHTML = "<ol></ol>"; document.body.appendChild(toast);' + // (live: a toast area first)
     ' a.innerHTML = "<button aria-label=\\"Close viewer\\">x</button>"; a.querySelector("button").onclick = function () { a.remove(); };' +
-    ' a.style.cssText = "position:fixed;right:0;top:0;width:70%;height:100%;background:#fff"; setTimeout(function () { document.getElementById("app").appendChild(a); }, 120); });' +
+    ' a.style.cssText = "position:absolute;right:0;top:0;width:70%;height:100%;background:#fff"; setTimeout(function () { document.getElementById("app").appendChild(a); }, 120); });' + // (in its layout, as ChatGPT's)
     'document.addEventListener("keydown", function (e) { var d = document.getElementById("dlg"); if (e.key === "Escape" && d) d.remove(); });<\/script>';
   var realScroller = JR.site.frameScroller;
   JR.site.frameScroller = function (d) { return d.getElementById("thread"); };
@@ -2259,13 +2260,106 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
               [shown, menu, clip, Math.round(r.width), innerWidth, note, clip2, afterOne, f.classList.contains("jr-render-frame--shown"), !!fd.querySelector("aside"), !!document.querySelector(".jr-site-note"), pop.isConnected].join(" "));
             JR.site.frameScroller = realScroller; window.requestAnimationFrame = rafD; window.cancelAnimationFrame = cafD;
             JR.siteControl.closeAll(); copyCtrl.remove(); pop.remove(); f.remove(); done();
-          }, 450);
+          }, 900);
         }, 450);
       }, 100);
     }, 300);
   };
   document.body.appendChild(f);
-}, 15000); })); // (its own time: 15–16.5 s — the shown copy covers the page)
+}, 3000); })); // (its own time: 3–5 s, nothing else then — it stubs frames and the copy's list, and covers the page)
+
+// review of ffb63a1: a Share dialog in a full-window wrapper opened from a popup's control is a menu, not a panel (the
+// whole hidden chat was shown); a docked panel closed by its own X while the site redraws its main column (holding the
+// chat's list) is gone, not replaced by that column
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var f = document.createElement("iframe");
+  f.className = "jr-render-frame";
+  f.srcdoc = '<div id="app"><div id="main"><div id="thread" style="height:200px;overflow:auto"><button id="share">Share</button><button id="t">Edit</button></div></div></div><script>' +
+    'document.getElementById("share").addEventListener("click", function () { var p = document.createElement("div");' +
+    ' p.innerHTML = "<div style=\\"position:fixed;inset:0\\"><div role=dialog style=\\"position:fixed;left:40%;top:40%;width:100px;height:60px\\">S</div></div>"; document.body.appendChild(p); });' +
+    'document.getElementById("t").addEventListener("click", function () { var a = document.createElement("aside");' +
+    ' a.innerHTML = "<button>x</button>"; a.querySelector("button").onclick = function () { a.remove(); var m = document.getElementById("main"), m2 = m.cloneNode(true); m2.style.cssText = "width:100%;height:100%"; m.replaceWith(m2); };' +
+    ' a.style.cssText = "position:absolute;right:0;top:0;width:70%;height:100%"; document.getElementById("app").appendChild(a); });<\/script>';
+  var realScroller = JR.site.frameScroller;
+  JR.site.frameScroller = function (d) { return d.getElementById("thread"); };
+  var rafD = window.requestAnimationFrame, cafD = window.cancelAnimationFrame;
+  window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
+  f.onload = function () {
+    var copyCtrl = document.createElement("button"); document.body.appendChild(copyCtrl);
+    var fd = f.contentDocument;
+    JR.siteControl.forward(fd.getElementById("share"), copyCtrl);
+    setTimeout(function () {
+      var asMenu = !!document.querySelector(".jr-site-overlay [role=dialog]"), docked = f.classList.contains("jr-render-frame--shown");
+      JR.siteControl.closeAll();
+      JR.siteControl.forward(fd.getElementById("t"), copyCtrl);
+      setTimeout(function () {
+        var shown = f.classList.contains("jr-render-frame--shown");
+        fd.querySelector("aside button").click(); // (its own X; the main column redrawn)
+        setTimeout(function () {
+          check("a dialog in a full-window wrapper is a menu, not a panel; a panel closed by its own X while the main column is redrawn: gone",
+            asMenu && !docked && shown && !f.classList.contains("jr-render-frame--shown"),
+            [asMenu, docked, shown, f.classList.contains("jr-render-frame--shown")].join(" "));
+          JR.site.frameScroller = realScroller; window.requestAnimationFrame = rafD; window.cancelAnimationFrame = cafD;
+          JR.siteControl.closeAll(); copyCtrl.remove(); f.remove(); done();
+        }, 600);
+      }, 300);
+    }, 300);
+  };
+  document.body.appendChild(f);
+}, 6000); })); // (its own time: 6–8 s, nothing else then — as the one at 3 s)
+
+// user 11-21 ("整个鼠标检测鼠标clicking太乱了"): whose press is one rule (press.js), each case once
+(function () {
+  var pop = document.createElement("div"); pop.className = "jr-popup";
+  pop.innerHTML = '<button class="jr-toolbar-delete">t</button><div class="jr-popup-question"><span id="pq">q</span></div>' +
+    '<div class="jr-popup-response"><p id="pp">x</p><button id="ps">Copy</button><span id="ph"></span><button class="jr-reply-whole-btn">Reply</button></div>';
+  var host = pop.querySelector("#ph").attachShadow({ mode: "open" }); host.innerHTML = '<button id="shadowCopy">Copy</button>';
+  var ask = document.createElement("div"); ask.className = "jr-highlight-trigger-btn";
+  var opened = document.createElement("div"); opened.setAttribute("data-jr-site-opened", ""); opened.innerHTML = "<i></i>";
+  var page = document.createElement("p"); page.textContent = "page";
+  [pop, ask, opened, page].forEach(function (n) { document.body.appendChild(n); });
+  function who(target, init, type) {
+    var got = null; function on(e) { got = JR.press.of(e); }
+    document.addEventListener(type || "mousedown", on, true);
+    var ev = new MouseEvent(type || "mousedown", Object.assign({ bubbles: true, composed: true }, init || {}));
+    if (init && init.mark) ev._jrPressed = true;
+    target.dispatchEvent(ev);
+    document.removeEventListener(type || "mousedown", on, true);
+    return got;
+  }
+  var rows = [
+    ["a press on the page", who(page).owner, "outside"],
+    ["Popup's own press for a site control", who(page, { mark: 1 }).owner, "synthetic"],
+    ["the second click of a double-click", who(page, { detail: 2 }).owner, "repeat"],
+    ["in a popup", who(pop.querySelector("#pq")).owner + " " + (who(pop.querySelector("#pq")).popup === pop), "popup true"],
+    ["a popup's own button (no child popups closed by it)", who(pop.querySelector(".jr-toolbar-delete")).owner, "control"],
+    ["Reply is the popup's", who(pop.querySelector(".jr-reply-whole-btn")).owner, "control"],
+    ["a site control in the answer", who(pop.querySelector("#ps"), null, "click").owner, "site-control"],
+    ["…drawn in a shadow root", who(host.getElementById("shadowCopy"), null, "click").el === host.getElementById("shadowCopy"), true],
+    ["the answer's text", who(pop.querySelector("#pp")).owner, "popup"],
+    ["the ask button", who(ask).owner, "ask"],
+    ["what the site opened for a popup's control", who(opened.firstChild).owner, "site-opened"],
+  ];
+  // sending removes the question box before the event reaches the document: still the popup's (R33)
+  var gone = null; function rm(e) { pop.querySelector(".jr-popup-question").remove(); } function late(e) { gone = JR.press.of(e).owner; }
+  pop.querySelector("#pq").addEventListener("pointerdown", rm); document.addEventListener("pointerdown", late);
+  pop.querySelector("#pq").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, composed: true }));
+  document.removeEventListener("pointerdown", late);
+  rows.push(["a press whose box went away on the way up", gone, "popup"]);
+  // the image viewer, over the whole window, takes every press
+  var lb = document.createElement("div"); lb.className = "jr-lightbox"; document.body.appendChild(lb);
+  rows.push(["in the image viewer", who(lb).owner, "lightbox"]); lb.remove();
+  // mine: Popup's presses don't go up to the site (mousedown, mouseup); pointerdown and click do, as before
+  var up = []; function rec(e) { up.push(e.type); }
+  ["mousedown", "mouseup", "pointerdown", "click"].forEach(function (t) { document.addEventListener(t, rec); });
+  JR.press.mine(pop);
+  ["mousedown", "mouseup", "pointerdown", "click"].forEach(function (t) { pop.querySelector("#pp").dispatchEvent(new MouseEvent(t, { bubbles: true })); });
+  ["mousedown", "mouseup", "pointerdown", "click"].forEach(function (t) { document.removeEventListener(t, rec); });
+  rows.push(["mine: the site gets no mousedown / mouseup from Popup's UI", up.join(), "pointerdown,click"]);
+  [pop, ask, opened, page].forEach(function (n) { n.remove(); });
+  var bad = rows.filter(function (r) { return r[1] !== r[2]; });
+  check("whose press (press.js): " + rows.length + " rules", !bad.length, JSON.stringify(bad));
+})();
 
 // live G4: Esc while the user is in a dialog the site opened (its Share panel, its editor) is the site's — the popup stays
 (function () {
@@ -2301,7 +2395,7 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   pressHold = document.documentElement.hasAttribute("data-jr-press-hold");
   setTimeout(function () {
     var pr = panel && panel.getBoundingClientRect(), cr = copy.getBoundingClientRect();
-    var closedOnPress = false; function md(e) { closedOnPress = true; } document.addEventListener("mousedown", md);
+    var closedOnPress = false; function md(e) { closedOnPress = JR.press.of(e).owner === "outside"; } document.addEventListener("mousedown", md); // (press.js: whose)
     if (panel) panel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     document.removeEventListener("mousedown", md);
     check("a site panel opened for a hidden page control: moved by the popup's control; a press in it isn't outside; scrolls held meanwhile",

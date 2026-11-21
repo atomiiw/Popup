@@ -950,10 +950,10 @@
     }
 
     function markUser(e) {
-      if (e._jrPressed) return; // (a site control pressed for a popup: site-control.js)
-      // Typing or clicking in a popup (Return, the send arrow) isn't scrolling the chat (R33)
-      // composedPath: sending removes the question box before the event gets here, so e.target is no longer in the popup
-      if ((e.type === "keydown" || e.type === "pointerdown") && e.composedPath().some(function (n) { return n.classList && n.classList.contains("jr-popup"); })) return;
+      var who = JR.press.of(e).owner;
+      if (who === "synthetic") return; // (a site control pressed for a popup: site-control.js)
+      // Typing or clicking in Popup's UI (Return, the send arrow in a popup) isn't scrolling the chat (R33)
+      if ((e.type === "keydown" || e.type === "pointerdown") && !/^(outside|repeat|scrollbar)$/.test(who)) return;
       userScrolling = true;
       if (wheelTimer) clearTimeout(wheelTimer);
       wheelTimer = setTimeout(function () { userScrolling = false; }, 800);

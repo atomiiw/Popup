@@ -15,8 +15,6 @@
    * Handles <a> tags (including those with dead React handlers), <button>
    * wrappers around images, and standalone <img> elements.
    */
-  // ChatGPT entity links (spans with React handlers, e.g. open a side panel)
-  var ENTITY_SELECTOR = JR.site.entitySelector;
 
   function wireResponseClicks(responseDiv) {
     if (responseDiv._jrClickWired) return;
@@ -32,13 +30,8 @@
       // (design B); its result comes back through the copy. Not an image's button: Popup's lightbox (the site's viewer
       // would open in the unseen frame, review; a citation's favicon is no image of the answer; one not loaded yet: its
       // declared width, else an image — review) ---
-      // (e.target is a shadow root's host for a control the site drew inside one — Claude Code's code blocks: the
-      // control itself, from the event's path)
-      var inner = e.composedPath()[0], from = inner && inner.nodeType === 1 && inner.closest ? inner : e.target;
-      var siteEl = from.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
-      if (!siteEl && from !== e.target) siteEl = e.target.closest("button, [role=button]" + (ENTITY_SELECTOR ? ", " + ENTITY_SELECTOR : ""));
-      var inside = siteEl && (responseDiv.contains(siteEl) || (siteEl.getRootNode() !== document && responseDiv.contains(siteEl.getRootNode().host)));
-      if (siteEl && (!inside || siteEl._jrReplyAnchor || siteEl.classList.contains("jr-reply-whole-btn"))) siteEl = null;
+      // (press.js: from the event's path — a control the site drew in a shadow root too, Claude Code's code blocks)
+      var p = JR.press.of(e), siteEl = p.owner === "site-control" && p.response === responseDiv ? p.el : null;
       var pic = siteEl && siteEl.querySelector("img");
       if (pic && pic.src && (pic.getBoundingClientRect().width || pic.width || 48) >= 48) {
         e.stopPropagation();
@@ -301,7 +294,6 @@
       overlay.remove();
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("jr-escape", onKey, true);
-      document.removeEventListener("mousedown", onBlock, true);
     }
 
     function onKey(e) {
@@ -312,14 +304,10 @@
       if (e.key === "ArrowRight" && currentIdx < srcs.length - 1) { currentIdx++; update(); }
     }
 
-    // Block mousedown from reaching the popup's outside-click handler
-    function onBlock(e) {
-      if (overlay.isConnected) { e.stopPropagation(); e.stopImmediatePropagation(); }
-    }
+    JR.press.mine(overlay); // (and Popup's own code: press.js "lightbox" while it is open)
 
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("jr-escape", onKey, true);
-    document.addEventListener("mousedown", onBlock, true);
     overlay.addEventListener("click", function (e) {
       e.stopPropagation();
       if (e.target === overlay) close();
@@ -1226,9 +1214,6 @@
       e.stopPropagation();
       showDeleteConfirmation(id, entry, popup);
     });
-    deleteBtn.addEventListener("mousedown", function (e) {
-      e.stopPropagation();
-    });
     // (before an answer area a rebuild kept: that one isn't moved — moving resets its scroll)
     popup.insertBefore(deleteBtn, popup.querySelector(":scope > .jr-popup-response, :scope > .jr-popup-loading"));
 
@@ -1323,7 +1308,6 @@
         again.className = "jr-retry-btn";
         again.innerHTML = RETRY_SVG;
         again.title = "Try again (looks for the answer again; nothing is sent)";
-        again.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
         again.addEventListener("click", function (ev) { ev.stopPropagation(); if (responseDiv._jrSiteFollow) responseDiv._jrSiteFollow(true); });
         wait.appendChild(msg);
         wait.appendChild(again);
@@ -1402,7 +1386,6 @@
         var qd = popup.querySelector(".jr-popup-question");
         if (filesGone && qd) JR.showAttachmentNote(qd, null, "Files gone after the reload: sent the text only");
       });
-      retryBtn.addEventListener("mousedown", function (ev) { ev.stopPropagation(); });
       timeoutDiv.appendChild(retryBtn);
       popup.appendChild(timeoutDiv);
       return timeoutDiv;
@@ -1520,9 +1503,6 @@
         }, 50);
       }
     });
-    replyBtn.addEventListener("mousedown", function (ev) {
-      ev.stopPropagation();
-    });
     replyBtn.setAttribute("data-jr-keep", ""); // stays when the copy follows its original (site-answer.js)
     var oldReply = responseDiv.querySelector(":scope > .jr-reply-whole-btn"); // (a kept area: this one's, for this version)
     if (oldReply) oldReply.remove();
@@ -1629,9 +1609,10 @@
       buildInputRow(upper, text, sentence, blockTypes, wrappers, parentId, opts.wholeResponse, opts.wholeResponseFull);
     }
 
-    // --- Mousedown: stop propagation + close children to this level ---
+    // --- Mousedown: Popup's (press.js), closes children to this level — not on its own buttons ---
+    JR.press.mine(popup);
     popup.addEventListener("mousedown", function (e) {
-      e.stopPropagation();
+      if (JR.press.of(e).owner === "control") return;
       // Dismiss trigger button on click inside popup (but not on the trigger itself)
       if (JR.removeTriggerBtn && !e.target.closest(".jr-highlight-trigger-btn")) {
         JR.removeTriggerBtn();

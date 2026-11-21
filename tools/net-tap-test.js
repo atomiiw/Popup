@@ -26,7 +26,9 @@ function run(argv) {
   check("hidden copy: a send is refused", [api.sendsMessage("/backend-api/f/conversation", "POST"), api.sendsMessage("https://chatgpt.com/backend-api/conversation", "post"),
     api.sendsMessage("/backend-api/f/conversation/prepare", "POST")].join(), "true,true,true");
   check("hidden copy: reads and a share pass", [api.sendsMessage("/backend-api/conversations/abc?num_turns=10", "GET"), api.sendsMessage("/backend-api/conversation/abc", "GET"),
-    api.sendsMessage("/backend-api/share/create", "POST"), api.sendsMessage("/backend-api/conversations/abc/messages", "POST")].join(), "false,false,false,false");
+    api.sendsMessage("/backend-api/share/create", "POST"), api.sendsMessage("/backend-api/conversations/abc/messages", "POST"),
+    api.sendsMessage("/backend-api/conversation/init", "POST"), api.sendsMessage("/backend-api/conversation/message_feedback", "POST"),
+    api.sendsMessage("/backend-api/conversation/implicit_message_feedback?x=1", "POST")].join(), "false,false,false,false,false,false,false");
 
   // A Popup question sent with an image: parts = [image pointer, text] (Step 2).
   var withImage = JSON.stringify({ messages: [{ content: { content_type: "multimodal_text", parts: [
