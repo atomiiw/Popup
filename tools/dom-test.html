@@ -1161,6 +1161,148 @@ asyncChecks.push(new Promise(function (done) {
   unlock(); sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
 })();
 
+// review 11-21 (#5): the same, the user's wheel going on meanwhile — its fallback top isn't taken for its place
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='host' style='height:4000px;position:relative'><div class='sp' style='height:1000px'></div>" +
+    "<div class='a' data-turn-key='anc-c' style='height:50px'>x <span class='jr-source-highlight' data-jr-highlight-id='anc-hl3'>hl</span></div>" +
+    "<div class='jr-popup' style='position:absolute;top:1080px;height:80px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var a = sc.querySelector(".a"), span = a.querySelector("span"), pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [span];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, span);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var gap0 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
+  sc.dispatchEvent(new WheelEvent("wheel", { deltaY: 1 })); // (the user scrolling)
+  sc.querySelector(".sp").style.height = "300px";
+  a.innerHTML = "x hl";
+  run(3);
+  var gap1 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
+  check("send: a tie broken while the user scrolls — the popup still where it was to the reader's place",
+    Math.abs(gap1 - gap0) <= 1, [gap0, gap1].join(" "));
+  unlock(); sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
+// review 11-21 (#1): the passage held is not found for a frame (the turn drawn in parts) — the hold goes by the turn
+// then: its place is where it is now (not from the send's start), and a popup kept to the passage is kept to the turn
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto;position:relative";
+  sc.innerHTML = "<div class='host' style='height:6000px;position:relative'><div data-turn-key='pb-1' style='position:absolute;top:100px'>" +
+    "<p id='pb-a' style='height:2000px;margin:0'>The opening of a long answer, far above the reader</p>" +
+    "<p id='pb-b' style='height:200px;margin:0'>The passage the reader is looking at, mid-way through the answer</p></div>" +
+    "<div class='jr-popup' style='position:absolute;top:2200px;height:50px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 2050;
+  var pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame, realBand = JR.site.visibleBand;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [];
+  JR.site.visibleBand = function () { var r = sc.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, sc.querySelector("[data-turn-key]"));
+  window.requestAnimationFrame = raf;
+  run(2);
+  var y0 = pop.getBoundingClientRect().top;
+  sc.querySelector("#pb-a").style.height = "2500px"; // (laid out anew inside: the passage 500 px lower)
+  run(2);
+  var top1 = sc.scrollTop, y1 = pop.getBoundingClientRect().top;
+  var drawing = document.createElement("p"); drawing.style.cssText = "height:200px;margin:0"; drawing.textContent = "…";
+  sc.querySelector("#pb-b").replaceWith(drawing); // (the passage redrawn, not drawn yet for a frame)
+  run(2);
+  var top2 = sc.scrollTop, y2 = pop.getBoundingClientRect().top;
+  check("send: the passage not found for a frame — the chat and the popup stay (the turn's place is where it is now)",
+    Math.abs(top2 - top1) <= 1 && Math.abs(y1 - y0) <= 1 && Math.abs(y2 - y0) <= 1, [top1, top2, y0, y1, y2].map(Math.round).join(" "));
+  unlock(); sc.remove(); JR.site.visibleBand = realBand;
+  JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
+// review 11-21 (#2): a jump during a send — while the jump's settle holds the chat, the send's hold holds nothing and
+// doesn't put the jump's popup back (it places itself); after it, the send's hold keeps where the jump went
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto;position:relative";
+  sc.innerHTML = "<div class='host' style='height:6000px;position:relative'><div data-turn-key='js-1' style='position:absolute;top:1000px;height:400px'>x</div>" +
+    "<div data-turn-key='js-2' style='position:absolute;top:4000px;height:400px'>y</div>" +
+    "<div class='jr-popup' style='position:absolute;top:1100px;height:50px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame, realJump = JR.jumpState;
+  var js = { on: false, seq: 0, settling: false };
+  JR.jumpState = function () { return js; };
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, sc.querySelector("[data-turn-key]"));
+  window.requestAnimationFrame = raf;
+  run(2);
+  js.seq++; js.settling = true; sc.scrollTop = 3950; pop.style.top = "4100px"; // (the jump went to js-2, its popup opened there)
+  run(2);
+  pop.style.top = "4060px"; sc.scrollTop = 3990; // (its popup placing itself as it grows; the settle holding the chat)
+  run(2);
+  var popTop = pop.style.top, scTop = sc.scrollTop;
+  js.settling = false;
+  run(2);
+  sc.querySelector("[data-turn-key='js-1']").remove(); // (the old turn gone later)
+  run(3);
+  check("a jump during a send: the send's hold leaves the settle's chat and the jump's popup alone, then keeps the new place",
+    popTop === "4060px" && scTop === 3990 && Math.abs(sc.scrollTop - 3990) <= 1 && pop.style.top === "4060px", [popTop, scTop, sc.scrollTop, pop.style.top].join(" "));
+  unlock(); sc.remove(); JR.jumpState = realJump;
+  JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
+// review 11-21 (#3, #4): a jump's settle holds the passage of the highlight it went to (not the one at the upper third),
+// and goes on when the site remounts the turn and wraps the highlight anew (the same highlight, by its id)
+(function () {
+  var st = JR.state, frames = [], fake = Date.now(), real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand,
+    create: JR.createPopup, all: JR.repositionAll, raf: window.requestAnimationFrame, now: Date.now };
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:9000px;position:relative"><div data-turn-key="sv-1" style="position:absolute;top:2500px;width:280px">' +
+    '<p id="sv-u" style="height:300px;margin:0">The passage at the upper third of the view after the jump</p><div id="sv-g" style="height:200px"></div>' +
+    '<p id="sv-h" style="height:100px;margin:0">A passage with a highlight in it: <span data-jr-highlight-id="svA">here</span></p></div></div>';
+  document.body.appendChild(box);
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  JR.repositionAll = function () {};
+  Date.now = function () { return fake; };
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  function run(n) { while (n--) frames.splice(0).forEach(function (f) { f(); }); }
+  var pop = document.createElement("div"); pop.className = "jr-popup"; pop.style.cssText = "position:absolute;top:100px;height:50px";
+  JR.createPopup = function () { box.firstElementChild.appendChild(pop); st.activePopup = pop; };
+  var span = box.querySelector("[data-jr-highlight-id]");
+  st.completedHighlights.set("svA", { spans: [span], items: [] });
+  JR.scrollToAndOpenPopup("svA");
+  run(2);
+  var y0 = span.getBoundingClientRect().top;
+  box.querySelector("#sv-g").style.height = "700px"; // (the turn laid out anew inside, between the two passages)
+  run(2);
+  var y1 = box.querySelector("[data-jr-highlight-id]").getBoundingClientRect().top;
+  box.querySelector("#sv-h").innerHTML = 'A passage with a highlight in it: <span data-jr-highlight-id="svA">here</span>'; // (wrapped anew)
+  run(1);
+  box.querySelector("#sv-g").style.height = "1200px";
+  run(2);
+  var y2 = box.querySelector("[data-jr-highlight-id]").getBoundingClientRect().top;
+  fake += 2500; run(2); // (the settle over)
+  check("a jump's settle holds its highlight's passage, also once the highlight is wrapped anew",
+    Math.abs(y1 - y0) <= 2 && Math.abs(y2 - y0) <= 2, [y0, y1, y2].map(Math.round).join(" "));
+  window.requestAnimationFrame = real.raf; Date.now = real.now;
+  st.activePopup = null; st.completedHighlights.delete("svA"); box.remove();
+  JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

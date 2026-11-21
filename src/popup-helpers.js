@@ -1575,12 +1575,14 @@
     // placed again when the site put content above the place it is measured from (live NT4 A2: 19 352 px came above,
     // ChatGPT kept the highlight on screen by scrolling, the popup went with the old place to −19 143): the popup and
     // its highlight parted by more than 50 px, the popup's height the same — not its own growing
-    var prev = null;
+    // (its highlight by id: ChatGPT remounting the turn wraps it anew — the same highlight, not gone; review)
+    var prev = null, id = span.getAttribute("data-jr-highlight-id");
     (function watch() {
       if (done) return;
+      if (!span.isConnected && id) span = document.querySelector('[data-jr-highlight-id="' + id + '"]') || span;
       if (Date.now() - t0 >= 2000 || !span.isConnected || !sc.isConnected) return mine();
-      var p = st.activePopup, now = p && p.isConnected ? { p: p.getBoundingClientRect(), h: span.getBoundingClientRect().top } : null;
-      if (now && prev && Math.abs((now.p.top - prev.p.top) - (now.h - prev.h)) > 50 && Math.abs(now.p.height - prev.p.height) < 1) {
+      var p = st.activePopup, now = p && p.isConnected ? { el: p, p: p.getBoundingClientRect(), h: span.getBoundingClientRect().top } : null;
+      if (now && prev && prev.el === now.el && Math.abs((now.p.top - prev.p.top) - (now.h - prev.h)) > 50 && Math.abs(now.p.height - prev.p.height) < 1) {
         JR.posLog("settle-place", p, { moved: Math.round(now.p.top - prev.p.top), hl: Math.round(now.h - prev.h) });
         JR.repositionAll();
         now = null; // (measured again next frame)
@@ -1603,7 +1605,7 @@
   // back to (live NT3 H2: ∧ during a send — the hold pulled the chat back, the popup it opened was off screen)
   // { on: a jump is scrolling, seq: one more at each start and end } — a hold takes the place once after seq changed
   var jumpOn = false, jumpSeq = 0;
-  JR.jumpState = function () { return { on: jumpOn, seq: jumpSeq }; };
+  JR.jumpState = function () { return { on: jumpOn, seq: jumpSeq, settling: !!settled }; };
   function jumpEnds() { jumpOn = false; jumpSeq++; }
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
@@ -1614,11 +1616,11 @@
     var sc0 = JR.site.scrollContainer();
     JR.navTrace = hlId.slice(0, 8) + (connected ? " on page y=" + Math.round(entry.spans[0].getBoundingClientRect().top) : " not on page");
     if (connected) {
+      jumpEnds(); // (before it opens: its settle's hold isn't to take its own jump for one — review)
       openAt(entry.spans[0], function () {
         JR.navTrace += " → y=" + Math.round(entry.spans[0].getBoundingClientRect().top) + " scrollTop=" + Math.round(sc0 ? sc0.scrollTop : -1);
         JR.createPopup({ completedId: hlId });
       });
-      jumpEnds();
       return;
     }
     // Highlight's turn isn't in the DOM (virtualized): scroll until ChatGPT
@@ -1642,12 +1644,13 @@
         }
         var e = st.completedHighlights.get(hlId);
         if (e && e.spans && e.spans[0] && e.spans[0].isConnected) {
+          jumpEnds();
           openAt(e.spans[0], function () {
             JR.navTrace += ", opened at y=" + Math.round(e.spans[0].getBoundingClientRect().top);
             JR.createPopup({ completedId: hlId });
           });
           JR.updateNavWidget();
-          return jumpEnds();
+          return;
         }
         // (6 s: ChatGPT's new front end draws a turn just mounted in parts — its highlight was put back after 2 s: the jump
         // reached the turn and opened nothing, live C4 11-20)

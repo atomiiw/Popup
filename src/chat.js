@@ -846,8 +846,8 @@
     // marked for scroll-guard.js (page world): a site scroll keeping it in view goes through
     var marked = null;
     function mark(el) {
-      if (el !== marked) {
-        if (marked) { marked.removeAttribute("data-jr-anchor"); marked.removeAttribute("data-jr-anchor-y"); }
+      if (el !== marked || (el && !el.hasAttribute("data-jr-anchor"))) { // (another hold's end took it off — review)
+        if (marked && marked !== el) { marked.removeAttribute("data-jr-anchor"); marked.removeAttribute("data-jr-anchor-y"); }
         marked = el;
         if (el) el.setAttribute("data-jr-anchor", "");
       }
@@ -925,15 +925,24 @@
       }
       if (!keep) glued.delete(p); // (the glue takes it as it is from here)
     }
+    // Each popup's place is kept to both the turn and the passage: the one the hold holds this frame is the one it goes by
+    // (review: a passage not found for a frame — the turn drawn in parts — was taken for the turn, and a popup kept to
+    // the passage moved by the passage's distance from the turn's top, thousands of px, and back)
     function glue(anchor) {
-      var pops = openPopups();
-      var ay = anchor.getBoundingClientRect().top, resizing = document.documentElement.classList.contains("jr-resizing");
+      var pops = openPopups(), resizing = document.documentElement.classList.contains("jr-resizing");
+      var refs = { turn: anchorEl && anchorEl.isConnected ? anchorEl.getBoundingClientRect().top : null,
+                   block: kind === "block" ? anchor.getBoundingClientRect().top : null };
+      if (kind === "turn") refs.turn = anchor.getBoundingClientRect().top;
+      function offs(pos) {
+        return { turn: refs.turn === null ? null : pos - refs.turn, block: refs.block === null ? null : pos - refs.block };
+      }
       pops.forEach(function (p) {
         if (!p || !p.isConnected || !p.parentElement) return;
+        var untied = false;
         if (p._jrAnchorHl) { // tied by CSS: only its highlight must still be there (re-wrapped: the new one)
           // its place to the anchor while tied, for when the tie breaks (live B3, ChatGPT: the highlight's turn redrawn
           // while the list above was re-laid — untied, it fell back to its top from before the re-lay, 22 000 px off)
-          if (p._jrAnchorHl.isConnected) { if (p._jrAnchorHl.getBoundingClientRect().height) glued.set(p, { off: p.getBoundingClientRect().top - ay }); return; }
+          if (p._jrAnchorHl.isConnected) { if (p._jrAnchorHl.getBoundingClientRect().height) glued.set(p, offs(p.getBoundingClientRect().top)); return; }
           var id = p._jrAnchorHl.getAttribute("data-jr-highlight-id"), now = id && document.querySelector('[data-jr-highlight-id="' + id + '"]');
           if (now && now.getBoundingClientRect().height) {
             now.style.setProperty("--jr-anchor-name", p.style.getPropertyValue("--jr-anchor"));
@@ -942,25 +951,29 @@
             return;
           }
           unanchor(p, true);
+          untied = true; // (its fallback top isn't a place, even while the user scrolls — review)
         }
         var r = p.getBoundingClientRect();
         if (!r.height) return; // (not drawn: being measured)
         var above = p._jrLockedDirection === "above" && p._jrBottomAnchor != null, top = parseFloat(p.style.top) || 0;
         // an "above" one by the bottom it is placed to, not as drawn (live: measured the moment Return made it taller,
         // before its top followed, it was held 50 px low, over its highlight, for the whole send)
-        var off = (above ? r.top - top + p._jrBottomAnchor : r.top) - ay;
+        var pos = above ? r.top - top + p._jrBottomAnchor : r.top;
         var g = glued.get(p);
         // (the user scrolling — the chat or inside a parent popup, where a nested one follows its highlight — or
         // dragging an edge places it: taken as it is)
-        if (!g || resizing || userScrolling) {
-          if (!g || Math.abs(off - g.off) >= 0.5) JR.posLog("glue-base", p, { at: !g ? "first" : resizing ? "resizing" : "user", off: Math.round(off), above: above });
-          glued.set(p, { off: off }); return;
+        if (!g || g[kind] === null || resizing || (userScrolling && !untied)) {
+          var o = offs(pos);
+          if (!g || g[kind] === null || Math.abs(o[kind] - g[kind]) >= 0.5) JR.posLog("glue-base", p, { at: !g ? "first" : resizing ? "resizing" : "user", off: Math.round(o[kind]), above: above });
+          glued.set(p, o); return;
         }
-        var d = off - g.off;
-        if (Math.abs(d) < 0.5) return;
-        if (above) p._jrBottomAnchor -= d;
-        p.style.top = (top - d) + "px";
-        JR.posLog("glue", p, { d: Math.round(d) });
+        var d = pos - refs[kind] - g[kind];
+        if (Math.abs(d) >= 0.5) {
+          if (above) p._jrBottomAnchor -= d;
+          p.style.top = (top - d) + "px";
+          JR.posLog("glue", p, { d: Math.round(d) });
+        }
+        glued.set(p, offs(pos - d)); // (the other one's place taken anew: it goes by it when this one isn't found)
       });
     }
     var savedTop = container.scrollTop;
@@ -976,7 +989,7 @@
     if (withPopups) anchorPopups();
     // the window resized during the send: placing is the placer's again (its highlight may wrap otherwise — an anchored
     // popup kept its old offset and covered the highlight's last line — ponytail review)
-    function onResize() { openPopups().forEach(unanchor); }
+    function onResize() { if (withPopups) openPopups().forEach(function (p) { unanchor(p); }); }
     window.addEventListener("resize", onResize);
     if (startAnchor && withPopups) glue(startAnchor);
     var userScrolling = false;
@@ -1022,7 +1035,7 @@
     // it rebuilt its list — 75 196 → 50 945 px, the reader's 19 500 px turn back to an estimate — and scrolled to
     // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
     // held where the reader saw it (its drift, below). Once per send.
-    var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, jumped = false, unlocked = false;
+    var pickedAt = 0, moved = false, lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, jumped = false, unlocked = false;
     var seenJump = JR.jumpState ? JR.jumpState().seq : 0;
     function reachBack(now) {
       if (jumped) return false; // (the reader jumped elsewhere during the send: not pulled back to where they were)
@@ -1060,13 +1073,14 @@
 
       var anchor = liveAnchor();
       observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
-      if (anchor && withPopups) glue(anchor);
+      // (a jump of the user's: while it scrolls, once after it ended, and while its settle holds the chat —
+      // popup-helpers.js; the settle itself takes none. Review: a send's hold and a jump's settle both held the chat,
+      // and the send's glue put the jump's popup back where it was)
+      var js = JR.jumpState && JR.jumpState(), jumping = !!js && (js.on || js.seq !== seenJump || (withPopups && js.settling));
+      if (js) seenJump = js.seq;
+      if (anchor && withPopups && !jumping) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
-      // (a jump of the user's: while it scrolls, and once after it ended — popup-helpers.js; a hold made at its end, a
-      // jump's own settle, takes none)
-      var js = JR.jumpState && JR.jumpState(), jumping = !!js && (js.on || js.seq !== seenJump);
-      if (js) seenJump = js.seq;
       if (userScrolling || jumping) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
         if (jumping) jumped = true;
         savedTop = container.scrollTop;
@@ -1074,11 +1088,26 @@
         // review: a reader who scrolled away was thrown back)
         startTop = container.scrollTop; startH = lastH = container.scrollHeight;
         // Scrolled out of ChatGPT's list (unmounted): no old position to go back to when it remounts; the passage now
-        // in view is the one to hold
-        var t0 = anchorEl && anchorEl.isConnected ? anchorEl : null;
-        pickPoint(t0, null);
-        takePlaces(t0);
+        // in view is the one to hold — after a jump, in the turn it went to (its popup's highlight)
+        var now = Date.now();
+        moved = jumping ? "jump" : "user";
+        if (now - pickedAt >= 100) { // (not every frame: every block of a 20 000 px turn measured — review)
+          pickedAt = now;
+          if (jumping) {
+            var v = JR.viewAnchor(), vt = v && JR.site.turnOf(v);
+            if (vt) { anchorEl = vt; anchorKey = JR.getTurnKey(vt) || anchorKey; glued.clear(); }
+          }
+          var t0 = anchorEl && anchorEl.isConnected ? anchorEl : null;
+          pickPoint(t0, jumping ? JR.viewAnchor() : null);
+          takePlaces(t0);
+        }
       } else {
+        // (the first look after it: the passage where the move ended — the last pick may be up to 100 ms older)
+        if (moved) {
+          var tm = anchorEl && anchorEl.isConnected ? anchorEl : null;
+          pickPoint(tm, moved === "jump" ? JR.viewAnchor() : null); takePlaces(tm); anchor = liveAnchor();
+          moved = false;
+        }
         if (anchor) lostAt = 0;
         else if (anchorKey && (saved.turn !== null || saved.block !== null) && reachBack(Date.now())) return;
         if (anchor && saved[kind] === null) {
@@ -1094,6 +1123,9 @@
             // in that collapsed list is fake; when the anchor turn is gone we go back to savedTop (R33, T14)
             container.scrollTop += drift;
           }
+          // (the turn's place taken anew where the passage is held: the turn is what is held when the passage isn't
+          // found for a frame — review: held at its place from the start, the chat jumped by the inner re-layout)
+          if (kind === "block" && anchorEl && anchorEl.isConnected) saved.turn = anchorEl.getBoundingClientRect().top;
         } else if (container.scrollHeight > container.clientHeight * 3 && container.scrollHeight !== lastH && container.scrollHeight !== startH &&
                    Math.abs(container.scrollTop - savedTop) > 1) {
           // (only when the place moved — the site scrolled, or the end came above it: a list growing below the reader,
@@ -1116,7 +1148,8 @@
     return function unlock() {
       unlocked = true;
       window.removeEventListener("resize", onResize);
-      openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(unanchor);
+      // (a settle's end unties none: they are the send's — review)
+      if (withPopups) openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(function (p) { unanchor(p); });
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();
