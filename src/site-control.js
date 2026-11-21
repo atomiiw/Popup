@@ -108,18 +108,30 @@
   function forward(o, copyCtrl) {
     var doc = o.ownerDocument;
     if (doc === document || !doc.body) {
-      var shown = doc === document && reveal(o), had = new Set(Array.prototype.slice.call(document.body.children));
+      if (doc !== document) { press(o); return; }
+      var shown = reveal(o), had = new Set(Array.prototype.slice.call(document.body.children));
+      var oRect = o.getBoundingClientRect(), cRect = copyCtrl.getBoundingClientRect();
+      // the site's scroll to its control (hidden on the page) held for the moment: live G4, ChatGPT's image Edit moved
+      // the chat to the hidden turn (scroll-guard.js blocks site scrolls while the lock is on)
+      var html = document.documentElement;
+      html.setAttribute("data-jr-press-hold", String(Date.now()));
       press(o);
-      if (shown) setTimeout(function () { shown.removeAttribute("data-jr-pressing"); }, 1000); // (a Copy may read a moment later)
-      // a menu the site opened for an original hidden on the page: placed by its 0 px trigger, unseen, and a modal one
-      // takes the page's pointer (Radix: body pointer-events none — no hover anywhere): closed again (audit)
-      if (shown) setTimeout(function () {
-        var opened = Array.prototype.some.call(document.body.children, function (c) {
-          return !had.has(c) && !/^(SCRIPT|STYLE|LINK)$/.test(c.tagName) && !c.classList.contains("jr-site-overlay") && !c.closest(".jr-popup");
+      setTimeout(function () {
+        if (shown) shown.removeAttribute("data-jr-pressing"); // (a Copy may read a moment later)
+        html.removeAttribute("data-jr-press-hold");
+      }, 1000);
+      // what the site opened for it — placed by its hidden control (live G4: ChatGPT's Share panel off the window's edge):
+      // moved by as much as the popup's control is from it, used as the site's own; a press in it is no press outside
+      // the popup (content.js)
+      if (shown) (function look(t0) {
+        Array.prototype.forEach.call(document.body.children, function (c) {
+          if (had.has(c) || c._jrMoved || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || c.classList.contains("jr-site-overlay") || c.closest(".jr-popup")) return;
+          c._jrMoved = true;
+          c.style.translate = Math.round(cRect.left - oRect.left) + "px " + Math.round(cRect.top - oRect.top) + "px";
+          c.addEventListener("mousedown", function (e) { e.stopPropagation(); });
         });
-        if (opened) send(document, new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
-        if (document.body.style.pointerEvents === "none") document.body.style.pointerEvents = "";
-      }, 300);
+        if (Date.now() - t0 < 1500) setTimeout(function () { look(t0); }, 50);
+      })(Date.now());
       return;
     }
     var before = new Set(Array.prototype.slice.call(doc.body.children)), t0 = Date.now();

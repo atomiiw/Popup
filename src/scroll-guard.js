@@ -23,6 +23,13 @@
     return t !== null && Date.now() - Number(t) < 120000;
   }
 
+  // A site control pressed for a popup (site-control.js): every site scroll of the chat ignored for that moment (its
+  // control is in a hidden turn — live G4, ChatGPT's image Edit moved the chat there). Not the send lock's viewport trick.
+  function holdOn() {
+    var t = document.documentElement.getAttribute("data-jr-press-hold");
+    return t !== null && Date.now() - Number(t) < 3000;
+  }
+
   function isThreadScroller(el) {
     return !!(el && el.matches && el.matches(SCROLLER));
   }
@@ -81,6 +88,7 @@
   // still blocked. The anchor not on the page (unmounted): blocked only within two screens of the end. A scroll let
   // through is noted (data-jr-site-scroll): Popup's own hold then falls back to there, not to a stale position.
   function blocks(el, top) {
+    if (holdOn() && !lockOn() && isThreadScroller(el)) return true;
     if (!lockOn() || !isThreadScroller(el)) return false;
     if (typeof top !== "number" || !isFinite(top)) return true;
     var max = el.scrollHeight - el.clientHeight;
@@ -122,7 +130,7 @@
 
   var origIntoView = P.scrollIntoView;
   P.scrollIntoView = function () {
-    if (lockOn() && this.closest && this.closest(SCROLLER)) return note("intoView", (this.getAttribute && this.getAttribute("data-turn-key")) || this.tagName);
+    if ((lockOn() || holdOn()) && this.closest && this.closest(SCROLLER)) return note("intoView", (this.getAttribute && this.getAttribute("data-turn-key")) || this.tagName);
     return origIntoView.apply(this, arguments);
   };
 

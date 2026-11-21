@@ -2161,6 +2161,36 @@ asyncChecks.push(new Promise(function (done) {
   failedT.remove(); imgT.remove();
 })();
 
+// live G4 (ChatGPT, an image just made): its Share opened a panel placed by the hidden control (off the window's
+// edge): moved by as much as the popup's control is from it; a press in it doesn't close the popup
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var turn = document.createElement("div");
+  turn.style.cssText = "height:0;overflow:clip;visibility:hidden;position:relative;top:40px";
+  turn.innerHTML = '<button style="height:20px">Share</button>';
+  document.body.appendChild(turn);
+  var ctrl = turn.querySelector("button"), panel = null;
+  ctrl.addEventListener("pointerdown", function () {
+    var r = ctrl.getBoundingClientRect();
+    panel = document.createElement("div"); panel.style.cssText = "position:fixed;width:50px;height:20px;left:" + r.left + "px;top:" + (r.bottom + 4) + "px";
+    document.body.appendChild(panel);
+  });
+  var copy = document.createElement("button"); copy.textContent = "Share"; copy.style.cssText = "position:fixed;left:300px;top:200px;height:20px";
+  document.body.appendChild(copy);
+  var pressHold = null;
+  JR.siteControl.forward(ctrl, copy);
+  pressHold = document.documentElement.hasAttribute("data-jr-press-hold");
+  setTimeout(function () {
+    var pr = panel && panel.getBoundingClientRect(), cr = copy.getBoundingClientRect();
+    var closedOnPress = false; function md(e) { closedOnPress = true; } document.addEventListener("mousedown", md);
+    if (panel) panel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.removeEventListener("mousedown", md);
+    check("a site panel opened for a hidden page control: moved by the popup's control; a press in it isn't outside; scrolls held meanwhile",
+      pr && Math.abs(pr.left - cr.left) <= 2 && Math.abs(pr.top - (cr.bottom + 4)) <= 2 && !closedOnPress && pressHold,
+      pr ? [Math.round(pr.left), Math.round(pr.top), cr.left, cr.bottom + 4, closedOnPress, pressHold].join(" ") : "no panel");
+    if (panel) panel.remove(); turn.remove(); copy.remove(); done();
+  }, 300);
+}, 23100); })); // (its own time: 23.1–23.4 s)
+
 // live NT1 (DeepSeek): a site's Copy on an original in a hidden turn copied nothing (innerText of visibility: hidden is
 // ""): for the press the turn is rendered (transparent, 0 px) — the site reads the text; afterwards hidden again
 (function () {
