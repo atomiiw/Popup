@@ -2363,22 +2363,22 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   sc.innerHTML = "<div style='height:3000px;position:relative'><div data-turn-key='h2-1' style='position:absolute;top:1500px;height:400px'>x</div></div>";
   document.body.appendChild(sc); sc.scrollTop = 1450;
   var list = sc.firstElementChild, turn = list.firstElementChild;
-  var rafR = window.requestAnimationFrame, cafR = window.cancelAnimationFrame, realReach = JR.scrollToTurnKey, realJumping = JR.jumping, asked = 0, jumping = false;
+  var rafR = window.requestAnimationFrame, cafR = window.cancelAnimationFrame, realReach = JR.scrollToTurnKey, realJumping = JR.jumpState, asked = 0, jumping = false, seq = 0;
   window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
   JR.scrollToTurnKey = function (key, cb) { asked++; cb(true); };
-  JR.jumping = function () { return jumping; };
+  JR.jumpState = function () { return { on: jumping, seq: seq }; };
   var unlock = JR.lockScroll(sc, turn);
   setTimeout(function () {
-    jumping = true; sc.scrollTop = 200; // (the jump to a highlight far above)
+    jumping = true; seq++; sc.scrollTop = 200; // (the jump to a highlight far above)
     setTimeout(function () {
-      jumping = false;
+      jumping = false; seq++;
       setTimeout(function () {
         var kept = sc.scrollTop;
         turn.remove(); list.style.height = "2600px"; // (the old turn gone later: not reached back for)
         setTimeout(function () {
           check("a jump during a send: the hold keeps where it went, and doesn't reach back for the old turn",
             Math.abs(kept - 200) <= 1 && Math.abs(sc.scrollTop - 200) <= 1 && asked === 0, [Math.round(kept), Math.round(sc.scrollTop), asked].join(" "));
-          unlock(); JR.scrollToTurnKey = realReach; JR.jumping = realJumping; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
+          unlock(); JR.scrollToTurnKey = realReach; JR.jumpState = realJumping; window.requestAnimationFrame = rafR; window.cancelAnimationFrame = cafR; sc.remove(); done();
         }, 1400);
       }, 300);
     }, 300);
@@ -2408,6 +2408,33 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     }, 300);
   }, 100);
 }, 17600); })); // (its own time: 17.6–18.1 s, nothing else then — it stubs frames)
+
+// live NT4 A2 (ChatGPT): after a jump opened its popup the site laid its list out anew and moved the chat by itself —
+// the popup off screen; the passage the jump went to is held for 2 s
+asyncChecks.push(new Promise(function (done) { setTimeout(function () {
+  var st = JR.state, real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand, create: JR.createPopup, raf: window.requestAnimationFrame, caf: window.cancelAnimationFrame };
+  window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); }; window.cancelAnimationFrame = clearTimeout;
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:9000px;position:relative"><p style="position:absolute;top:3000px;margin:0">A passage with a highlight in it: <span id="st-a">here</span></p></div>';
+  document.body.appendChild(box);
+  var a = document.getElementById("st-a");
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  JR.createPopup = function () {};
+  st.completedHighlights.set("stA", { spans: [a], items: [] });
+  JR.scrollToAndOpenPopup("stA");
+  var y0 = a.getBoundingClientRect().top;
+  setTimeout(function () {
+    box.scrollTop += 3000; // (the site moves its list by itself)
+    setTimeout(function () {
+      var y = a.getBoundingClientRect().top;
+      check("after a jump the passage it went to is held while the site moves its list", Math.abs(y - y0) <= 2, Math.round(y) + " vs " + Math.round(y0));
+      st.completedHighlights.delete("stA"); box.remove();
+      JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
+      setTimeout(function () { window.requestAnimationFrame = real.raf; window.cancelAnimationFrame = real.caf; done(); }, 150); // (its hold over: box gone)
+    }, 200);
+  }, 100);
+}, 18300); })); // (its own time: 18.3–18.8 s, nothing else then — it stubs frames)
 
 // user 11-21 ("整个鼠标检测鼠标clicking太乱了"): whose press is one rule (press.js), each case once
 (function () {

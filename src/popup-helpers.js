@@ -1559,6 +1559,24 @@
     }
     bringLow(span);
     open();
+    settle(span);
+  }
+  // After a jump the site may lay its list out anew and move it (live NT4 A2, ChatGPT: the popup opened at y 559, then
+  // the chat went from 32 855 to 7 261 by itself — off screen): the passage the jump went to held for 2 s (the hold of a
+  // send, chat.js lockScroll — the user scrolling takes over at once); not inside a popup's answer
+  var settled = null;
+  function settle(span) {
+    if (settled) settled();
+    var sc = JR.site.scrollContainer();
+    if (!sc || span.closest(".jr-popup") || !JR.lockScroll) return;
+    var un = JR.lockScroll(sc, span), done = false, t0 = Date.now();
+    var mine = settled = function () { if (!done) { done = true; un(); } if (settled === mine) settled = null; };
+    // (its own: a later jump's hold isn't ended by it; over at once when its highlight or the chat is gone)
+    (function watch() {
+      if (done) return;
+      if (Date.now() - t0 >= 2000 || !span.isConnected || !sc.isConnected) return mine();
+      setTimeout(watch, 100);
+    })();
   }
 
   /**
@@ -1572,13 +1590,14 @@
   document.addEventListener("jr-escape", function () { navGen++; }, true);
   // A jump is the user going elsewhere: a send's hold takes where it goes as the reader's place, not the place to go
   // back to (live NT3 H2: ∧ during a send — the hold pulled the chat back, the popup it opened was off screen)
-  var jumpUntil = 0;
-  JR.jumping = function () { return Date.now() < jumpUntil; };
-  function jumpEnds() { jumpUntil = Date.now() + 500; } // (the popup placed meanwhile)
+  // { on: a jump is scrolling, seq: one more at each start and end } — a hold takes the place once after seq changed
+  var jumpOn = false, jumpSeq = 0;
+  JR.jumpState = function () { return { on: jumpOn, seq: jumpSeq }; };
+  function jumpEnds() { jumpOn = false; jumpSeq++; }
   JR.scrollToAndOpenPopup = function (hlId) {
     JR.removeAllPopups();
     var gen = navGen;
-    jumpUntil = Infinity;
+    jumpOn = true; jumpSeq++;
     var entry = st.completedHighlights.get(hlId);
     var connected = entry && entry.spans && entry.spans.length > 0 && entry.spans[0].isConnected;
     var sc0 = JR.site.scrollContainer();

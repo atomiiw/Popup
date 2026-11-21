@@ -1018,6 +1018,7 @@
     // 45 221, past it; no estimate from heights can know where it went): reached again by its key, as ∧ does, then
     // held where the reader saw it (its drift, below). Twice at most per send.
     var lostAt = 0, settledH = -1, settledAt = 0, reaching = false, reaches = 0, jumped = false, unlocked = false;
+    var seenJump = JR.jumpState ? JR.jumpState().seq : 0;
     function reachBack(now) {
       if (jumped) return false; // (the reader jumped elsewhere during the send: not pulled back to where they were)
       if (!lostAt) lostAt = now;
@@ -1055,7 +1056,10 @@
       if (anchor) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
-      var jumping = JR.jumping && JR.jumping();
+      // (a jump of the user's: while it scrolls, and once after it ended — popup-helpers.js; a hold made at its end, a
+      // jump's own settle, takes none)
+      var js = JR.jumpState && JR.jumpState(), jumping = !!js && (js.on || js.seq !== seenJump);
+      if (js) seenJump = js.seq;
       if (userScrolling || jumping) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
         if (jumping) jumped = true;
         savedTop = container.scrollTop;
