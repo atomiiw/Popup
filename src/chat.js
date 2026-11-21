@@ -1091,7 +1091,7 @@
     function domAnswerUsable() {
       var t = liveResponseTurn();
       if (t && JR.site.hasUndrawnWidget(t)) return false; // a copy would show a blank chart or map: the frame's original
-      return !!(t && !JR.site.renderFailed(t) && JR.site.assistantText(t).trim());
+      return JR.locator.answered(t) && !!JR.site.assistantText(t).trim(); // (its text is read from the page)
     }
 
     /**

@@ -2095,6 +2095,17 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(f);
 }, 21100); })); // (its own time — 21.1–21.9 s, between the 21 s and 22 s tests)
 
+// review #9: one rule for "is the answer there": a render failure's text is not an answer; an image-only answer is
+(function () {
+  var failedT = document.createElement("div"), imgT = document.createElement("div");
+  failedT.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>Something went wrong</p></div><div data-dil-render-failed></div></div>';
+  imgT.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><img src="data:,"></div></div>';
+  document.body.appendChild(failedT); document.body.appendChild(imgT);
+  check("answered: a render failure's text is no answer; an image alone is", !JR.locator.answered(failedT) && JR.locator.answered(imgT),
+    [JR.locator.answered(failedT), JR.locator.answered(imgT)].join(" "));
+  failedT.remove(); imgT.remove();
+})();
+
 // review 11-20 night: a memory copy of a popup's version (an id): a site control looks for its original (it was "shown",
 // and find looks only while locating — the controls were dead); memory is per chat (DeepSeek's ids are 1, 2, 3 per chat)
 (function () {

@@ -1008,7 +1008,7 @@
       }
       // failed, but its answer is in the chat after all (it came after Popup gave up — live 2026-11-19, a Claude Code
       // answer with a tool step): it is done
-      if (item.status === "failed" && (item.turnKeys || []).some(function (k) { var t = JR.site.findTurnByKey(k); return t && JR.site.assistantText(t).trim(); })) {
+      if (item.status === "failed" && (item.turnKeys || []).some(function (k) { return JR.locator.answered(JR.site.findTurnByKey(k)); })) {
         item.status = "done";
         updateHighlightFields(item.id, { status: "done" });
       }

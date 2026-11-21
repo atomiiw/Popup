@@ -22,6 +22,13 @@
     return !JR.site.harvestable || JR.site.harvestable(t);
   }
 
+  /** A turn has its answer: not the site's render failure, and text or an image (an image-only answer, ChatGPT) — the one
+   *  rule for "is the answer there" (review #9: popup.js turned a failed version done on a render failure's text). */
+  function answered(t) {
+    if (!t || (JR.site.renderFailed && JR.site.renderFailed(t))) return false;
+    return !!JR.site.assistantText(t).trim() || JR.site.assistantBodies(t).some(function (b) { return !!b.querySelector("img"); });
+  }
+
   /** On the page now: { turn, key } of the first key (preferred first) with a usable answer drawn, or null. */
   function onPage(keys) {
     for (var i = 0; i < keys.length; i++) {
@@ -52,5 +59,5 @@
     })(0);
   }
 
-  JR.locator = { usable: usable, onPage: onPage, elsewhere: elsewhere };
+  JR.locator = { usable: usable, answered: answered, onPage: onPage, elsewhere: elsewhere };
 })();
