@@ -1549,8 +1549,8 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     { id: "r1", quoteId: "R", parentId: "A", parentItemId: "a1", wholeResponse: true, text: "", turnKeys: ["kr"], active: true, createdAt: 1 },
     { id: "e1", quoteId: "E", parentId: "C", parentItemId: "c1", text: "q", turnKeys: ["ke"], active: true, createdAt: 6 },
   ];
-  var order = JR.navOrderOf(recs);
-  check("navigation order: by turn, nested after their parent by place in its answer, Reply last", order.join(",") === "B,A,D,C,E,R", order.join(","));
+  var order = JR.navOrderOf(recs.concat([{ id: "z1", quoteId: "Z", text: "nowhere", turnKeys: ["kz"], active: true, createdAt: 2 }]));
+  check("navigation order: by turn, nested after their parent by place in its answer, Reply last; one with no turn not counted (review #11)", order.join(",") === "B,A,D,C,E,R", order.join(","));
   check("navigation chain: a nested one opens from the chat down", order.chain("E").map(function (r) { return r.id; }).join(">") === "a1>c1>e1", order.chain("E").map(function (r) { return r.id; }).join(">"));
   // live round 5 (Claude Code: no conversation read, so never a turn order): roots by when they were made
   var realHas = JR.qa.hasConversation;

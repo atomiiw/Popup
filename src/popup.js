@@ -18,7 +18,6 @@
   // ChatGPT entity links (spans with React handlers, e.g. open a side panel)
   var ENTITY_SELECTOR = JR.site.entitySelector;
 
-  JR.wireResponseClicks = wireResponseClicks; // (tests)
   function wireResponseClicks(responseDiv) {
     if (responseDiv._jrClickWired) return;
     responseDiv._jrClickWired = true;

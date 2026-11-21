@@ -1059,50 +1059,6 @@
 
   var navNavigating = false; // suppress updateNavWidget during navigation
 
-  /**
-   * Get all level-1 (non-chained) highlight IDs, ordered by DOM position.
-   */
-  JR.getLevel1HighlightIds = function () {
-    // Every level-1 highlight of the conversation, mounted or not: ChatGPT
-    // virtualizes the thread, so counting only highlights in the DOM made the
-    // total change while scrolling. Order: conversation turn order (from the
-    // conversation data), then position inside the turn.
-    var order = JR.qa.turnOrderCache;
-    if (!order && JR.qa.apiStatus !== "loading") JR.qa.turnOrder().then(function () { JR.updateNavWidget(); });
-    var pos = turnPosition(order);
-
-    var items = [];
-    var seen = {};
-    st.completedHighlights.forEach(function (entry, id) {
-      if (entry.parentId || entry._jrTemp || entry.wholeResponse) return;
-      seen[id] = true;
-      var span = entry.spans && entry.spans[0] && entry.spans[0].isConnected ? entry.spans[0] : null;
-      if (!span && !entry.sourceTurnKey) return; // can't place it anywhere
-      items.push({ id: id, span: span, turn: entry.sourceTurnKey });
-    });
-    JR.pendingL1Quotes().forEach(function (q) {
-      if (seen[q.quoteId] || !q.sourceTurnKey) return;
-      items.push({ id: q.quoteId, span: null, turn: q.sourceTurnKey });
-    });
-
-    function rank(it) {
-      var at = it.turn ? pos(it.turn) : -1;
-      if (at >= 0) return at;
-      return it.span ? (order ? order.length : 0) : Infinity; // not in the loaded order: a turn added this session (after all others)
-    }
-    items.sort(function (a, b) {
-      var ra = rank(a), rb = rank(b);
-      if (ra !== rb) return ra - rb;
-      if (a.span && b.span) {
-        var pos = a.span.compareDocumentPosition(b.span);
-        if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-        if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-      }
-      return 0;
-    });
-    return items.map(function (item) { return item.id; });
-  };
-
   /** A turn's place in the conversation: its index in the loaded order (ChatGPT), or the site's own (DeepSeek ids). */
   function turnPosition(order) {
     return JR.site.turnPosition || function (k) { return order ? order.indexOf(k) : -1; };
@@ -1210,7 +1166,8 @@
     // no turn order ever (Claude Code: no conversation read): by when they were made — a place on the page for the
     // ones mounted and creation time for the rest put the ones at the reader's place first (live round 5: ∧ → 1/15)
     var noOrder = !(JR.qa.turnOrderCache && JR.qa.turnOrderCache.length) && JR.qa.hasConversation && !JR.qa.hasConversation();
-    emit(shownRecs.filter(function (r) { return !r.parentId && !r.wholeResponse; }), function (r) {
+    // (a top-level one with no turn can't be reached when off the page — not counted, review #11)
+    emit(shownRecs.filter(function (r) { return !r.parentId && !r.wholeResponse && r.sourceTurnKey; }), function (r) {
       if (noOrder) return [0, r.createdAt || 0];
       var t = r.sourceTurnKey ? tpos(r.sourceTurnKey) : -1;
       return [t >= 0 ? t : Infinity, rootPlace(r)];
@@ -1333,7 +1290,7 @@
   JR.updateNavWidget = function () { // [LAYOUT-LOCKED] sidebar hide/show logic
     if (navNavigating) return;
 
-    var ids = navOrder() || JR.getLevel1HighlightIds();
+    var ids = navOrder() || []; // (none until the stored items are read: one order — review #11; it updates when they are)
     var sidebarOpen = JR.isRightSidebarOpen();
 
     if (ids.length < 1 || sidebarOpen) {

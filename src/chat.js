@@ -1357,8 +1357,9 @@
           editPopupOpen = true;
         }
 
-        // Only claim active highlight if the popup is still showing this highlight
-        if (editPopupOpen) {
+        // Only claim active highlight if the popup is still showing this highlight — and is the active one (a child opened
+        // from the streaming answer stays active: review #8)
+        if (editPopupOpen && (detached || popup === st.activePopup)) {
           st.activeHighlightId = hlId;
           JR.syncHighlightActive(hlId);
         }
@@ -1416,8 +1417,7 @@
         if (entry) fillItem(entry, preRegisteredItemId);
         // Rebuild popup into completed view (editable question, version nav)
         if (popup && popup.isConnected) {
-          st.activeHighlightId = hlId2;
-          JR.syncHighlightActive(hlId2);
+          if (popup === st.activePopup) { st.activeHighlightId = hlId2; JR.syncHighlightActive(hlId2); } // (review #8)
           JR.rebuildPopupAfterEdit(popup, hlId2);
         }
       } else {
@@ -1446,8 +1446,7 @@
 
         // Rebuild popup into completed view (editable question, version nav)
         if (popup && popup.isConnected) {
-          st.activeHighlightId = hlId2;
-          JR.syncHighlightActive(hlId2);
+          if (popup === st.activePopup) { st.activeHighlightId = hlId2; JR.syncHighlightActive(hlId2); } // (review #8)
           JR.rebuildPopupAfterEdit(popup, hlId2);
         }
       }

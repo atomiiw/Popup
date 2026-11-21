@@ -427,10 +427,6 @@
   };
 
   /**
-   * Every Popup-format question in the conversation data, as { turnKey, parsed }.
-   * Lets old or unlinked items be matched to their Q&A without scrolling to it.
-   */
-  /**
    * A message just sent and its answer, read fresh from the conversation (ChatGPT): { turnKey, text, media } of the
    * newest user message with exactly this text, or null. For a send whose stream ended before the answer (a thinking
    * model resumes it elsewhere, live 2026-11-20).
@@ -461,6 +457,10 @@
     });
   };
 
+  /**
+   * Every Popup-format question in the conversation data, as { turnKey, parsed }.
+   * Lets old or unlinked items be matched to their Q&A without scrolling to it.
+   */
   JR.qa.popupTurnsFromApi = function () {
     return fetchConversation().then(function (conv) {
       if (!conv) return [];
