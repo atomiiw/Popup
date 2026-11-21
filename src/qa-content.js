@@ -145,6 +145,20 @@
     st.hiddenTurnKeys.clear();
     renderHideStyle();
   };
+  /** Every stored chat of this site's hidden keys, read once as the page loads: a chat not seen yet in this page is
+   *  hidden at once too when the site switches to it (one read of the store, no content in it). */
+  JR.preloadKnownHidden = function (readAll) { // (readAll: tests)
+    var p = readAll ? readAll() : typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local.get(null) : null;
+    if (!p) return;
+    p.then(function (all) {
+      Object.keys(all || {}).forEach(function (k) {
+        if (k.indexOf(JR_HOST.prefix) !== 0 || known[k]) return;
+        var doc = all[k] || {}, keys = (doc.hidden || []).slice();
+        (doc.items || []).forEach(function (it) { (it.turnKeys || []).forEach(function (t) { keys.push(t); }); });
+        if (keys.length) known[k] = keys;
+      });
+    }, function () {});
+  };
   /** This conversation's hidden keys as last seen in this page, hidden at once (the stored ones follow: restore). */
   JR.hideKnownTurnKeys = function () {
     var k = known[JR_HOST.convKey()];

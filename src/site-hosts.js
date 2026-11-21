@@ -62,5 +62,6 @@ var JR_HOST = (function () {
       return here.prefix + (m ? m[1] : "url:" + (url || location.href).split("#")[0]);
     },
     convId: function (url) { var m = here.conv.exec(url || location.pathname); return m ? m[1] : null; },
+    prefix: here.prefix, // (this site's storage keys: qa-content.js preloadKnownHidden)
   };
 })();

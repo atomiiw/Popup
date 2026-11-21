@@ -506,6 +506,7 @@
   // Restore saved highlights on initial page load
   JR.restoreHighlights();
   JR.watchTurnMounts();
+  JR.preloadKnownHidden(); // (other chats': hidden at once on the site's own switch to them — NT23 B15)
   // ChatGPT can replace its scroll container (e.g. after navigation); re-attach
   // the turn-mount observer if so. Cheap: one querySelector, no-op if unchanged.
   setInterval(JR.watchTurnMounts, 3000);

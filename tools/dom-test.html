@@ -1454,6 +1454,19 @@ asyncChecks.push(new Promise(function (done) {
   check("a chat switched back to by the site: its Popup Q&As hidden at once (keys as last seen in this page)", inB === 0 && backA && /nv-1/.test(css), [inB, backA].join(" "));
   JR_HOST.convKey = realKey; JR.clearHiddenTurnKeys(); JR.hideTurnKeys(before);
 })();
+// …and a chat not seen yet in this page: every stored chat's keys read once as the page loads
+asyncChecks.push(new Promise(function (done) {
+  var realKey = JR_HOST.convKey, conv = JR_HOST.prefix + "never-seen", before = Array.from(JR.state.hiddenTurnKeys);
+  JR.preloadKnownHidden(function () { return Promise.resolve({ [JR_HOST.prefix + "never-seen"]: { hidden: ["ns-h"], items: [{ turnKeys: ["ns-1", "ns-2"] }] }, "other:conv:x": { hidden: ["no"] } }); });
+  setTimeout(function () {
+    JR_HOST.convKey = function () { return conv; };
+    JR.clearHiddenTurnKeys(); JR.hideKnownTurnKeys();
+    var ok = ["ns-h", "ns-1", "ns-2"].every(function (k) { return JR.state.hiddenTurnKeys.has(k); }) && !JR.state.hiddenTurnKeys.has("no");
+    check("a chat not seen yet in this page: its stored Popup Q&As hidden at once on the site's switch (read as the page loads)", ok, Array.from(JR.state.hiddenTurnKeys).join());
+    JR_HOST.convKey = realKey; JR.clearHiddenTurnKeys(); JR.hideTurnKeys(before);
+    done();
+  }, 30);
+}));
 
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
