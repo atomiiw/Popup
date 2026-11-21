@@ -41,6 +41,7 @@
         openLightbox(responseDiv, [pic.src], 0);
         return;
       }
+      if (siteEl && generatedImageControl(siteEl, responseDiv)) { e.preventDefault(); e.stopPropagation(); return; }
       if (siteEl) {
         e.preventDefault();
         e.stopPropagation();
@@ -79,6 +80,35 @@
    * clipboard only from a focused document (live 2026-11-18: ChatGPT's Copy in a popup copied nothing) — the frame has
    * it for the click, then the page again.
    */
+  /**
+   * ChatGPT's buttons on an image it made (user 11-20: "这个 button 点不开"): its menus and editor open where its original
+   * is — the unseen hidden copy, or none (a copy from memory). Share: the image downloaded (what its menu offers). Edit: on
+   * an original on the page, the site's own (its editor opens over the page); else the image, large. True: handled.
+   */
+  function generatedImageControl(el, responseDiv) {
+    var gallery = el.closest('[data-testid="generated-image-gallery"]');
+    if (!gallery) return false;
+    var img = gallery.querySelector("img"), label = (el.getAttribute("aria-label") || el.textContent || "").toLowerCase();
+    if (!img || !img.src) return false;
+    if (/share|download/.test(label)) {
+      fetch(img.src).then(function (r) { return r.blob(); }).then(function (b) {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(b);
+        a.download = (img.alt || "image").replace(/[^\w .-]+/g, "").trim().replace(/\s+/g, "-") + "." + ((b.type.split("/")[1] || "png").replace("jpeg", "jpg"));
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+      }).catch(function () { window.open(img.src, "_blank", "noopener"); });
+      return true;
+    }
+    if (/edit/.test(label)) {
+      var o = JR.siteAnswer && JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
+      if (o && o.ownerDocument === document) return false; // (on the page: the site's own editor, over the page)
+      openLightbox(responseDiv, [img.src], 0);
+      return true;
+    }
+    return false;
+  }
+
   function forwardToOriginal(el, responseDiv) {
     (function forward(tries) {
       var o = JR.siteAnswer && JR.siteAnswer.current() === responseDiv && JR.siteAnswer.counterpart(el);
