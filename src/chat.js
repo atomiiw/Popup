@@ -603,6 +603,15 @@
   };
 
   /** Still the chat of url (by conversation: a #hash or ?artifact= is the same chat). */
+  /** Another chat opened: the questions still waiting to be sent are not sent — each stored failed at once in its own
+   *  chat (they stayed pending and failed only when their popup was next opened — A1 exploration). Retry resends. */
+  JR.dropQueue = function () {
+    st.messageQueue.splice(0).forEach(function (opts) {
+      var w = opts.waitOpts || {}, id = w.preRegisteredItemId || (w.editOpts && w.editOpts.itemId);
+      if (id) updateHighlightFields(id, { status: "failed", onlyIfPending: true }, opts.url || location.href);
+    });
+  };
+
   function sameChat(url) { return JR_HOST.convKey(url) === JR_HOST.convKey(location.href); }
 
   function sendQueued(opts) {
@@ -611,7 +620,7 @@
     if (qid && !st.completedHighlights.has(qid)) { JR.drainQueue(); return; }
     // another chat opened while it waited (the URL check runs every 500 ms, the queue every 300): never sent there
     // (the conversation, not the URL: claude.ai's Settings change the hash)
-    if (opts.url && !sameChat(opts.url)) { st.messageQueue.length = 0; return; }
+    if (opts.url && !sameChat(opts.url)) { st.messageQueue.unshift(opts); JR.dropQueue(); return; }
     // its availability: sending from here — its files' upload included (a reopen meanwhile saw idle and stored it
     // failed — ponytail review); once per send (sendQueued comes back here after the files)
     var avId = qw.preRegisteredItemId || (qw.editOpts && qw.editOpts.itemId); // (an edit's version too)
