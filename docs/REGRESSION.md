@@ -74,7 +74,7 @@ Chrome (`CHROME=/path/to/chrome` if it is not in /Applications). It prints one l
 
 | id | steps | pass | guards |
 |---|---|---|---|
-| B1 side & arrow | Scroll so an unused sentence sits in the upper quarter of the screen; highlight it. Close (Esc). Scroll so another sits in the lower quarter; highlight it. Then highlight words that wrap over two lines with most of them on the second line. | Its height limit fits below → below; else fits above → above; else the side with more room, no taller than that room — never behind the site's send box or header; on ChatGPT it covers the "can make mistakes" line (user 11-21). The arrow sits on the highlight's line next to the popup; sideways it is centred on the line holding most of the highlight (user's choice R36e "最长" — so with the popup above and most of the highlight on the second line, the arrow tip can be over a gap in the first line). The popup never covers its highlight. | R18 (dev.48), R36e, ChatGPT trigger icon after its DOM change |
+| B1 side & arrow | Scroll so an unused sentence sits in the upper quarter of the screen; highlight it. Close (Esc). Scroll so another sits in the lower quarter; highlight it. Then highlight words that wrap over two lines with most of them on the second line. | By the room to the conversation's start and end, not the screen (user 11-21): its full length (70 % of the window, or the dragged height) doesn't fit before the end → above; not after the start → below; fits both ways → the side with more room on screen now; fits neither (a short chat) → the roomier side, no taller than the room to the chat's start / end. On ChatGPT a popup covers the "can make mistakes" line, under the send box. The arrow sits on the highlight's line next to the popup; sideways it is centred on the line holding most of the highlight (user's choice R36e "最长" — so with the popup above and most of the highlight on the second line, the arrow tip can be over a gap in the first line). The popup never covers its highlight. | R18 (dev.48), R36e, ChatGPT trigger icon after its DOM change |
 | B2 first send | Fresh page. Highlight in the middle of the long answer, ask `一句话解释`. | STILL, HIDDEN, NO-BLANK (also at the bottom of the chat), SETTLED. (Word-by-word streaming is checked in B10, with a long answer.) | R33, R36a, CL-send-1/3, DS-E2, dev.39 |
 | B3 send arrow | Highlight elsewhere, type `再一句话`, click the popup's send arrow (not Return). | as B2 | E-send-2/3, DS-E3 |
 | B4 Reply | In B3's popup click *Reply*, ask `更短`. | as B2; the first popup stays on its Reply button | E-send-4, DS-E4, CL-reply |
@@ -109,9 +109,9 @@ Chrome (`CHROME=/path/to/chrome` if it is not in /Applications). It prints one l
 | C3 | claude.ai | After a popup send that is the newest message, look under the last visible answer. | No large empty area (claude.ai's own small footer space is fine) | dev.39 |
 
 ## Known limits (not failures)
-- A popup is up to 70 % of the window tall (or the height the user dragged); where neither side has room for that, it
-  opens on the roomier side no taller than the room there and its answer scrolls inside (user 11-21). On a very short
-  window it keeps at least the quote, the question and 3 answer lines, so it may then reach past that room.
+- A popup is up to 70 % of the window tall (or the height the user dragged). Its side has room for that in the
+  conversation, but maybe not on screen: part of it can be off screen until you scroll (user 11-21: the room counts to
+  the conversation's start / end). Only in a chat too short for it either way is it cut to the room there.
 - ChatGPT, a chat with very long answers (20 000 px): sending while reading far up, ChatGPT itself lays its list out
   anew and the reader's place is lost (also for a plain main-box send) — accepted by the user 11-21 (G2).
 - Wide tables, formulas and code scroll sideways inside a popup (as on the sites themselves); drag the

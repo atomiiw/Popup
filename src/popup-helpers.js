@@ -451,23 +451,28 @@
   };
 
   /**
-   * Which side of the highlight a popup of height limit maxH opens on, by the room on screen between the site's header
-   * and its send box (user 11-21: "when the maximum allowed height goes beyond what the bottom can support, see that
-   * ahead of time and open it upward"; "都顶了就改高度"): below if maxH fits there, else above if it fits there, else the
-   * side with more room, no taller than that room (capToRoom).
+   * Which side of the highlight a popup of height limit maxH (70vh or the height the user dragged) opens on (user
+   * 11-21): by the room to the start and to the end of the conversation — not the screen ("dozens of messages away from
+   * the top, half a message from the bottom"). Its full length doesn't fit before the end → above; not after the start
+   * → below; fits both ways → the side with more room on screen now (up 230, down 600 → down); fits neither (a short
+   * chat) → the side with more room, no taller than it (capToRoom: "都顶了就改高度"). Measured without the popup (it
+   * would lengthen the chat it hangs past).
    */
   JR.bestDirection = function (highlightRect, maxH, gap) {
     if (!highlightRect) return "below";
-    var room = roomBy(highlightRect, gap);
-    if (room.below >= maxH) return "below";
-    if (room.above >= maxH) return "above";
-    return room.below >= room.above ? "below" : "above";
+    var r = roomBy(highlightRect, gap), up = r.above >= maxH, down = r.below >= maxH;
+    if (up && down) return r.screenBelow >= r.screenAbove ? "below" : "above";
+    if (down || up) return down ? "below" : "above";
+    return r.below >= r.above ? "below" : "above";
   };
-  /** The room on screen above and below a highlight: to the header, to just above the send box (it may cover what the
-   *  site shows between the chat and the send box — ChatGPT's "can make mistakes" line, user 11-21). */
+  /** The room above and below a highlight: on screen (to the header; to just above the send box — it may cover what the
+   *  site shows between the chat and the send box, ChatGPT's "can make mistakes" line) and to the conversation's start
+   *  and end (what the chat can still be scrolled by, added). */
   function roomBy(rect, gap) {
-    var band = JR.site.visibleBand(), edge = 8;
-    return { above: rect.top - gap - band.top - edge, below: band.bottom - edge - rect.bottom - gap };
+    var band = JR.site.visibleBand(), sc = JR.site.scrollContainer(), edge = 8;
+    var sa = rect.top - gap - band.top - edge, sb = band.bottom - edge - rect.bottom - gap;
+    return { screenAbove: sa, screenBelow: sb, above: sa + (sc ? sc.scrollTop : 0),
+      below: sb + (sc ? Math.max(0, sc.scrollHeight - sc.scrollTop - sc.clientHeight) : 0) };
   }
 
   /**
@@ -573,18 +578,26 @@
     if (forceDirection === "above" || forceDirection === "below") popup._jrLockedDirection = forceDirection;
     else {
       // (its height limit — 70vh or the height the user dragged to — not its height now: it grows to its answer)
-      popup._jrLockedDirection = JR.bestDirection(rect, parseFloat(getComputedStyle(popup).maxHeight) || popup.offsetHeight, gap);
+      var maxH = parseFloat(getComputedStyle(popup).maxHeight) || popup.offsetHeight;
+      popup._jrLockedDirection = withoutPopup(popup, function () { return JR.bestDirection(rect, maxH, gap); });
     }
     capToRoom(popup, rect, gap);
     placeAt(popup, rect, spans, containerRect);
     JR.posLog("position", popup, { dir: popup._jrLockedDirection, rectTop: rect.top, cTop: containerRect.top, popupH: popup.offsetHeight });
   };
 
-  /** No taller than the room on its side (roomBy): where both sides are short it opens on the roomier one and its answer
-   *  scrolls inside — never behind the send box or the header (user 11-21: "都顶了就改高度"). */
+  /** In a chat too short for its full length on either side (bestDirection): no taller than the room to the
+   *  conversation's start / end on its side — its answer scrolls inside, never past the end behind the send box (user
+   *  11-21: "都顶了就改高度"). */
   function capToRoom(popup, rect, gap) {
-    var room = roomBy(rect, gap)[popup._jrLockedDirection === "above" ? "above" : "below"];
-    popup.style.setProperty("--jr-popup-cap", Math.floor(room) + "px");
+    var room = withoutPopup(popup, function () { return roomBy(rect, gap); })[popup._jrLockedDirection === "above" ? "above" : "below"];
+    if (room < (parseFloat(getComputedStyle(popup).maxHeight) || Infinity)) popup.style.setProperty("--jr-popup-cap", Math.floor(room) + "px");
+  }
+
+  /** fn() measured with this popup out of the layout (never painted): the chat's own length, not one it makes longer. */
+  function withoutPopup(popup, fn) {
+    popup.classList.add("jr-popup--measure");
+    try { return fn(); } finally { popup.classList.remove("jr-popup--measure"); }
   }
 
   /** The layer of the popups in host: their own (z-index 0 on it) unless the site needs them in its own layers

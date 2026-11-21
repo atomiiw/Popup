@@ -650,15 +650,19 @@ var W3 = window.innerHeight, C3 = 3000;
 check("R18: both sides reachable, highlight high on screen → below", dir3(C3, 1500, 1500 - 0.2 * W3) === "below", dir3(C3, 1500, 1500 - 0.2 * W3));
 check("R18: both sides reachable, highlight low on screen → above", dir3(C3, 1500, 1500 - 0.8 * W3) === "above", dir3(C3, 1500, 1500 - 0.8 * W3));
 // end of the chat: the room on screen decides (user, 2026-11-18) — below makes the page longer
-check("R18: scrolled to the end, highlight high on screen → below", dir3(C3, C3 - 0.75 * W3, C3 - W3) === "below", dir3(C3, C3 - 0.75 * W3, C3 - W3));
+// user 11-21: by the room to the conversation's end — at the end, under a screen below the highlight: its full length
+// can't fit there → above ("half a message from the bottom")
+check("R18: scrolled to the end, its full length not before the end → above", dir3(C3, C3 - 0.75 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.75 * W3, C3 - W3));
 check("R18: scrolled to the end, highlight low on screen → above", dir3(C3, C3 - 0.2 * W3, C3 - W3) === "above", dir3(C3, C3 - 0.2 * W3, C3 - W3));
 // user 11-21: the room on screen only — what the chat could scroll to isn't room (a popup hung behind the send box)
-check("R18: start of the chat, highlight in the lower half → above (the room on screen, not what it could scroll to)", dir3(C3, 0.55 * W3, 0) === "above", dir3(C3, 0.55 * W3, 0));
-// user 11-21 ("see that ahead of time and open it upward"): below whenever its height limit fits there — above only
-// when it doesn't (here a limit the user dragged smaller: it fits below, though above has more room)
-check("height limit fits below → below, even with more room above", JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8) === "below",
-  JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8));
-check("R18: short chat, highlight in the upper half → below", dir3(W3 + 50, 50 + 0.45 * W3, 50) === "below", dir3(W3 + 50, 50 + 0.45 * W3, 50));
+check("R18: start of the chat, its full length not after the start → below", dir3(C3, 0.55 * W3, 0) === "below", dir3(C3, 0.55 * W3, 0));
+// user 11-21: fits both ways (a limit the user dragged smaller) → the side with more room on screen now (up 230, down 600 → down)
+check("fits both ways → the side with more room on screen", JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8) === "above" &&
+  JR.bestDirection(place3(C3, 1500, 1500 - 0.3 * W3), 0.3 * W3, 8) === "below",
+  JR.bestDirection(place3(C3, 0.55 * W3, 0), 0.3 * W3, 8) + " " + JR.bestDirection(place3(C3, 1500, 1500 - 0.3 * W3), 0.3 * W3, 8));
+// a chat too short for it either way: the side with more room ("两边哪边像素多朝哪开")
+check("R18: short chat, fits neither way → the roomier side", dir3(W3 + 50, 50 + 0.35 * W3, 50) === "below" && dir3(W3 + 50, 50 + 0.6 * W3, 50) === "above",
+  dir3(W3 + 50, 50 + 0.35 * W3, 50) + " " + dir3(W3 + 50, 50 + 0.6 * W3, 50));
 
 // R16/R26: a popup with an answer is as tall as the answer, up to 70vh; a longer answer scrolls inside; never capped lower
 var p16 = popup3("short");
@@ -688,13 +692,12 @@ document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r16
 document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: r16s.left + 100, clientY: r16s.bottom - 7 }));
 check("R26: a slip on a short popup's edge saves no height", !p16s.style.getPropertyValue("--jr-popup-h") && JR.state.customPopupHeightL1 === saved16s, p16s.style.getPropertyValue("--jr-popup-h") + " / " + JR.state.customPopupHeightL1);
 p16s.remove(); JR.state.customPopupHeightL1 = saved16s;
-// user 11-21 ("都顶了就改高度"): room for 70vh on neither side → the roomier side, no taller than its room: whole on screen
+// near the chat's start (its full length can't fit above): below, at its full length (the chat goes on: scrolled to)
 var p16d = popup3(new Array(200).join("<p>line</p>"));
 p16d.style.animation = "none"; // (no fade-in offset while measured)
 JR.positionPopup(p16d, place3(C3, 0.6 * W3, 0), host3, null, []);
-var band16d = JR.site.visibleBand(), r16d = p16d.getBoundingClientRect();
-check("neither side holds 70vh: the roomier side (above), no taller than its room — whole on screen",
-  p16d._jrLockedDirection === "above" && r16d.top >= band16d.top + 7 && r16d.height > 100, p16d._jrLockedDirection + " top " + Math.round(r16d.top) + " band " + Math.round(band16d.top) + " h " + Math.round(r16d.height));
+check("near the chat's start: below at its full length (not cut to the screen)", p16d._jrLockedDirection === "below" && Math.abs(p16d.offsetHeight - H70) <= 1,
+  p16d._jrLockedDirection + " h " + p16d.offsetHeight + " vs " + Math.round(H70));
 p16d.remove();
 
 // 2026-11-20 (user, DeepSeek's first sentence): ChatGPT / DeepSeek clip a popup hanging past the end of the list, so the
@@ -703,17 +706,17 @@ host3.style.overflow = "clip";
 var pcap = popup3(new Array(200).join("<p>line</p>"));
 pcap.style.animation = "none"; // (no fade-in offset while measured)
 JR.positionPopup(pcap, place3(W3 + 50, 0.25 * W3, 0), host3, null, []);
-var reachCap = JR.site.visibleBand().bottom;
-check("short chat, list clips: a popup below stops above the send box (its end and bottom edge in view)",
+var reachCap = JR.site.visibleBand().bottom + (sc3.scrollHeight - sc3.scrollTop - sc3.clientHeight);
+check("short chat, list clips: a popup below ends before the chat's end (its end and bottom edge can be scrolled to)",
   pcap._jrLockedDirection === "below" && pcap.getBoundingClientRect().bottom <= reachCap - 7 && pcap.offsetHeight > 100,
   pcap._jrLockedDirection + " bottom " + Math.round(pcap.getBoundingClientRect().bottom) + " reach " + Math.round(reachCap) + " h " + pcap.offsetHeight);
 pcap.remove(); host3.style.overflow = "";
 var pfree = popup3(new Array(200).join("<p>line</p>"));
 pfree.style.animation = "none"; // (no fade-in offset while measured)
 JR.positionPopup(pfree, place3(C3, 0.25 * W3, 0), host3, null, []); // (a long chat: it could scroll on below — not room)
-var reachFree = JR.site.visibleBand().bottom;
-check("user 11-21: the chat going on below is no room — a popup below still stops above the send box",
-  pfree.getBoundingClientRect().bottom <= reachFree + 1 - 7 && !!pfree.style.getPropertyValue("--jr-popup-cap"), Math.round(pfree.getBoundingClientRect().bottom) + " vs " + Math.round(reachFree));
+var reachFree = H70;
+check("user 11-21: the chat going on below is room — a popup below there has its full length, uncapped",
+  Math.abs(pfree.offsetHeight - reachFree) <= 1 && !pfree.style.getPropertyValue("--jr-popup-cap"), pfree.offsetHeight + " vs " + Math.round(reachFree));
 pfree.remove();
 
 // 2026-11-20 (user, Claude Code: a middle-upper highlight at the end of the chat opened below, behind the composer): the
@@ -726,8 +729,8 @@ pfree.remove();
   pdir.style.animation = "none"; // (no fade-in offset while measured)
   JR.positionPopup(pdir, place3(W3 + 400, 400 + 0.15 * W3, 400), host3, null, []);
   var rdir = pdir.getBoundingClientRect();
-  check("end of the chat, composer over the lower part, a high highlight: the roomier side (below), stopping above the send box",
-    pdir._jrLockedDirection === "below" && rdir.bottom <= box.top + 0.85 * W3 - 7, pdir._jrLockedDirection + " bottom " + Math.round(rdir.bottom) + " box " + Math.round(box.top + 0.85 * W3));
+  check("end of the chat, composer over the lower part: its full length not before the end → above (the user's screenshot)",
+    pdir._jrLockedDirection === "above" && rdir.bottom <= place3(W3 + 400, 400 + 0.15 * W3, 400).top, pdir._jrLockedDirection + " bottom " + Math.round(rdir.bottom));
   pdir.remove();
   var pdir2 = popup3(new Array(200).join("<p>line</p>"));
   JR.positionPopup(pdir2, place3(C3, 400 + 0.15 * W3, 400), host3, null, []);

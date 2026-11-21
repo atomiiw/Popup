@@ -150,8 +150,8 @@ body.dark /* DeepSeek */ {
   /* As tall as its content, up to the same share of the window on every screen (drag 40-70vh,
      JR.addResizeHandlers); a long answer scrolls inside. On a tiny window the limit stops at
      the quote + question (--jr-upper-h, JR.watchUpper) + a 3-line answer (+ padding, border;
-     the 3 lines: .jr-popup-response min-height, change both). No taller than the room on screen on its side, between the
-     site's header and its send box (--jr-popup-cap, popup-helpers.js capToRoom). */
+     the 3 lines: .jr-popup-response min-height, change both). In a chat too short for it on either side: no taller than the
+     room to the conversation's start / end on its side (--jr-popup-cap, popup-helpers.js capToRoom). */
   max-height: max(min(var(--jr-popup-h, 70vh), var(--jr-popup-cap, 100vh)), calc(var(--jr-upper-h, 0px) + 3 * 1.6 * 16px + 29px));
   background: var(--jr-bg);
   border: none;
@@ -171,6 +171,8 @@ html.jr-resizing, html.jr-resizing * { cursor: var(--jr-resize-cursor) !importan
 /* chat.js freezeChat + sites/claude.js freezeRow: a Popup question row added during the send, before its answer row
    (the turn hidden by key) exists — hidden like claude.ai's Q&As (never display:none: rocksteady keeps 0x0 rows' heights) */
 [data-jr-freeze] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
+/* popup-helpers.js withoutPopup: out of the layout for one measurement, never painted */
+.jr-popup.jr-popup--measure { display: none !important; }
 /* Put back after ChatGPT re-rendered what held it (JR.placePopup): no second fade-in */
 .jr-popup.jr-popup--back { animation: none; }
 
