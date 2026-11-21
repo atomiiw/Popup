@@ -1440,6 +1440,21 @@ asyncChecks.push(new Promise(function (done) {
   JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
 })();
 
+// live NT23 B15 (DeepSeek): back to a chat by the site's own switch, its newest Popup Q&A shown ~1 s — the site drew
+// the cached chat before the stored keys were read. A chat seen before in this page is hidden at once on the switch
+(function () {
+  var realKey = JR_HOST.convKey, conv = "A", before = Array.from(JR.state.hiddenTurnKeys);
+  JR_HOST.convKey = function () { return conv; };
+  JR.clearHiddenTurnKeys(); JR.hideTurnKeys(["nv-1", "nv-2"]);
+  conv = "B"; JR.clearHiddenTurnKeys(); JR.hideKnownTurnKeys(); // (to another chat: none known there)
+  var inB = JR.state.hiddenTurnKeys.size;
+  conv = "A"; JR.clearHiddenTurnKeys(); JR.hideKnownTurnKeys(); // (back: at once)
+  var backA = JR.state.hiddenTurnKeys.has("nv-1") && JR.state.hiddenTurnKeys.has("nv-2");
+  var css = (document.getElementById("jr-hide-turns") || { textContent: "" }).textContent;
+  check("a chat switched back to by the site: its Popup Q&As hidden at once (keys as last seen in this page)", inB === 0 && backA && /nv-1/.test(css), [inB, backA].join(" "));
+  JR_HOST.convKey = realKey; JR.clearHiddenTurnKeys(); JR.hideTurnKeys(before);
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

@@ -463,6 +463,7 @@
     document.documentElement.removeAttribute("data-jr-scroll-lock");
     JR.setTailHidden(false);
     JR.clearHiddenTurnKeys();
+    JR.hideKnownTurnKeys(); // (a chat seen before in this page: hidden before the site draws it — NT23 B15)
     JR.qa.clear();
     JR.qa.resetApi();
     if (JR.availability) JR.availability.clear(); // (another chat: nothing waits on from here)

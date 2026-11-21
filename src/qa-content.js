@@ -118,7 +118,12 @@
     hideStyle.textContent = rules.length ? rules.join(",\n") + " { " + JR.site.hideDeclaration + " }" : "";
   }
 
+  // Each conversation's hidden keys as last seen in this page (a site's own chat switch draws a chat it has cached the
+  // moment it switches; the stored keys come a moment later — live NT23 B15, DeepSeek: back to the chat, its newest
+  // Popup Q&A shown ~1 s): hidden again at once on the switch (content.js onNavigate), the stored ones added after
+  var hiddenConv = null, known = {};
   JR.hideTurnKeys = function (keys) {
+    hiddenConv = JR_HOST.convKey();
     var changed = false;
     (keys || []).forEach(function (k) {
       if (k && !st.hiddenTurnKeys.has(k)) { st.hiddenTurnKeys.add(k); changed = true; }
@@ -135,8 +140,15 @@
   };
 
   JR.clearHiddenTurnKeys = function () {
+    if (hiddenConv && st.hiddenTurnKeys.size) known[hiddenConv] = Array.from(st.hiddenTurnKeys);
+    hiddenConv = null;
     st.hiddenTurnKeys.clear();
     renderHideStyle();
+  };
+  /** This conversation's hidden keys as last seen in this page, hidden at once (the stored ones follow: restore). */
+  JR.hideKnownTurnKeys = function () {
+    var k = known[JR_HOST.convKey()];
+    if (k) JR.hideTurnKeys(k);
   };
 
   // Tail flag: when the newest turn is a hidden Popup Q&A, ChatGPT's reserved
