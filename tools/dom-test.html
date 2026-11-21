@@ -2048,6 +2048,22 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   }, 400);
 }, 20100); })); // (its own time — 20.1–20.9 s, between the 20 s and 21 s tests: one original is live at a time)
 
+// 11-20 (ChatGPT rate-limited the account): a copy shown before shows from memory when reopened — no hidden copy loaded
+(function () {
+  var real = JR.site.original, asked = 0, copy = document.createElement("div");
+  var t = document.createElement("div"); t.setAttribute("data-turn-key", "mem-1"); t.hidden = true;
+  t.innerHTML = '<div data-message-author-role="assistant"><div class="markdown"><p>REMEMBERED</p></div></div>';
+  document.body.appendChild(t);
+  JR.site.original = function () { asked++; return new Promise(function () {}); };
+  JR.siteAnswer.follow(copy, ["mem-1"], null);
+  JR.siteAnswer.stop();          // the popup closed
+  t.remove();                    // its original gone from the page
+  var copy2 = document.createElement("div");
+  JR.siteAnswer.follow(copy2, ["mem-1"], null); // reopened
+  check("reopened: the copy shown before, at once, from memory — no hidden copy asked for", /REMEMBERED/.test(copy2.textContent) && asked === 0, copy2.textContent + " asked=" + asked);
+  JR.siteAnswer.stop(); JR.site.original = real;
+})();
+
 // ponytail review of the redesign: the done version taking over the streaming follow (same keys) is located from
 // there — with a deadline — not left "done" (no wait: the copy froze, or Loading… with no end)
 (function () {
