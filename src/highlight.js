@@ -763,7 +763,9 @@
       conv.order.forEach(function (k, i) {
         var p = JR.parsePopupMessage((conv.turns[k] || {}).question || "");
         if (!p || byKey[k] || hidden.has(k)) return;
-        if (unlinkedTexts.indexOf(p.text) !== -1) return; // an item without its turn yet: JR.adoptPopupTurn links it
+        // an item without its turn yet (a version stored when sent, the page reloaded before the site named its turn —
+        // live NT1 N4): linked now from the conversation, hidden — not only once its turn is drawn on the page
+        if (unlinkedTexts.indexOf(p.text) !== -1) { JR.hideTurnKeys([k]); JR.adoptPopupTurn(k, p); return; }
         var quote = !p.wholeResponse && plain(p.text);
         if (!quote) { never.push(k); return; }
         // the nearest earlier answer with its sentence (the quote alone may be in an older answer too), else its quote
