@@ -447,14 +447,15 @@
   // --- SPA navigation ---
 
   function onNavigate() {
-    if (st.releaseHold) st.releaseHold(); // (a send's hold on the old chat: not on this one — review)
     var currentUrl = location.href;
     if (currentUrl === st.lastKnownUrl) return;
     var sameChat = JR_HOST.convKey(currentUrl) === JR_HOST.convKey(String(st.lastKnownUrl));
     st.lastKnownUrl = currentUrl;
     // The same conversation (Settings on ChatGPT / claude.ai is an overlay with its own #hash; claude.ai opens an
-    // artifact with ?artifact=… — live T-f2: the popups closed and the hidden Q&A showed): keep everything
+    // artifact with ?artifact=… — live T-f2: the popups closed and the hidden Q&A showed): keep everything — the send's
+    // hold too (review 11-21: it was let go first, on every pushState / replaceState of the site's, the same chat's too)
     if (sameChat) return;
+    if (st.releaseHold) st.releaseHold(); // (a send's hold on the old chat: not on this one — review)
 
     if (JR.siteControl) JR.siteControl.closeAll(); // (a panel docked from the old chat's copy: not over this one — review)
     JR.removeAllPopups();

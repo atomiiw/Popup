@@ -1554,6 +1554,7 @@
   // the chat went from 32 855 to 7 261 by itself — off screen): the passage the jump went to held for 2 s (the hold of a
   // send, chat.js lockScroll — the user scrolling takes over at once); not inside a popup's answer
   var settled = null;
+  JR.endSettle = function () { if (settled) settled(); }; // (a send's hold takes over: chat.js holdView — review)
   function settle(span) {
     if (settled) settled();
     var sc = JR.site.scrollContainer();
@@ -1574,14 +1575,18 @@
       if (sc.scrollHeight !== listH) { listH = sc.scrollHeight; still = now; }
       if (!sc.isConnected || now - still >= 2000 || now - t0 >= 6000) return mine();
       var p = st.activePopup, hr = span.isConnected ? span.getBoundingClientRect() : null;
+      // another popup the user opened, or none (closed): not this jump's any more (review: the jump's highlight was
+      // given to another popup; the chat held on after Esc)
+      if (base && p !== base.el) return mine();
       if (p && p.isConnected && hr && hr.height) {
         var pr = p.getBoundingClientRect(), gap = p._jrLockedDirection === "above" ? hr.top - pr.bottom : pr.top - hr.bottom;
-        if (!base || base.el !== p) base = { el: p, gap: gap }; // (as it opened: never taken again from a moved place)
+        if (!base) base = { el: p, gap: gap }; // (as it opened: never taken again from a moved place)
         else if (Math.abs(gap - base.gap) > 50) {
           JR.posLog("settle-place", p, { gap: Math.round(gap), was: Math.round(base.gap) });
           // placed by the highlight on the page now (the one it had may be gone with the turn's old drawing — live NT20:
           // placed by that one, nothing moved), and again each frame while it is still off
-          if (p === st.activePopup && !(st.activeSourceHighlights[0] && st.activeSourceHighlights[0].isConnected)) {
+          var h0 = st.activeSourceHighlights[0];
+          if (!(h0 && h0.isConnected && h0.getAttribute("data-jr-highlight-id") === id && h0.getBoundingClientRect().height)) {
             st.activeSourceHighlights = Array.prototype.filter.call(document.querySelectorAll('[data-jr-highlight-id="' + id + '"]'),
               function (x) { return !x.closest(".jr-popup"); });
           }

@@ -497,6 +497,7 @@
 
   /** Keep what the user is looking at in place until the returned function is called. */
   function holdView() {
+    if (JR.endSettle) JR.endSettle(); // (a jump's settle: this hold is the chat's now — else the whole send counted as a jump, review)
     var scroller = JR.site.scrollContainer();
     var unlock = scroller ? JR.lockScroll(scroller, JR.viewAnchor()) : null;
     // Page-world guard (scroll-guard.js): the site's own scroll-to-new-turn is ignored while set.
@@ -910,13 +911,16 @@
         // (an above one by the bottom it is placed to, not as drawn — live NT9: tied the moment Return made it taller,
         // before its top followed, it was held 49 px low, over its highlight, for the whole send)
         var want = up ? pr.top - (parseFloat(p.style.top) || 0) + p._jrBottomAnchor : pr.top, dy = up ? hr.top - want : pr.top - hr.top;
-        // (no anchor: where it is — a below one's top; an above one's bottom, as an inset from its container's bottom)
-        var stays = up ? (p.offsetParent ? p.offsetParent.clientHeight : 0) - p._jrBottomAnchor : (parseFloat(p.style.top) || 0);
+        // (no anchor: where it is — a below one's top; an above one's bottom, as an inset from its container's bottom, in
+        // % of its height now: the list it sits in shrinks by thousands of px while ChatGPT redraws the highlight's turn —
+        // a px inset would put it that far off, review 11-21)
+        var top0 = parseFloat(p.style.top) || 0;
+        function fb(d) { return up ? "calc(100% - " + (p._jrBottomAnchor + d) + "px)" : (top0 - d) + "px"; }
         hl.style.setProperty("--jr-anchor-name", name);
         hl.classList.add("jr-anchor-src");
         p.style.setProperty("--jr-anchor", name);
         p.style.setProperty("--jr-anchor-dy", dy + "px");
-        p.style.setProperty("--jr-anchor-fb", (stays - dy) + "px");
+        p.style.setProperty("--jr-anchor-fb", fb(dy));
         p.classList.add("jr-anchored");
         if (up) p.classList.add("jr-anchored-up");
         // (CSS takes an inline highlight's top a few px off from its client rect — live dom-test: 4 px — set to the place;
@@ -924,7 +928,7 @@
         var nr = p.getBoundingClientRect(), off = (want - (up ? nr.bottom : nr.top)) * (up ? -1 : 1);
         if (Math.abs(off) >= 0.5) {
           p.style.setProperty("--jr-anchor-dy", (dy + off) + "px");
-          p.style.setProperty("--jr-anchor-fb", (stays - dy - off) + "px"); // (no anchor: still there)
+          p.style.setProperty("--jr-anchor-fb", fb(dy + off)); // (no anchor: still there)
         }
         p._jrAnchorHl = hl;
       });

@@ -1178,13 +1178,19 @@ asyncChecks.push(new Promise(function (done) {
   var gap1 = gap();
   pop.style.height = "140px"; // (the answer coming in)
   var gap2 = gap(), at = pop.getBoundingClientRect().bottom;
+  // review 11-21: the highlight's turn redrawn (no anchor) while the list it sits in shrinks — the fallback keeps the
+  // popup's bottom where it was tied, from the list's top (980; a px inset from the bottom put it the shrink's length off)
+  var host = sc.querySelector(".host"), hostTop = host.getBoundingClientRect().top, fromTop = at - hostTop;
+  var keep = span.parentNode; span.remove(); host.style.height = "3000px";
+  var fallback = pop.getBoundingClientRect().bottom - host.getBoundingClientRect().top;
+  keep.appendChild(span);
   unlock();
   window.requestAnimationFrame = raf;
   var after = pop.getBoundingClientRect().bottom, bottomAt = pop._jrBottomAnchor;
   check("send: an above popup stays on its highlight by its bottom (CSS anchor), grows up; then a plain top where it is",
-    tied && Math.abs(gap1 - gap0) <= 1 && Math.abs(gap2 - gap0) <= 1 && Math.abs(after - at) <= 1 && !pop.classList.contains("jr-anchored") &&
+    tied && Math.abs(gap1 - gap0) <= 1 && Math.abs(gap2 - gap0) <= 1 && Math.abs(fallback - 980) <= 6 && !pop.classList.contains("jr-anchored") &&
       Math.abs(bottomAt - (pop.offsetTop + pop.offsetHeight)) <= 1,
-    [tied, gap0, gap1, gap2, at, after, bottomAt].map(function (v) { return typeof v === "number" ? Math.round(v) : v; }).join(" "));
+    [tied, gap0, gap1, gap2, at, after, bottomAt, fromTop, fallback].map(function (v) { return typeof v === "number" ? Math.round(v) : v; }).join(" "));
   sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
 })();
 
@@ -1400,6 +1406,35 @@ asyncChecks.push(new Promise(function (done) {
   window.requestAnimationFrame = real.raf; Date.now = real.now;
   st.activePopup = null; st.completedHighlights.delete("nt19A"); box.remove();
   JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
+})();
+
+// review 11-21: a jump's settle ends when its popup is closed (it held the chat on after Esc) or another popup is opened,
+// and when a send's hold takes over (JR.endSettle — else the whole send counted as a jump)
+(function () {
+  var st = JR.state, frames = [], real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand, create: JR.createPopup, raf: window.requestAnimationFrame };
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div style="height:9000px;position:relative"><p style="position:absolute;top:3000px;margin:0">x <span data-jr-highlight-id="se1">here</span></p></div>';
+  document.body.appendChild(box);
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  function run(n) { while (n--) frames.splice(0).forEach(function (f) { f(); }); }
+  var span = box.querySelector("span"), savedHl = st.activeSourceHighlights;
+  JR.createPopup = function () { var p = document.createElement("div"); p.className = "jr-popup"; p.style.cssText = "position:absolute;top:2900px;height:40px";
+    box.firstElementChild.appendChild(p); st.activePopup = p; st.activeSourceHighlights = [span]; };
+  st.completedHighlights.set("se1", { spans: [span], items: [] });
+  JR.scrollToAndOpenPopup("se1"); run(2);
+  var on1 = JR.jumpState().settling;
+  st.activePopup.remove(); st.activePopup = null; run(2); // (Esc)
+  var closed = !JR.jumpState().settling;
+  JR.scrollToAndOpenPopup("se1"); run(2);
+  var on2 = JR.jumpState().settling;
+  JR.endSettle();
+  var ended = !JR.jumpState().settling;
+  check("a jump's settle ends with its popup closed, and when a send's hold takes over", on1 && closed && on2 && ended, [on1, closed, on2, ended].join(" "));
+  if (st.activePopup) st.activePopup.remove();
+  window.requestAnimationFrame = real.raf; st.activePopup = null; st.activeSourceHighlights = savedHl; st.completedHighlights.delete("se1"); box.remove();
+  JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
 })();
 
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
