@@ -798,7 +798,10 @@
    * Returns an unlock function.
    */
   var anchorSeq = 0; // CSS anchor names of the send's popups (lockScroll)
-  JR.lockScroll = function (container, anchorEl) {
+  JR.lockScroll = function (container, anchorEl, opts) {
+    // opts.chatOnly: the chat held, the popups left to their own placing (a jump's settle — popup-helpers.js: its new
+    // popup still growing to its answer and placing itself; glued, it was put back 470 px up, off screen — live NT4 A2)
+    var withPopups = !(opts && opts.chatOnly);
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
     var hint = anchorEl, anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
@@ -968,12 +971,12 @@
     // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
     var startAnchor = liveAnchor();
-    anchorPopups();
+    if (withPopups) anchorPopups();
     // the window resized during the send: placing is the placer's again (its highlight may wrap otherwise — an anchored
     // popup kept its old offset and covered the highlight's last line — ponytail review)
     function onResize() { openPopups().forEach(unanchor); }
     window.addEventListener("resize", onResize);
-    if (startAnchor) glue(startAnchor);
+    if (startAnchor && withPopups) glue(startAnchor);
     var userScrolling = false;
     var wheelTimer = null;
     var rafId = null;
@@ -1053,7 +1056,7 @@
 
       var anchor = liveAnchor();
       observe([container.firstElementChild, anchor]); // the content (any height change) and the anchor turn
-      if (anchor) glue(anchor);
+      if (anchor && withPopups) glue(anchor);
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
       // (a jump of the user's: while it scrolls, and once after it ended — popup-helpers.js; a hold made at its end, a

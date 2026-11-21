@@ -2420,16 +2420,19 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   var a = document.getElementById("st-a");
   JR.site.scrollContainer = function () { return box; };
   JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
-  JR.createPopup = function () {};
+  var pop = document.createElement("div"); pop.className = "jr-popup"; pop.style.cssText = "position:absolute;top:100px;height:50px";
+  JR.createPopup = function () { box.firstElementChild.appendChild(pop); st.activePopup = pop; };
   st.completedHighlights.set("stA", { spans: [a], items: [] });
   JR.scrollToAndOpenPopup("stA");
   var y0 = a.getBoundingClientRect().top;
   setTimeout(function () {
     box.scrollTop += 3000; // (the site moves its list by itself)
+    pop.style.top = "40px"; // (the popup placing itself as it grows to its answer)
     setTimeout(function () {
       var y = a.getBoundingClientRect().top;
-      check("after a jump the passage it went to is held while the site moves its list", Math.abs(y - y0) <= 2, Math.round(y) + " vs " + Math.round(y0));
-      st.completedHighlights.delete("stA"); box.remove();
+      check("after a jump the passage it went to is held while the site moves its list; its popup places itself",
+        Math.abs(y - y0) <= 2 && pop.style.top === "40px", Math.round(y) + " vs " + Math.round(y0) + " " + pop.style.top);
+      st.activePopup = null; st.completedHighlights.delete("stA"); box.remove();
       JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
       setTimeout(function () { window.requestAnimationFrame = real.raf; window.cancelAnimationFrame = real.caf; done(); }, 150); // (its hold over: box gone)
     }, 200);
