@@ -44,6 +44,33 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   check("outline: Popup's question shown as · question", rows[1].classList.contains("jr-outline-popup") && rows[1].firstElementChild.getAttribute("data-jr-q") === "\u00b7 why so?", rows[1].firstElementChild.getAttribute("data-jr-q"));
   box.remove();
 })();
+(function () { // user 11-21: a popup question clicked in the outline is its selected entry, and the outline stays where it was
+  var box = document.createElement("div");
+  box.innerHTML = '<div class="ds-virtual-list" style="height:60px;overflow:auto"><div class="ds-virtual-list-visible-items" style="height:300px">' +
+    '<div class="r sel" style="height:30px;color:rgb(57,100,254)"><div>用一个公式解释光合作用</div></div>' +
+    '<div class="r" style="height:30px;color:rgb(10,10,10)"><div>另一个问题</div></div>' +
+    '<div class="r" style="height:30px"><div>Regarding this part of your response:\n"t s"\n\nwhy so?\n\n(For this response only: x)</div></div></div></div>';
+  document.body.appendChild(box);
+  var isPopup = JR.isPopupMessage, parse = JR.parsePopupMessage, open = JR.openPopupForMessage, raf = window.requestAnimationFrame, frames = [], opened = 0;
+  JR.isPopupMessage = isPopup || function (m) { return /^Regarding (this part|your entire)/.test(m); };
+  JR.parsePopupMessage = parse || function (m) { return { question: m.split("\n\n")[1] }; };
+  var list = box.querySelector(".ds-virtual-list"), rows = box.querySelectorAll(".r");
+  JR.openPopupForMessage = function () { opened++; var p = document.createElement("div"); p.className = "jr-popup"; p.id = "ol-pop"; document.body.appendChild(p); };
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  S.tidy();
+  list.scrollTop = 40;
+  rows[2].firstElementChild.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  // (DeepSeek then selects the main-chat question the jump went to and scrolls the outline up to it)
+  rows[0].classList.remove("sel"); rows[1].classList.add("sel"); list.scrollTop = 0;
+  S.tidy(); frames.splice(0).forEach(function (f) { f(); });
+  var kept = list.scrollTop, picked = rows[2].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
+  document.getElementById("ol-pop").remove(); S.tidy(); // (its popup closed: DeepSeek's selection again)
+  var back = !rows[2].classList.contains("jr-outline-picked") && !rows[1].classList.contains("jr-outline-theirs");
+  window.requestAnimationFrame = raf; JR.openPopupForMessage = open; JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
+  check("outline: a popup entry clicked — its popup opens, the outline stays, that entry selected (DeepSeek's shown off); popup closed: theirs again",
+    opened === 1 && kept === 40 && picked && theirs && back, [opened, kept, picked, theirs, back].join(" "));
+  box.remove();
+})();
 (function () { // 2026-11-18: the question item is hidden even when its answer item is not mounted (end of DeepSeek's window)
   var box = document.createElement("div");
   box.innerHTML = '<div data-virtual-list-item-key="510">a</div><div data-virtual-list-item-key="511">q</div>';

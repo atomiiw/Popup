@@ -1096,6 +1096,10 @@ html.jr-tail-hidden [data-thread-find-target="conversation"] > div.shrink-0:not(
 }
 .jr-outline-gone > :first-child::after { opacity: 0.45; font-style: italic; } /* deleted in Popup: no question, no click */
 .jr-outline-gone { cursor: default; }
+/* A popup question clicked in the outline is its selected entry (user 11-21); DeepSeek's own selection (a main-chat
+   question) is shown unselected meanwhile — its colours read from the page (sites/deepseek.js pickOutline) */
+.jr-outline-picked > :first-child { color: var(--jr-ol-picked, #3964fe) !important; }
+.jr-outline-theirs:not(.jr-outline-picked) > :first-child { color: var(--jr-ol-normal, inherit) !important; }
 /* ...and when it opens (fixed, z-index 5, 240 px wide) it must cover Popup's highlight arrows, not the reverse;
    closed it is 34 px at the edge, clear of them */
 .jr-nav-widget.jr-nav-widget--deepseek { z-index: 4; }

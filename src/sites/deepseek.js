@@ -339,11 +339,13 @@
      *  Popup's are shown there as their question only ("· question", user, 2026-11-18: a small dot, not hidden — the outline places
      *  rows by index, hiding left gaps); a click opens that popup. Entries have build-hashed classes: found by text. */
     tidy: function () {
+      if (pick && !document.querySelector(".jr-popup")) unpick(); // (its popup closed: DeepSeek's selection again)
       Array.prototype.forEach.call(document.querySelectorAll(C.scroller + " .ds-virtual-list-visible-items"), function (box) {
         if (box.querySelector(C.item)) return; // the conversation itself (markOutline checks again: a new chat's list starts empty)
         if (!outlineSeen.has(box)) {
           outlineSeen.add(box);
-          new MutationObserver(function () { markOutline(box); }).observe(box, { childList: true, subtree: true, characterData: true });
+          // (classes too: DeepSeek moves its selection by class — a picked popup entry keeps it shown off, pickOutline)
+          new MutationObserver(function () { markOutline(box); }).observe(box, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class"] });
         }
         markOutline(box);
       });
@@ -401,7 +403,43 @@
       if (row.classList.contains("jr-outline-popup") !== !!label) row.classList.toggle("jr-outline-popup", !!label);
       if (row.classList.contains("jr-outline-gone") !== gone) row.classList.toggle("jr-outline-gone", gone);
       if (label && text.getAttribute("data-jr-q") !== label) text.setAttribute("data-jr-q", label);
+      var picked = !!pick && !!label && label === pick.label, theirs = !!pick && !!pick.sel && row.classList.contains(pick.sel);
+      if (row.classList.contains("jr-outline-picked") !== picked) row.classList.toggle("jr-outline-picked", picked);
+      if (row.classList.contains("jr-outline-theirs") !== theirs) row.classList.toggle("jr-outline-theirs", theirs);
     });
+  }
+
+  // A popup question clicked in the outline is the one selected there, and the outline stays where it was (user 11-21:
+  // its popup is in a main-chat answer — DeepSeek then selected that answer's question and scrolled the outline up to
+  // it: the place in the outline lost, a non-popup entry blue). For ~2 s DeepSeek's scroll of the outline is undone
+  // (not the user's); its own selection is shown unselected while the popup is open. Its selected entry's class is
+  // build-hashed: the one class on just one row.
+  var pick = null;
+  function pickOutline(row) {
+    var list = row.closest(C.scroller), rows = Array.prototype.slice.call(row.parentElement.children), count = {};
+    rows.forEach(function (r) { r.classList.forEach(function (c) { count[c] = (count[c] || 0) + 1; }); });
+    var sel = rows.filter(function (r) { return r !== row && !r.classList.contains("jr-outline-popup"); })
+      .map(function (r) { return Array.prototype.filter.call(r.classList, function (c) { return count[c] === 1 && !/^jr-/.test(c); })[0]; })
+      .filter(Boolean)[0];
+    var other = rows.filter(function (r) { return !r.classList.contains("jr-outline-popup") && (!sel || !r.classList.contains(sel)); })[0];
+    var on = rows.filter(function (r) { return sel && r.classList.contains(sel); })[0];
+    var normal = other ? getComputedStyle(other.firstElementChild || other).color : "", blue = on ? getComputedStyle(on.firstElementChild || on).color : "";
+    pick = { label: (row.firstElementChild || row).getAttribute("data-jr-q"), sel: sel, list: list, top: list ? list.scrollTop : 0, until: Date.now() + 2000, user: false };
+    var html = document.documentElement; // (DeepSeek's own colours, light or dark: styles.css .jr-outline-picked / -theirs)
+    if (normal) html.style.setProperty("--jr-ol-normal", normal);
+    if (blue) html.style.setProperty("--jr-ol-picked", blue);
+    if (list && !list._jrPickWheel) { list._jrPickWheel = true; list.addEventListener("wheel", function () { if (pick) pick.user = true; }, { passive: true }); }
+    markOutline(row.parentElement);
+    (function hold() {
+      if (!pick || pick.user || Date.now() > pick.until || !pick.list) return;
+      if (pick.list.scrollTop !== pick.top) pick.list.scrollTop = pick.top;
+      requestAnimationFrame(hold);
+    })();
+  }
+  function unpick() {
+    if (!pick) return;
+    pick = null;
+    Array.prototype.forEach.call(document.querySelectorAll(".jr-outline-picked, .jr-outline-theirs"), function (r) { r.classList.remove("jr-outline-picked", "jr-outline-theirs"); });
   }
   // Hovering an outline entry shows DeepSeek's tooltip with the entry's full text: for a popup question, the question
   // only. Checked every frame while hovering (rAF runs before the frame is painted: the full text is never seen).
@@ -427,10 +465,13 @@
   // A click on a popup question in the outline opens its popup (DeepSeek would scroll to the hidden message)
   document.addEventListener("click", function (e) {
     var row = e.target.closest && e.target.closest(".jr-outline-popup");
-    if (!row || !JR.openPopupForMessage) return;
+    if (!row) { if (pick && e.target.closest && e.target.closest(C.scroller)) unpick(); return; } // (another entry: DeepSeek's again)
+    if (!JR.openPopupForMessage) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!row.classList.contains("jr-outline-gone")) JR.openPopupForMessage((row.firstElementChild || row).textContent || "");
+    if (row.classList.contains("jr-outline-gone")) return;
+    pickOutline(row);
+    JR.openPopupForMessage((row.firstElementChild || row).textContent || "");
   }, true);
 
 })();
