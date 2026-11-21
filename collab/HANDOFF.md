@@ -1,3 +1,5 @@
+**2026-11-21 day: docked site panels (ffb63a1), press.js (ab4405d) — TODO "DAY 11-21". Open: ChatGPT G2, H2. Not zipped.**
+
 **2026-11-21 03:00: overnight plan done as far as it goes — TODO "MORNING 11-21" lists what passed and the open ChatGPT items. Not zipped.**
 
 **2026-11-21 00:35: overnight plan collab/PLAN-overnight-1120.md in progress — TODO "OVERNIGHT 11-20 → 21" has the state. Not zipped.**
