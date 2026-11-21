@@ -1130,6 +1130,37 @@ asyncChecks.push(new Promise(function (done) {
   sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
 })();
 
+// live B3 / old Chrome 11-21 (ChatGPT): during a send the site re-laid the list above (a 21 000 px turn re-estimated) and
+// redrew the highlight's turn — the tie lost its highlight, the popup fell back to its top from before the re-lay
+// (22 000 px off screen) and the glue held it there ~12 s. It stays where it was to the reader's place.
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div class='host' style='height:4000px;position:relative'><div class='sp' style='height:1000px'></div>" +
+    "<div class='a' data-turn-key='anc-b' style='height:50px'>x <span class='jr-source-highlight' data-jr-highlight-id='anc-hl2'>hl</span></div>" +
+    "<div class='jr-popup' style='position:absolute;top:1080px;height:80px'></div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var a = sc.querySelector(".a"), span = a.querySelector("span"), pop = sc.querySelector(".jr-popup"), frames = [], raf = window.requestAnimationFrame;
+  var saved = { a: JR.state.activePopup, s: JR.state.popupStack, h: JR.state.activeSourceHighlights };
+  JR.state.activePopup = pop; JR.state.popupStack = []; JR.state.activeSourceHighlights = [span];
+  function run(n) {
+    window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+    while (n--) frames.splice(0).forEach(function (f) { f(); });
+    window.requestAnimationFrame = raf;
+  }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, span);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var gap0 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top, tied = pop.classList.contains("jr-anchored");
+  sc.querySelector(".sp").style.height = "300px"; // the list above re-laid…
+  a.innerHTML = "x hl"; // …and the highlight's turn redrawn: no highlight until it is wrapped again
+  run(3);
+  var gap1 = pop.getBoundingClientRect().top - a.getBoundingClientRect().top;
+  check("send: a tied popup whose highlight is redrawn away stays where it was to the reader's place",
+    tied && Math.abs(gap1 - gap0) <= 1, [tied, gap0, gap1].join(" "));
+  unlock(); sc.remove(); JR.state.activePopup = saved.a; JR.state.popupStack = saved.s; JR.state.activeSourceHighlights = saved.h;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

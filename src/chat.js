@@ -913,7 +913,7 @@
       });
     }
     /** Back to a plain top where it is now (the send's end, or its highlight gone). */
-    function unanchor(p) {
+    function unanchor(p, keep) {
       if (!p._jrAnchorHl) return;
       if (p.isConnected) p.style.top = p.offsetTop + "px"; // (same place: then the class goes)
       p.classList.remove("jr-anchored");
@@ -923,7 +923,7 @@
       if (hl && !openPopups().some(function (q) { return q._jrAnchorHl === hl; })) {
         hl.classList.remove("jr-anchor-src"); hl.style.removeProperty("--jr-anchor-name");
       }
-      glued.delete(p); // (the glue takes it as it is from here)
+      if (!keep) glued.delete(p); // (the glue takes it as it is from here)
     }
     function glue(anchor) {
       var pops = openPopups();
@@ -931,7 +931,9 @@
       pops.forEach(function (p) {
         if (!p || !p.isConnected || !p.parentElement) return;
         if (p._jrAnchorHl) { // tied by CSS: only its highlight must still be there (re-wrapped: the new one)
-          if (p._jrAnchorHl.isConnected) return;
+          // its place to the anchor while tied, for when the tie breaks (live B3, ChatGPT: the highlight's turn redrawn
+          // while the list above was re-laid — untied, it fell back to its top from before the re-lay, 22 000 px off)
+          if (p._jrAnchorHl.isConnected) { if (p._jrAnchorHl.getBoundingClientRect().height) glued.set(p, { off: p.getBoundingClientRect().top - ay }); return; }
           var id = p._jrAnchorHl.getAttribute("data-jr-highlight-id"), now = id && document.querySelector('[data-jr-highlight-id="' + id + '"]');
           if (now && now.getBoundingClientRect().height) {
             now.style.setProperty("--jr-anchor-name", p.style.getPropertyValue("--jr-anchor"));
@@ -939,7 +941,7 @@
             p._jrAnchorHl = now;
             return;
           }
-          unanchor(p);
+          unanchor(p, true);
         }
         var r = p.getBoundingClientRect();
         if (!r.height) return; // (not drawn: being measured)
