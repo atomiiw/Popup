@@ -1571,11 +1571,22 @@
     if (!sc || span.closest(".jr-popup") || !JR.lockScroll) return;
     var un = JR.lockScroll(sc, span, { chatOnly: true }), done = false, t0 = Date.now();
     var mine = settled = function () { if (!done) { done = true; un(); } if (settled === mine) settled = null; };
-    // (its own: a later jump's hold isn't ended by it; over at once when its highlight or the chat is gone)
+    // (its own: a later jump's hold isn't ended by it; over at once when its highlight or the chat is gone). Its popup
+    // placed again when the site put content above the place it is measured from (live NT4 A2: 19 352 px came above,
+    // ChatGPT kept the highlight on screen by scrolling, the popup went with the old place to −19 143): the popup and
+    // its highlight parted by more than 50 px, the popup's height the same — not its own growing
+    var prev = null;
     (function watch() {
       if (done) return;
       if (Date.now() - t0 >= 2000 || !span.isConnected || !sc.isConnected) return mine();
-      setTimeout(watch, 100);
+      var p = st.activePopup, now = p && p.isConnected ? { p: p.getBoundingClientRect(), h: span.getBoundingClientRect().top } : null;
+      if (now && prev && Math.abs((now.p.top - prev.p.top) - (now.h - prev.h)) > 50 && Math.abs(now.p.height - prev.p.height) < 1) {
+        JR.posLog("settle-place", p, { moved: Math.round(now.p.top - prev.p.top), hl: Math.round(now.h - prev.h) });
+        JR.repositionAll();
+        now = null; // (measured again next frame)
+      }
+      prev = now;
+      requestAnimationFrame(watch);
     })();
   }
 

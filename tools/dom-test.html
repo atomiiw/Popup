@@ -2428,10 +2428,16 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   setTimeout(function () {
     box.scrollTop += 3000; // (the site moves its list by itself)
     pop.style.top = "40px"; // (the popup placing itself as it grows to its answer)
+    var placed = 0, realAll = JR.repositionAll;
     setTimeout(function () {
+      JR.repositionAll = function () { placed++; };
+      pop.style.top = "-460px"; // (content came above where it is measured from: it went, its highlight stayed)
+    }, 80);
+    setTimeout(function () {
+      JR.repositionAll = realAll;
       var y = a.getBoundingClientRect().top;
-      check("after a jump the passage it went to is held while the site moves its list; its popup places itself",
-        Math.abs(y - y0) <= 2 && pop.style.top === "40px", Math.round(y) + " vs " + Math.round(y0) + " " + pop.style.top);
+      check("after a jump the passage it went to is held while the site moves its list; its popup places itself; parted from its highlight, placed again",
+        Math.abs(y - y0) <= 2 && placed === 1, Math.round(y) + " vs " + Math.round(y0) + " placed " + placed);
       st.activePopup = null; st.completedHighlights.delete("stA"); box.remove();
       JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create;
       setTimeout(function () { window.requestAnimationFrame = real.raf; window.cancelAnimationFrame = real.caf; done(); }, 150); // (its hold over: box gone)
