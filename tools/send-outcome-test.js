@@ -36,6 +36,8 @@ d = O.decide(facts(9000, { keys: 1, responseKey: true, net: { matched: true, don
 check("an image only: taken", d.act === "capture", d);
 check("an image only: done, not empty", O.settle({ answerText: "", turn: { answered: true }, net: { text: "", media: false } }) === "done"
   && O.settle({ answerText: "", turn: null, net: { text: "", media: true } }) === "done", "");
+check("an image alone on the page, the stream not matched: taken (not failed at 10 s)",
+  O.decide(facts(L.hard, { keys: 1, responseKey: true, turn: { text: false, answered: true } })).act === "capture", "");
 check("nothing at all: empty (failed)", O.settle({ answerText: "", turn: { answered: false }, net: { text: "", media: false } }) === "empty", "");
 
 // the site refused it (busy) and put it back: sent again once; refused again → failed as rejected (its own reason)

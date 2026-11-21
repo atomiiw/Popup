@@ -269,6 +269,7 @@ function updateHighlightFields(id, fields, url) {
   return modifyDoc(convKeyForUrl(url), function (doc) {
     var rec = doc.items.find(function (it) { return it.id === id; });
     if (!rec) return;
+    if (fields.onlyIfPending && rec.status !== "pending") return; // (another tab finished it meanwhile — review A1 #4)
     if ("status" in fields) rec.status = storedStatus(fields.status);
     if ("question" in fields && rec.status !== "done") rec.question = fields.question || undefined;
     if (rec.status === "done") delete rec.question;

@@ -52,5 +52,10 @@ const rec = (id, k) => ({ id, quoteId: "q" + id, text: "x", status: "done", url:
   check("an edit stored when sent, then done: one record (done), the old version inactive",
     e1.length === 1 && e1[0].status === "done" && items.find((r) => r.id === "a1").active === false,
     e1.length + " " + (e1[0] || {}).status);
+  // review A1 #4: a stale-pending check (another tab's old copy) never turns a finished version failed
+  await A.updateHighlightFields("e1", { status: "failed", onlyIfPending: true }, "c1");
+  await tick();
+  check("a stale pending check doesn't overwrite a done version", data["popup:conv:c1"].items.find((r) => r.id === "e1").status === "done",
+    data["popup:conv:c1"].items.find((r) => r.id === "e1").status);
   console.log(failed ? failed + " FAILED" : "all passed");
 })();

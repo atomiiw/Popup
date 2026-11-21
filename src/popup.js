@@ -1012,7 +1012,7 @@
       var sendingNow = { sending: true, streaming: true }[JR.availability.of(item.id).kind];
       if (item.status === "pending" && !sendingNow && !JR.isQueued(id)) {
         item.status = "failed";
-        updateHighlightFields(item.id, { status: "failed" });
+        updateHighlightFields(item.id, { status: "failed", onlyIfPending: true });
       }
       // failed, but its answer is in the chat after all (it came after Popup gave up — live 2026-11-19, a Claude Code
       // answer with a tool step): it is done

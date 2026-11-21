@@ -694,6 +694,14 @@
    * Mark "failed" at once for a message that was never sent (e.g. offline).
    * Mirrors saveTimeoutVersion logic but without needing a waitForResponse context.
    */
+  /** Put a version into its entry's versions: replacing the one with its id (stored when sent, then read back from
+   *  storage on returning to the chat — review A1 #2), else added; it becomes the one shown. */
+  function putVersion(memEntry, item) {
+    var i = memEntry.items.findIndex(function (x) { return x.id === item.id; });
+    if (i >= 0) memEntry.items[i] = item; else i = memEntry.items.push(item) - 1;
+    memEntry.activeItemIndex = i;
+  }
+
   function immediateTimeout(w, url) { // url: the chat it was asked in (another may be open now — ponytail review)
     url = url || location.href;
     var avFail = w.preRegisteredItemId || (w.editOpts && w.editOpts.itemId);
@@ -706,10 +714,9 @@
     if (!memEntry) return;
 
     if (w.editOpts) {
-      var newItemId = crypto.randomUUID();
-      memEntry.items.push({ id: newItemId, question: w.question, status: "failed", turnKeys: [],
+      var newItemId = w.editOpts.itemId || crypto.randomUUID(); // (stored when sent: replaced — review A1 #1)
+      putVersion(memEntry, { id: newItemId, question: w.question, status: "failed", turnKeys: [],
         _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
-      memEntry.activeItemIndex = memEntry.items.length - 1;
       memEntry.question = w.question;
       saveHighlight({
         id: newItemId, quoteId: hlId, text: memEntry.text, status: "failed",
@@ -1040,8 +1047,6 @@
     var startTime = Date.now();
     // Give up only when nothing has happened for a while, never mid-answer:
     // slow models think or search for minutes before (and between) words.
-    var IDLE_LIMIT_MS = 100000;       // ChatGPT not generating and no new text
-    var GENERATING_LIMIT_MS = 600000; // ChatGPT says it is generating, but no new text
     var timerId = null;
     var qaKeys = [];          // keys of the turn(s) holding our Q&A (1 in the new DOM, 2 in the legacy DOM)
     var responseTurn = null;  // element holding the answer (re-found by key if ChatGPT remounts it)
@@ -1120,9 +1125,8 @@
       if (editOpts) {
         // Edit: its version (stored when sent) failed
         var newItemId = editOpts.itemId || crypto.randomUUID();
-        memEntry.items.push({ id: newItemId, question: question, status: "failed", turnKeys: hideKeys,
+        putVersion(memEntry, { id: newItemId, question: question, status: "failed", turnKeys: hideKeys,
           _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
-        memEntry.activeItemIndex = memEntry.items.length - 1;
         memEntry.question = question;
         saveHighlight({
           id: newItemId, quoteId: hlId, text: text, status: "failed", question: question,
@@ -1328,9 +1332,8 @@
         var memEntry = st.completedHighlights.get(hlId);
         var newItemId = editOpts.itemId || crypto.randomUUID(); // (stored when sent: replaced)
         if (memEntry) {
-          memEntry.items.push({ id: newItemId, question: question, status: "done", turnKeys: qaKeys.slice(),
+          putVersion(memEntry, { id: newItemId, question: question, status: "done", turnKeys: qaKeys.slice(),
             _files: memEntry._editFiles, _failedFiles: memEntry._editFailed, attachments: (memEntry._editFiles || []).length });
-          memEntry.activeItemIndex = memEntry.items.length - 1;
           memEntry.question = question;
         }
 
@@ -1489,7 +1492,6 @@
     var lastNetLength = 0;
     var lastProgress = Date.now();     // last time the answer grew (DOM or network)
     var told = {}; // when the answer's growth was last told to its availability
-    var STALE_THRESHOLD = 60000; // generating flag stuck: answer unchanged this long → capture what is there
     var savedKeys = false;
 
     function poll() {
@@ -1544,7 +1546,7 @@
         now: Date.now(), start: startTime, lastProgress: lastProgress, generating: generating,
         keys: qaKeys.length, responseKey: !!responseKey,
         turn: turn ? { text: !!currentContent.trim(), answered: JR.locator.answered(turn) } : null,
-        domUsable: domAnswerUsable(), submitting: submitting,
+        domUsable: net.done ? domAnswerUsable() : true, submitting: submitting, // (read only when the stream is done)
         composerHasOurs: !!(composer && probe && norm60(JR.site.composerText(composer)).indexOf(probe) !== -1),
         canResend: !(files && files.length) && !lastHadAside, rejected: rejected,
         net: { matched: net.matched, done: net.done, text: !!net.text.trim(), media: !!net.media, resuming: net.resuming || 0 },

@@ -30,7 +30,7 @@
   function decide(f) {
     var L = LIMITS, el = f.now - f.start, net = f.net, turn = f.turn;
     // done: the site stopped and the answer is on the page
-    if (turn && !f.generating && turn.text) return { act: "capture" };
+    if (turn && !f.generating && (turn.text || turn.answered)) return { act: "capture" }; // (an image alone: answered)
     // done per the stream, the page's answer not readable (not mounted, the site's "couldn't load")
     if (net.done && (net.text || net.media) && !f.domUsable) return { act: "capture" };
     // done while our answer is scrolled out of the page (keys known; its content comes from its original)
@@ -48,7 +48,7 @@
     if (!f.keys && !net.matched && f.generating && el >= L.notFound) out.report = "turn-not-found";
     // the stream ended before the answer (a thinking model resumes elsewhere): once the site is done, the conversation
     if (net.resuming && !net.done && !f.generating && !f.resume.busy && f.resume.n < L.resumeLooks && f.now - net.resuming >= L.resumeWait) out.readResume = true;
-    var hasAnswer = (turn && turn.text) || net.text || net.media;
+    var hasAnswer = (turn && (turn.text || turn.answered)) || net.text || net.media;
     if (el >= L.hard && !hasAnswer && !f.generating && !(net.matched && !net.done)) return { act: "fail", stage: "no-answer" };
     if (f.now - Math.max(f.start, f.lastProgress) >= (f.generating ? L.generating : L.idle)) return { act: "stop-fail", stage: "no-answer" };
     return out;
