@@ -754,7 +754,7 @@
       if (gen !== restoreGen || !conv) return;
       var byKey = {}; // turn key → its stored item (for a nested one's parent)
       records.forEach(function (rec) { (rec.turnKeys || []).forEach(function (k) { byKey[k] = rec; }); });
-      var unlinkedTexts = records.filter(function (rec) { return !(rec.turnKeys || []).length; }).map(function (rec) { return rec.text; });
+      var unlinked = records.filter(function (rec) { return !(rec.turnKeys || []).length; });
       var made = [], plainAnswer = {}; // turn key → its answer's plain text (once each: was per pair of turns)
       // ones Popup can never place: stored as hidden, so they're hidden before they're drawn (DeepSeek, claude.ai hide
       // by stored keys only: each load showed them, then the self-heal pass took them out — a jump; audit 11-20)
@@ -765,7 +765,10 @@
         if (!p || byKey[k] || hidden.has(k)) return;
         // an item without its turn yet (a version stored when sent, the page reloaded before the site named its turn —
         // live NT1 N4): linked now from the conversation, hidden — not only once its turn is drawn on the page
-        if (unlinkedTexts.indexOf(p.text) !== -1) { JR.hideTurnKeys([k]); JR.adoptPopupTurn(k, p); return; }
+        // (a Reply's question carries no quote: a Reply record — review)
+        if (unlinked.some(function (r) { return p.wholeResponse ? r.wholeResponse : !r.wholeResponse && r.text === p.text; })) {
+          JR.hideTurnKeys([k]); JR.adoptPopupTurn(k, p); return;
+        }
         var quote = !p.wholeResponse && plain(p.text);
         if (!quote) { never.push(k); return; }
         // the nearest earlier answer with its sentence (the quote alone may be in an older answer too), else its quote
@@ -874,7 +877,7 @@
    * same highlighted text (any nesting level), oldest unlinked first; reply-to-all
    * questions carry no quote and match reply-to-all items.
    */
-  var claimed = new Set(); // record ids already being linked (adoption is async)
+  var claimed = new Set(), claimedTurns = new Set(); // record ids / turns already being linked (adoption is async)
 
   function findInMemory(id) {
     var hit = null;
@@ -889,14 +892,21 @@
 
   JR.adoptPopupTurn = function (turnKey, parsed) {
     if (!parsed) return;
+    // (one turn linked once: ChatGPT's read-back and the rebuild both ask for it in one restore — review)
+    if (claimedTurns.has(turnKey)) return;
+    claimedTurns.add(turnKey);
+    function norm(t) { return String(t || "").replace(/\s+/g, " ").trim(); }
     getHighlightsByUrl().then(function (records) {
       if (records.some(function (r) { return (r.turnKeys || []).indexOf(turnKey) !== -1; })) return;
+      // the same quote and the same question (versions of one highlight share the quote: a failed one never sent isn't
+      // this Q&A — review); a record that keeps no question matches any. Pending before failed, then the oldest.
       var cands = records.filter(function (r) {
         if ((r.turnKeys || []).length || claimed.has(r.id)) return false;
+        if (r.question && parsed.question != null && norm(r.question) !== norm(parsed.question)) return false;
         return parsed.wholeResponse ? r.wholeResponse : (!r.wholeResponse && r.text === parsed.text);
       });
       if (!cands.length) return;
-      cands.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+      cands.sort(function (a, b) { return (a.status === "failed") - (b.status === "failed") || (a.createdAt || 0) - (b.createdAt || 0); });
       var rec = cands[0];
       claimed.add(rec.id);
       updateHighlightFields(rec.id, { turnKeys: [turnKey], status: "done" });

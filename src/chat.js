@@ -602,7 +602,6 @@
     sendQueued(opts);
   };
 
-  /** Still the chat of url (by conversation: a #hash or ?artifact= is the same chat). */
   /** Another chat opened: the questions still waiting to be sent are not sent — each stored failed at once in its own
    *  chat (they stayed pending and failed only when their popup was next opened — A1 exploration). Retry resends. */
   JR.dropQueue = function () {
@@ -612,6 +611,7 @@
     });
   };
 
+  /** Still the chat of url (by conversation: a #hash or ?artifact= is the same chat). */
   function sameChat(url) { return JR_HOST.convKey(url) === JR_HOST.convKey(location.href); }
 
   function sendQueued(opts) {
@@ -1367,26 +1367,9 @@
       function fillItem(e, itemId) {
         e.question = e.question || question || null;
         if (!e.sourceTurnKey) e.sourceTurnKey = sourceTurnKey;
-        var found = false;
-        if (e.items && itemId) {
-          for (var di = 0; di < e.items.length; di++) {
-            if (e.items[di].id === itemId) {
-              e.items[di].status = "done";
-              e.items[di].turnKeys = qaKeys.slice();
-              found = true;
-              break;
-            }
-          }
-        }
-        if (!found && e.items && e.items.length > 0 && (e.items[0].status === "pending" || !itemId)) {
-          e.items[0].status = "done";
-          e.items[0].turnKeys = qaKeys.slice();
-          found = true;
-        }
-        if (!found && (!e.items || e.items.length === 0)) {
-          e.items = [{ id: crypto.randomUUID(), question: question || null, status: "done", turnKeys: qaKeys.slice() }];
-          e.activeItemIndex = 0;
-        }
+        // (its version by id only: every send stores it first — A1b; no other version taken for it — review)
+        var it = (e.items || []).filter(function (x) { return x.id === itemId; })[0];
+        if (it) { it.status = "done"; it.turnKeys = qaKeys.slice(); }
       }
 
       if (detached) {

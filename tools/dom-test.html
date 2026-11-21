@@ -2096,6 +2096,23 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
   document.body.appendChild(f);
 }, 21100); })); // (its own time — 21.1–21.9 s, between the 21 s and 22 s tests)
 
+// review (b371844): a Q&A in the conversation linked to the version that asked it — not an older failed one on the same
+// quote (never sent); one turn linked once (ChatGPT's read-back and the rebuild both ask in one restore)
+asyncChecks.push(new Promise(function (done) {
+  var realGet = window.getHighlightsByUrl, realUpd = window.updateHighlightFields, linked = [];
+  window.getHighlightsByUrl = function () { return Promise.resolve([
+    { id: "ad-old", quoteId: "ad-q", text: "same quote", question: "first ask", status: "failed", turnKeys: [], createdAt: 1 },
+    { id: "ad-new", quoteId: "ad-q", text: "same quote", question: "second ask", status: "pending", turnKeys: [], createdAt: 2 }]); };
+  window.updateHighlightFields = function (id, f) { if (f.turnKeys) linked.push(id + ">" + f.turnKeys.join()); return Promise.resolve(); };
+  var parsed = { text: "same quote", question: "second ask", wholeResponse: false };
+  JR.adoptPopupTurn("ad-turn", parsed); JR.adoptPopupTurn("ad-turn", parsed);
+  setTimeout(function () {
+    window.getHighlightsByUrl = realGet; window.updateHighlightFields = realUpd;
+    check("adopted from the conversation: the version that asked it, once", linked.join() === "ad-new>ad-turn", linked.join());
+    done();
+  }, 100);
+}));
+
 // A1 exploration: questions waiting to be sent when another chat opens are stored failed at once, in their own chat
 (function () {
   var real = window.updateHighlightFields, got = [];
@@ -2217,11 +2234,10 @@ asyncChecks.push(new Promise(function (done) { setTimeout(function () {
     return item.status;
   }
   var live = JR.state.responseWatchActive; JR.state.responseWatchActive = false;
-  var q = reopen(true), notQ = reopen(false), linked = reopen(false, ["qa1-t"]);
+  var q = reopen(true), notQ = reopen(false);
   JR.state.responseWatchActive = live;
   check("A1: reopened while its send is queued: still pending (not failed with Retry); not queued and no watch: failed",
     q === "pending" && notQ === "failed", q + " " + notQ);
-  check("live NT1 N4: a pending version whose Q&A is in the chat (reloaded mid-answer): done — looked for, not failed", linked === "done", linked);
 })();
 
 // Design A (user, 2026-11-18, GLOSSARY.md): the active popup's copy follows its original — whatever the site changes

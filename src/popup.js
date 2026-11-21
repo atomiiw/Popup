@@ -992,10 +992,9 @@
       // another popup's send kept this one Loading…, audit L3), nor waiting in the queue (A1)
       var sendingNow = { sending: true, streaming: true }[JR.availability.of(item.id).kind];
       if (item.status === "pending" && !sendingNow && !JR.isQueued(id)) {
-        // …unless its Q&A is in the chat (its turns were linked as they came: the page reloaded mid-answer — live NT1 N4,
-        // an edit showed "Couldn't get a response"): done — looked for; not found, Try again looks again (no resend)
-        item.status = (item.turnKeys || []).length ? "done" : "failed";
-        updateHighlightFields(item.id, { status: item.status, onlyIfPending: true });
+        // (one interrupted by a reload with its turns known loads done already — storage.js toPublic)
+        item.status = "failed";
+        updateHighlightFields(item.id, { status: "failed", onlyIfPending: true });
       }
       // failed, but its answer is in the chat after all (it came after Popup gave up — live 2026-11-19, a Claude Code
       // answer with a tool step): it is done
