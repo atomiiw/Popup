@@ -1514,6 +1514,41 @@ asyncChecks.push(new Promise(function (done) {
   f.remove();
 })();
 
+// live Beta 11-21 (claude.ai, ∧): after the jump its list re-laid 820 px over 3 s; the popup was re-placed every
+// 0.3–0.6 s, 60–200 px each time. During the settle it is tied to its highlight by CSS — moved in the same layout
+(function () {
+  var st = JR.state, frames = [], fake = Date.now(), real = { sc: JR.site.scrollContainer, band: JR.site.visibleBand,
+    create: JR.createPopup, all: JR.repositionAll, raf: window.requestAnimationFrame, now: Date.now };
+  var box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:500px;overflow:auto";
+  box.innerHTML = '<div class="tie-host" style="height:9000px;position:relative"><div class="tie-sp" style="height:3000px"></div>' +
+    '<p style="margin:0">A passage with a highlight in it: <span data-jr-highlight-id="tieA">here</span></p></div>';
+  document.body.appendChild(box);
+  JR.site.scrollContainer = function () { return box; };
+  JR.site.visibleBand = function () { return { top: 0, bottom: 500 }; };
+  JR.repositionAll = function () {};
+  Date.now = function () { return fake; };
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  function run(n) { while (n--) frames.splice(0).forEach(function (f) { f(); }); }
+  var span = box.querySelector("[data-jr-highlight-id]"), savedHl = st.activeSourceHighlights;
+  var pop = document.createElement("div"); pop.className = "jr-popup"; pop.style.cssText = "position:absolute;height:60px;width:100px;animation:none";
+  JR.createPopup = function () { var hr = span.getBoundingClientRect(); pop._jrLockedDirection = "above";
+    pop._jrBottomAnchor = hr.top + box.scrollTop - 8; pop.style.top = (pop._jrBottomAnchor - 60) + "px";
+    box.firstElementChild.appendChild(pop); st.activePopup = pop; st.activeSourceHighlights = [span]; };
+  st.completedHighlights.set("tieA", { spans: [span], items: [] });
+  JR.scrollToAndOpenPopup("tieA");
+  var tied = pop.classList.contains("jr-anchored");
+  var gap0 = span.getBoundingClientRect().top - pop.getBoundingClientRect().bottom;
+  box.querySelector(".tie-sp").style.height = "3200px"; // (the list re-laid: the highlight 200 px lower in it — no frame runs)
+  var gap1 = span.getBoundingClientRect().top - pop.getBoundingClientRect().bottom;
+  fake += 7000; run(3); // (the settle over: untied, a plain top where it is)
+  var untied = !pop.classList.contains("jr-anchored");
+  check("a jump's popup is tied to its highlight during the settle (moves with it in the same layout), untied after",
+    tied && Math.abs(gap1 - gap0) <= 1 && untied, [tied, Math.round(gap0), Math.round(gap1), untied].join(" "));
+  window.requestAnimationFrame = real.raf; Date.now = real.now;
+  pop.remove(); st.activePopup = null; st.activeSourceHighlights = savedHl; st.completedHighlights.delete("tieA"); box.remove();
+  JR.site.scrollContainer = real.sc; JR.site.visibleBand = real.band; JR.createPopup = real.create; JR.repositionAll = real.all;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

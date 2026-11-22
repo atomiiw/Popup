@@ -1572,7 +1572,7 @@
     if (settled) settled();
     var sc = JR.site.scrollContainer();
     if (!sc || span.closest(".jr-popup") || !JR.lockScroll) return;
-    var un = JR.lockScroll(sc, span, { chatOnly: true }), done = false, t0 = Date.now();
+    var un = JR.lockScroll(sc, span, { chatOnly: true, tie: true }), done = false, t0 = Date.now();
     var mine = settled = function () { if (!done) { done = true; un(); } if (settled === mine) settled = null; };
     // (its own: a later jump's hold isn't ended by it; over at once when the chat is gone, 2 s after the list last changed,
     // 6 s at most). Its highlight by id: ChatGPT lays the turn out anew as a placeholder for a moment — the highlight off

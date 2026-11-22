@@ -810,6 +810,10 @@
     // opts.chatOnly: the chat held, the popups left to their own placing (a jump's settle — popup-helpers.js: its new
     // popup still growing to its answer and placing itself; glued, it was put back 470 px up, off screen — live NT4 A2)
     var withPopups = !(opts && opts.chatOnly);
+    // opts.tie: its popups tied to their highlights by CSS (anchorPopups) though not glued — a jump's settle (live Beta
+    // 11-21, claude.ai: the list re-laid 820 px over 3 s after a jump, the popup re-placed every 0.3–0.6 s, 60–200 px
+    // each time). Only the ones it tied are untied at its end (a send's are the send's)
+    var tieOnly = !withPopups && !!(opts && opts.tie), tiedHere = [];
     // Anchor on the anchor's turn (by key): ChatGPT rebuilds turn DOM while the
     // virtual list re-measures, which detaches the original element.
     var hint = anchorEl, anchorKey = anchorEl ? JR.getTurnKey(anchorEl) : null;
@@ -938,6 +942,21 @@
           p.style.setProperty("--jr-anchor-fb", fb(dy + off)); // (no anchor: still there)
         }
         p._jrAnchorHl = hl;
+        tiedHere.push(p);
+      });
+    }
+    /** A tie-only hold's ties (a jump's settle): its highlight redrawn → tied to the new one; gone → untied (placed by
+     *  the settle's own re-placing from then on). */
+    function retie() {
+      tiedHere.forEach(function (p) {
+        var hl = p._jrAnchorHl;
+        if (!hl || hl.isConnected) return;
+        var id = hl.getAttribute("data-jr-highlight-id"), now = id && document.querySelector('[data-jr-highlight-id="' + id + '"]');
+        if (now && now.getBoundingClientRect().height) {
+          now.style.setProperty("--jr-anchor-name", p.style.getPropertyValue("--jr-anchor"));
+          now.classList.add("jr-anchor-src");
+          p._jrAnchorHl = now;
+        } else unanchor(p);
       });
     }
     /** Back to a plain top where it is now (the send's end, or its highlight gone). */
@@ -1020,10 +1039,10 @@
     // now, while everything is where the reader sees it: the anchor marked and the popups' places to it (live N1d: taken
     // at the anchor's first sight later — its turn a placeholder in the list ChatGPT had collapsed — a popup went 2658 px off)
     var startAnchor = liveAnchor();
-    if (withPopups) anchorPopups();
+    if (withPopups || tieOnly) anchorPopups();
     // the window resized during the send: placing is the placer's again (its highlight may wrap otherwise — an anchored
     // popup kept its old offset and covered the highlight's last line — ponytail review)
-    function onResize() { if (withPopups) openPopups().forEach(function (p) { unanchor(p); }); }
+    function onResize() { (withPopups ? openPopups() : tiedHere).forEach(function (p) { unanchor(p); }); }
     window.addEventListener("resize", onResize);
     if (startAnchor && withPopups) glue(startAnchor);
     var userScrolling = false;
@@ -1114,6 +1133,7 @@
       var js = JR.jumpState && JR.jumpState(), jumping = !!js && (js.on || js.seq !== seenJump || (withPopups && js.settling));
       if (js) seenJump = js.seq;
       if (anchor && withPopups && !jumping) glue(anchor);
+      else if (tieOnly) retie();
       var site = html.getAttribute("data-jr-site-scroll");
       if (site !== siteScroll) { siteScroll = site; savedTop = container.scrollTop; }
       if (userScrolling || jumping) { // (the user scrolling, or a jump of theirs: popup-helpers.js)
@@ -1185,6 +1205,7 @@
       window.removeEventListener("resize", onResize);
       // (a settle's end unties none: they are the send's — review)
       if (withPopups) openPopups().concat(Array.prototype.slice.call(document.querySelectorAll(".jr-popup.jr-anchored"))).forEach(function (p) { unanchor(p); });
+      else tiedHere.forEach(function (p) { if (p._jrAnchorHl) unanchor(p); });
       if (rafId) cancelAnimationFrame(rafId);
       mark(null);
       if (ro) ro.disconnect();
