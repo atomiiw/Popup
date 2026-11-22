@@ -10,6 +10,8 @@
 
 **2026-11-20 15:45: NOT released — the ChatGPT popup jump after a send is open (docs/TODO-2026H2.md "OPEN — ChatGPT: the popup jumps"); user: fix another day, don't release yet. main = f789649's code + glue diagnostics (#jr-poslog only).**
 
+**2026-11-21 21:30: 1.3.0 (the three-site release: ChatGPT, Claude, DeepSeek) = commit eda4c3a, `dist/popup-1.3.0.zip` (sha256 98f8aa76…), uploaded to the Chrome Web Store by the user — pending review. Store had 1.2.15 public before.**
+
 **2026-11-21 20:50: 1.2.15 re-zipped = commit 331c6b1, `dist/popup-1.2.15.zip` (32 files, sha256 9a348340436d0433…) — the store upload is the user's. Since 11-20: popup flashes at the send fixed (ties), the user's side/height rules (room to the conversation's start/end), ChatGPT 'can make mistakes' line covered, ∧ from the end, claude.ai/Claude Code blank top during a send, DeepSeek outline pick, chat-switch hiding, zh UI, Beta NT25 (docs/REGRESSION-LOG.md first row; docs/TODO-2026H2.md 'AFTERNOON/EVENING/NIGHT 11-21', 'AUDIT 11-21 night'). Accepted by the user: G2 (ChatGPT re-lays its list in a 20 000 px chat). Test sessions: Claude Code session_018GupgVC1Lkb77UFbrptNXp (new). Old Chrome: the store copy of Popup is disabled (it ran next to the unpacked one).**
 
 **2026-11-20 14:28: 1.2.15 re-zipped = commit f789649, `dist/popup-1.2.15.zip` (sha256 40b063ba…) — the store upload is the user's (docs/TODO-2026H2.md "1.2.15 images, cards, ChatGPT thinking models", "real-user paths", "audit"). Display 2 was disconnected: Codex tested on the user's screen.**
