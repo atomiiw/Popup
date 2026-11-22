@@ -63,12 +63,18 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   // (DeepSeek then selects the main-chat question the jump went to and scrolls the outline up to it)
   rows[0].classList.remove("sel"); rows[1].classList.add("sel"); list.scrollTop = 0;
   S.tidy(); frames.splice(0).forEach(function (f) { f(); });
-  var kept = list.scrollTop, picked = rows[2].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
+  var at1 = list.scrollTop;
+  // (later too — the chat settles, the reader reads on — while the popup is open; user 11-21 "still jumping")
+  var late = Date.now() + 3000, realNow = Date.now; Date.now = function () { return late; };
+  list.scrollTop = 0; frames.splice(0).forEach(function (f) { f(); });
+  Date.now = realNow;
+  var at3 = list.scrollTop;
+  var kept = at3, picked = rows[2].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
   document.getElementById("ol-pop").remove(); S.tidy(); // (its popup closed: DeepSeek's selection again)
   var back = !rows[2].classList.contains("jr-outline-picked") && !rows[1].classList.contains("jr-outline-theirs");
   window.requestAnimationFrame = raf; JR.openPopupForMessage = open; JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
   check("outline: a popup entry clicked — its popup opens, the outline stays, that entry selected (DeepSeek's shown off); popup closed: theirs again",
-    opened === 1 && kept === 40 && picked && theirs && back, [opened, kept, picked, theirs, back].join(" "));
+    opened === 1 && at1 === 40 && at3 === 40 && kept === 40 && picked && theirs && back, [opened, at1, at3, kept, picked, theirs, back].join(" "));
   box.remove();
 })();
 (function () { // 2026-11-18: the question item is hidden even when its answer item is not mounted (end of DeepSeek's window)

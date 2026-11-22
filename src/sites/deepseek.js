@@ -411,9 +411,10 @@
 
   // A popup question clicked in the outline is the one selected there, and the outline stays where it was (user 11-21:
   // its popup is in a main-chat answer — DeepSeek then selected that answer's question and scrolled the outline up to
-  // it: the place in the outline lost, a non-popup entry blue). For ~2 s DeepSeek's scroll of the outline is undone
-  // (not the user's); its own selection is shown unselected while the popup is open. Its selected entry's class is
-  // build-hashed: the one class on just one row.
+  // it: the place in the outline lost, a non-popup entry blue). While its popup is open DeepSeek's scrolls of the outline
+  // are undone (it follows the chat's place — later too, as the chat settles or is read on: user 11-21 "still jumping")
+  // until the user scrolls the outline (wheel, its scrollbar); its own selection is shown unselected meanwhile. Its
+  // selected entry's class is build-hashed: the one class on just one row.
   var pick = null;
   function pickOutline(row) {
     var list = row.closest(C.scroller), rows = Array.prototype.slice.call(row.parentElement.children), count = {};
@@ -424,14 +425,19 @@
     var other = rows.filter(function (r) { return !r.classList.contains("jr-outline-popup") && (!sel || !r.classList.contains(sel)); })[0];
     var on = rows.filter(function (r) { return sel && r.classList.contains(sel); })[0];
     var normal = other ? getComputedStyle(other.firstElementChild || other).color : "", blue = on ? getComputedStyle(on.firstElementChild || on).color : "";
-    pick = { label: (row.firstElementChild || row).getAttribute("data-jr-q"), sel: sel, list: list, top: list ? list.scrollTop : 0, until: Date.now() + 2000, user: false };
+    pick = { label: (row.firstElementChild || row).getAttribute("data-jr-q"), sel: sel, list: list, top: list ? list.scrollTop : 0, user: false };
     var html = document.documentElement; // (DeepSeek's own colours, light or dark: styles.css .jr-outline-picked / -theirs)
     if (normal) html.style.setProperty("--jr-ol-normal", normal);
     if (blue) html.style.setProperty("--jr-ol-picked", blue);
-    if (list && !list._jrPickWheel) { list._jrPickWheel = true; list.addEventListener("wheel", function () { if (pick) pick.user = true; }, { passive: true }); }
+    if (list && !list._jrPickWheel) {
+      list._jrPickWheel = true;
+      var mine = function () { if (pick) pick.user = true; };
+      list.addEventListener("wheel", mine, { passive: true });
+      list.addEventListener("pointerdown", function (e) { if (e.target === list) mine(); }, { passive: true }); // (its scrollbar)
+    }
     markOutline(row.parentElement);
     (function hold() {
-      if (!pick || pick.user || Date.now() > pick.until || !pick.list) return;
+      if (!pick || pick.user || !pick.list) return;
       if (pick.list.scrollTop !== pick.top) pick.list.scrollTop = pick.top;
       requestAnimationFrame(hold);
     })();
