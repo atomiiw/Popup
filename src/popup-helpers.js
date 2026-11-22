@@ -814,10 +814,9 @@
       if (e.target.closest && e.target.closest(".jr-toolbar-delete")) return null;
       var rect = popup.getBoundingClientRect();
       var y = e.clientY <= rect.top + EDGE_ZONE ? "top" : e.clientY >= rect.bottom - EDGE_ZONE ? "bottom" : null;
-      if (y) { // only a popup whose height can move: at its limit, or taller than the drag's 40vh floor (it can shrink;
-        // user 11-21: a 496 px answer that just fitted had side arrows only at its corners). Width only otherwise
+      if (y) { // only a popup at its height limit: width only otherwise (read only near those edges)
         var resp = popup.querySelector(":scope > .jr-popup-response");
-        if (!resp || (resp.scrollHeight <= resp.clientHeight && rect.height <= window.innerHeight * 0.4 + 1)) y = null;
+        if (!resp || resp.scrollHeight <= resp.clientHeight) y = null;
       }
       var zone = y ? CORNER_ZONE : EDGE_ZONE;
       var x = e.clientX <= rect.left + zone ? "left" : e.clientX >= rect.right - zone ? "right" : null;
