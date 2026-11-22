@@ -511,6 +511,12 @@
     // another chat opened: nothing of it is held (the hold outlives a closed popup till its send ends — NT2 G2)
     var conv = JR_HOST.convKey(location.href), done = false;
     var away = setInterval(function () { if (JR_HOST.convKey(location.href) !== conv) release(); }, 500);
+    // claude.ai / Claude Code follow their newest message during a send (pinned to the bottom): their scrolls there are
+    // blocked, but their list then drew the rows for the bottom — mid-chat the rows above the reader's were taken off,
+    // the upper half of the screen blank until the guard was off (user 11-21, Claude Code; live: scrollTop = end
+    // blocked every 50–150 ms). Let go of the bottom as the user's wheel would, all through the send
+    var unpinning = JR.site.name === "claude" && JR.site.unpin ? setInterval(JR.site.unpin, 400) : null;
+    if (unpinning) JR.site.unpin();
     st.releaseHold = release; // (content.js onNavigate: at once, not up to 500 ms later — review)
     function release() {
       if (done) return;
@@ -518,6 +524,7 @@
       if (st.releaseHold === release) st.releaseHold = null;
       clearInterval(away);
       clearInterval(renew);
+      if (unpinning) clearInterval(unpinning);
       // claude.ai keeps following its newest message after a send (pinned to the bottom): let go first, or its next
       // change scrolls the reader there once the guard is off (live 2026-11-19, Claude Code: to the end of the chat)
       if (JR.site.unpin) JR.site.unpin();
@@ -1036,6 +1043,7 @@
 
     function markUser(e) {
       if (e._jrPressed) return; // (a site control pressed for a popup: site-control.js — press.js "synthetic")
+      if (e.type === "wheel" && e.detail === 4242) return; // (scroll-guard.js letting claude.ai go of the bottom)
       // Typing or clicking in Popup's UI (Return, the send arrow in a popup) isn't scrolling the chat (R33)
       if ((e.type === "keydown" || e.type === "pointerdown") && !/^(outside|repeat|scrollbar)$/.test(JR.press.of(e).owner)) return;
       userScrolling = true;

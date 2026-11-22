@@ -1483,6 +1483,28 @@ asyncChecks.push(new Promise(function (done) {
   p.remove();
 })();
 
+// user 11-21: scroll-guard.js tells claude.ai "not at the bottom" with a wheel (detail 4242) each time it blocks its
+// scroll — Popup's own, not the user scrolling: the hold keeps correcting through it
+(function () {
+  var sc = document.createElement("div"); sc.style.cssText = "height:300px;overflow:auto";
+  sc.innerHTML = "<div style='height:4000px;position:relative'><div class='sp' style='height:1000px'></div><div class='a' style='height:50px'>x</div></div>";
+  document.body.appendChild(sc); sc.scrollTop = 950;
+  var a = sc.querySelector(".a"), frames = [], raf = window.requestAnimationFrame, savedA = JR.state.activePopup, savedS = JR.state.popupStack;
+  JR.state.activePopup = null; JR.state.popupStack = [];
+  function run(n) { window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; }; while (n--) frames.splice(0).forEach(function (f) { f(); }); window.requestAnimationFrame = raf; }
+  window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
+  var unlock = JR.lockScroll(sc, a);
+  window.requestAnimationFrame = raf;
+  run(2);
+  var y0 = a.getBoundingClientRect().top;
+  sc.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true, detail: 4242 })); // (the guard's)
+  sc.querySelector(".sp").style.height = "1300px"; // (the list moves meanwhile)
+  run(2);
+  check("the guard's own wheel (detail 4242) isn't the user scrolling: the hold keeps the reader's place",
+    Math.abs(a.getBoundingClientRect().top - y0) <= 1, Math.round(y0) + " -> " + Math.round(a.getBoundingClientRect().top));
+  unlock(); sc.remove(); JR.state.activePopup = savedA; JR.state.popupStack = savedS;
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {
@@ -3622,6 +3644,20 @@ asyncChecks.push(new Promise(function (done) {
   st.responseWatchActive = was; JR.unfreezeChat(); JR.setTailHidden(false);
   check("scroll guard: renewed while the answer watch runs, not after; the unlock stops renewing and lifts it",
     renewed && idleKept && cleared && !html.hasAttribute("data-jr-scroll-lock"), [renewed, idleKept, cleared, html.getAttribute("data-jr-scroll-lock")].join());
+})();
+
+// user 11-21 (Claude Code: mid-chat the upper half blank while the answer streamed): on claude.ai a send lets go of the
+// bottom at once and all through it (the site's follow-the-newest mode drew the rows for the bottom), not after
+(function () {
+  var realName = JR.site.name, realUnpin = JR.site.unpin, realSet = window.setInterval, realClear = window.clearInterval, unpins = 0, every = null, cleared = false;
+  JR.site.name = "claude"; JR.site.unpin = function () { unpins++; };
+  window.setInterval = function (fn, ms) { if (fn === JR.site.unpin) { every = ms; return 4343; } return realSet(fn, ms); };
+  window.clearInterval = function (id) { if (id === 4343) cleared = true; else realClear(id); };
+  var w = {};
+  try { JR.prepareSend(w); var atOnce = unpins; w.unlockScroll(); }
+  finally { window.setInterval = realSet; window.clearInterval = realClear; JR.site.name = realName; JR.site.unpin = realUnpin; JR.unfreezeChat(); JR.setTailHidden(false); }
+  check("claude.ai send: lets go of the bottom at once and every 400 ms through the send; stops at its end",
+    atOnce >= 1 && every === 400 && cleared, [atOnce, every, cleared].join(" "));
 })();
 
 // (an async check that throws must show, not leave the page without a result)

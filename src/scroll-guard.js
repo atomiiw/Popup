@@ -121,12 +121,25 @@
 
   var P = Element.prototype;
 
+  // claude.ai / Claude Code: a blocked scroll of theirs is their follow-the-newest mode (pinned to the bottom) — told at
+  // once that the reader isn't there, as the user's wheel up tells them, or their list draws the rows for the bottom:
+  // mid-chat the rows above the reader's were taken off, the upper half of the screen blank (user 11-21; chat.js lets go
+  // every 400 ms too — between, ~0.3 s blank at the send). detail 4242: Popup's own (chat.js markUser: not the user)
+  var claude = /(^|\.)claude\.ai$/.test(h), lastLetGo = 0;
+  function refuse(el, what, arg) {
+    note(what, arg);
+    if (claude && Date.now() - lastLetGo > 50) {
+      lastLetGo = Date.now();
+      el.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true, detail: 4242 }));
+    }
+  }
+
   ["scrollTo", "scroll", "scrollBy"].forEach(function (name) {
     var orig = P[name];
     if (typeof orig !== "function") return;
     P[name] = function () {
       var top = targetTop(this, name, arguments);
-      if (top !== undefined && blocks(this, top)) return note(name, arguments[0]);
+      if (top !== undefined && blocks(this, top)) return refuse(this, name, arguments[0]);
       if (top !== undefined) letThrough(this, name, Math.round(top));
       return orig.apply(this, arguments);
     };
@@ -158,7 +171,7 @@
       enumerable: desc.enumerable,
       get: desc.get,
       set: function (v) {
-        if (blocks(this, v)) return note("scrollTop=", Math.round(v));
+        if (blocks(this, v)) return refuse(this, "scrollTop=", Math.round(v));
         letThrough(this, "scrollTop=", Math.round(v));
         desc.set.call(this, v);
       },
