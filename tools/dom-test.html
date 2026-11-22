@@ -1514,6 +1514,21 @@ asyncChecks.push(new Promise(function (done) {
   f.remove();
 })();
 
+// user 11-21 (Claude Code): a popup whose answer just fits, taller than the 40vh drag floor, had side arrows only at
+// its corners — it can shrink, so its corners resize both ways
+(function () {
+  var p = document.createElement("div"); p.className = "jr-popup";
+  var h = Math.round(window.innerHeight * 0.6);
+  p.style.cssText = "position:fixed;left:40px;top:10px;width:300px;height:" + h + "px;animation:none;max-height:none";
+  p.innerHTML = '<div class="jr-popup-response" style="height:' + (h - 40) + 'px;overflow:auto;box-sizing:border-box"><p>short</p></div>';
+  document.body.appendChild(p);
+  JR.addResizeHandlers(p);
+  var r = p.getBoundingClientRect();
+  p.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r.right - 3, clientY: r.bottom - 3 }));
+  check("a popup that fits but is taller than the 40vh floor resizes diagonally at its corner", p.style.cursor === "nwse-resize", p.style.cursor);
+  p.remove();
+})();
+
 // live Beta 11-21 (claude.ai, ∧): after the jump its list re-laid 820 px over 3 s; the popup was re-placed every
 // 0.3–0.6 s, 60–200 px each time. During the settle it is tied to its highlight by CSS — moved in the same layout
 (function () {
