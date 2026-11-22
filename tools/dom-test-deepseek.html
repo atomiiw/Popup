@@ -49,7 +49,8 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   box.innerHTML = '<div class="ds-virtual-list" style="height:60px;overflow:auto"><div class="ds-virtual-list-visible-items" style="height:300px">' +
     '<div class="r sel" style="height:30px;color:rgb(57,100,254)"><div>用一个公式解释光合作用</div></div>' +
     '<div class="r" style="height:30px;color:rgb(10,10,10)"><div>另一个问题</div></div>' +
-    '<div class="r" style="height:30px"><div>Regarding this part of your response:\n"t s"\n\nwhy so?\n\n(For this response only: x)</div></div></div></div>';
+    '<div class="r" style="height:30px"><div>Regarding this part of your response:\n"t s"\n\nwhy so?\n\n(For this response only: x)</div></div>' +
+    '<div class="r" style="height:30px"><div>Regarding this part of your response:\n"u v"\n\nwhy so?\n\n(For this response only: x)</div></div></div></div>';
   document.body.appendChild(box);
   var isPopup = JR.isPopupMessage, parse = JR.parsePopupMessage, open = JR.openPopupForMessage, raf = window.requestAnimationFrame, frames = [], opened = 0;
   JR.isPopupMessage = isPopup || function (m) { return /^Regarding (this part|your entire)/.test(m); };
@@ -69,11 +70,11 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   list.scrollTop = 0; frames.splice(0).forEach(function (f) { f(); });
   Date.now = realNow;
   var at3 = list.scrollTop;
-  var kept = at3, picked = rows[2].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
+  var kept = at3, picked = rows[2].classList.contains("jr-outline-picked") && !rows[3].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
   document.getElementById("ol-pop").remove(); S.tidy(); // (its popup closed: DeepSeek's selection again)
   var back = !rows[2].classList.contains("jr-outline-picked") && !rows[1].classList.contains("jr-outline-theirs");
   window.requestAnimationFrame = raf; JR.openPopupForMessage = open; JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
-  check("outline: a popup entry clicked — its popup opens, the outline stays, that entry selected (DeepSeek's shown off); popup closed: theirs again",
+  check("outline: a popup entry clicked — its popup opens, the outline stays, that entry selected (only it, not a same-text one; DeepSeek's shown off); popup closed: theirs again",
     opened === 1 && at1 === 40 && at3 === 40 && kept === 40 && picked && theirs && back, [opened, at1, at3, kept, picked, theirs, back].join(" "));
   box.remove();
 })();

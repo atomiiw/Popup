@@ -403,7 +403,7 @@
       if (row.classList.contains("jr-outline-popup") !== !!label) row.classList.toggle("jr-outline-popup", !!label);
       if (row.classList.contains("jr-outline-gone") !== gone) row.classList.toggle("jr-outline-gone", gone);
       if (label && text.getAttribute("data-jr-q") !== label) text.setAttribute("data-jr-q", label);
-      var picked = !!pick && !!label && label === pick.label, theirs = !!pick && !!pick.sel && row.classList.contains(pick.sel);
+      var picked = !!pick && !!label && label === pick.label && Math.abs(rowAt(row) - pick.at) < 3, theirs = !!pick && !!pick.sel && row.classList.contains(pick.sel);
       if (row.classList.contains("jr-outline-picked") !== picked) row.classList.toggle("jr-outline-picked", picked);
       if (row.classList.contains("jr-outline-theirs") !== theirs) row.classList.toggle("jr-outline-theirs", theirs);
     });
@@ -416,6 +416,11 @@
   // until the user scrolls the outline (wheel, its scrollbar); its own selection is shown unselected meanwhile. Its
   // selected entry's class is build-hashed: the one class on just one row.
   var pick = null;
+  /** A row's place in its outline list's content (rows aren't keyed: same-text popup questions told apart by it). */
+  function rowAt(row) {
+    var list = row.closest(C.scroller);
+    return list ? row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop : 0;
+  }
   function pickOutline(row) {
     var list = row.closest(C.scroller), rows = Array.prototype.slice.call(row.parentElement.children), count = {};
     rows.forEach(function (r) { r.classList.forEach(function (c) { count[c] = (count[c] || 0) + 1; }); });
@@ -425,7 +430,7 @@
     var other = rows.filter(function (r) { return !r.classList.contains("jr-outline-popup") && (!sel || !r.classList.contains(sel)); })[0];
     var on = rows.filter(function (r) { return sel && r.classList.contains(sel); })[0];
     var normal = other ? getComputedStyle(other.firstElementChild || other).color : "", blue = on ? getComputedStyle(on.firstElementChild || on).color : "";
-    pick = { label: (row.firstElementChild || row).getAttribute("data-jr-q"), sel: sel, list: list, top: list ? list.scrollTop : 0, user: false };
+    pick = { label: (row.firstElementChild || row).getAttribute("data-jr-q"), at: rowAt(row), sel: sel, list: list, top: list ? list.scrollTop : 0, user: false };
     var html = document.documentElement; // (DeepSeek's own colours, light or dark: styles.css .jr-outline-picked / -theirs)
     if (normal) html.style.setProperty("--jr-ol-normal", normal);
     if (blue) html.style.setProperty("--jr-ol-picked", blue);
