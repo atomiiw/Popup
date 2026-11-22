@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Popup - Ask inline follow-ups in ChatGPT, DeepSeek and Claude",
-  "version": "1.2.15",
-  "description": "Ask where questions come up — in ChatGPT, DeepSeek and Claude. Highlight. Ask. Keep reading. Stay in your flow.",
+  "name": "Popup - Ask inline follow-ups in ChatGPT, Claude and DeepSeek",
+  "version": "1.3.0",
+  "description": "Ask where questions come up — in ChatGPT, Claude and DeepSeek. Highlight. Ask. Keep reading. Stay in your flow.",
   "permissions": [
     "storage"
   ],
