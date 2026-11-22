@@ -1505,6 +1505,15 @@ asyncChecks.push(new Promise(function (done) {
   unlock(); sc.remove(); JR.state.activePopup = savedA; JR.state.popupStack = savedS;
 })();
 
+// live NT24 (ChatGPT in Chinese): its stop button is labelled "停止" and has nothing else to find it by
+(function () {
+  var f = document.createElement("form"); f.innerHTML = '<button type="button" aria-label="停止" style="width:20px;height:20px">■</button>';
+  document.body.appendChild(f);
+  var found = JR.site.stopButton(), btn = f.querySelector("button");
+  check("ChatGPT's stop button found in Chinese too (aria-label 停止)", found === btn && JR.site.isStopButton(btn), found && found.outerHTML);
+  f.remove();
+})();
+
 // live Beta 11-20: the list collapsed on a send and came back taller (earlier turns loaded above); the reader's turn
 // not mounted where the site scrolled — the hold goes to where it was plus what came above, not the site's place
 (function () {

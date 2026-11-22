@@ -61,6 +61,8 @@
       'button[aria-label="Stop streaming"]',
       'button[aria-label="Stop generating"]',
       'button[aria-label="Stop"]',
+      // (ChatGPT in Chinese / Japanese, live NT24 11-21: "停止" — no test id, no data attribute on it in any language)
+      'form button[aria-label^="停止"]',
     ],
     scrollContainer: [
       "[data-app-action-timeline-scroll]",
