@@ -10,6 +10,8 @@
 
 **2026-11-20 15:45: NOT released — the ChatGPT popup jump after a send is open (docs/TODO-2026H2.md "OPEN — ChatGPT: the popup jumps"); user: fix another day, don't release yet. main = f789649's code + glue diagnostics (#jr-poslog only).**
 
+**2026-11-21 20:50: 1.2.15 re-zipped = commit 331c6b1, `dist/popup-1.2.15.zip` (32 files, sha256 9a348340436d0433…) — the store upload is the user's. Since 11-20: popup flashes at the send fixed (ties), the user's side/height rules (room to the conversation's start/end), ChatGPT 'can make mistakes' line covered, ∧ from the end, claude.ai/Claude Code blank top during a send, DeepSeek outline pick, chat-switch hiding, zh UI, Beta NT25 (docs/REGRESSION-LOG.md first row; docs/TODO-2026H2.md 'AFTERNOON/EVENING/NIGHT 11-21', 'AUDIT 11-21 night'). Accepted by the user: G2 (ChatGPT re-lays its list in a 20 000 px chat). Test sessions: Claude Code session_018GupgVC1Lkb77UFbrptNXp (new). Old Chrome: the store copy of Popup is disabled (it ran next to the unpacked one).**
+
 **2026-11-20 14:28: 1.2.15 re-zipped = commit f789649, `dist/popup-1.2.15.zip` (sha256 40b063ba…) — the store upload is the user's (docs/TODO-2026H2.md "1.2.15 images, cards, ChatGPT thinking models", "real-user paths", "audit"). Display 2 was disconnected: Codex tested on the user's screen.**
 
 **2026-11-20 06:35 (replaced): 1.2.15 = commit "1.2.15" (dev.33), zipped (sha256 4ca15084…).** Overnight: dev.1–33 (docs/TODO-2026H2.md "Current status": what was fixed, round 5 results, known costs, what was left on purpose). Live round 5 PASS on both Chromes, all three sites and Claude Code (docs/REGRESSION-LOG.md first row). From now on the user browses in Chrome Beta; Codex uses the old Chrome only (memory: two-chromes).
