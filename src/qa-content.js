@@ -148,7 +148,11 @@
   /** Every stored chat of this site's hidden keys, read once as the page loads: a chat not seen yet in this page is
    *  hidden at once too when the site switches to it (one read of the store, no content in it). */
   JR.preloadKnownHidden = function (readAll) { // (readAll: tests)
-    var p = readAll ? readAll() : typeof chrome !== "undefined" && chrome.storage && chrome.storage.local ? chrome.storage.local.get(null) : null;
+    var local = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+    // (only this site's chats: the store may hold a v1 backup of every answer's HTML — megabytes; review)
+    var p = readAll ? readAll() : !local ? null : local.getKeys ? local.getKeys().then(function (keys) {
+      return local.get(keys.filter(function (k) { return k.indexOf(JR_HOST.prefix) === 0; }));
+    }) : local.get(null);
     if (!p) return;
     p.then(function (all) {
       Object.keys(all || {}).forEach(function (k) {

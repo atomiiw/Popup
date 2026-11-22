@@ -56,7 +56,10 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   JR.isPopupMessage = isPopup || function (m) { return /^Regarding (this part|your entire)/.test(m); };
   JR.parsePopupMessage = parse || function (m) { return { question: m.split("\n\n")[1] }; };
   var list = box.querySelector(".ds-virtual-list"), rows = box.querySelectorAll(".r");
-  JR.openPopupForMessage = function () { opened++; var p = document.createElement("div"); p.className = "jr-popup"; p.id = "ol-pop"; document.body.appendChild(p); };
+  var hadState = JR.state; JR.state = JR.state || { activePopup: null, popupStack: [] };
+  // (the chat is a .ds-virtual-list too and the popup is in it: a click in the popup isn't another outline entry — review)
+  var chat = document.createElement("div"); chat.className = "ds-virtual-list"; document.body.appendChild(chat);
+  JR.openPopupForMessage = function () { opened++; var p = document.createElement("div"); p.className = "jr-popup"; p.id = "ol-pop"; chat.appendChild(p); JR.state.activePopup = p; };
   window.requestAnimationFrame = function (f) { frames.push(f); return frames.length; };
   S.tidy();
   list.scrollTop = 40;
@@ -65,17 +68,26 @@ check("filePreviewUrl: DeepSeek's files host + /api + signed path + ty=p", S.fil
   rows[0].classList.remove("sel"); rows[1].classList.add("sel"); list.scrollTop = 0;
   S.tidy(); frames.splice(0).forEach(function (f) { f(); });
   var at1 = list.scrollTop;
+  document.getElementById("ol-pop").dispatchEvent(new MouseEvent("click", { bubbles: true })); // (a click in its popup)
+  S.tidy();
   // (later too — the chat settles, the reader reads on — while the popup is open; user 11-21 "still jumping")
   var late = Date.now() + 3000, realNow = Date.now; Date.now = function () { return late; };
   list.scrollTop = 0; frames.splice(0).forEach(function (f) { f(); });
   Date.now = realNow;
   var at3 = list.scrollTop;
   var kept = at3, picked = rows[2].classList.contains("jr-outline-picked") && !rows[3].classList.contains("jr-outline-picked"), theirs = rows[1].classList.contains("jr-outline-theirs");
-  document.getElementById("ol-pop").remove(); S.tidy(); // (its popup closed: DeepSeek's selection again)
+  document.getElementById("ol-pop").remove(); JR.state.activePopup = null; S.tidy(); // (its popup closed: DeepSeek's selection again)
   var back = !rows[2].classList.contains("jr-outline-picked") && !rows[1].classList.contains("jr-outline-theirs");
+  // (again, then another popup opened from the chat: DeepSeek's selection again — review: it stayed picked)
+  rows[2].firstElementChild.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); S.tidy();
+  var again = rows[2].classList.contains("jr-outline-picked");
+  var other = document.createElement("div"); other.className = "jr-popup"; chat.appendChild(other); JR.state.activePopup = other; S.tidy();
+  var otherBack = !rows[2].classList.contains("jr-outline-picked");
+  frames.splice(0).forEach(function (f) { f(); });
   window.requestAnimationFrame = raf; JR.openPopupForMessage = open; JR.isPopupMessage = isPopup; JR.parsePopupMessage = parse;
-  check("outline: a popup entry clicked — its popup opens, the outline stays, that entry selected (only it, not a same-text one; DeepSeek's shown off); popup closed: theirs again",
-    opened === 1 && at1 === 40 && at3 === 40 && kept === 40 && picked && theirs && back, [opened, at1, at3, kept, picked, theirs, back].join(" "));
+  check("outline: a popup entry clicked — its popup opens, the outline stays (also after a click in the popup), that entry selected (only it); its popup closed or another opened: DeepSeek's again",
+    opened === 2 && at1 === 40 && at3 === 40 && kept === 40 && picked && theirs && back && again && otherBack, [opened, at1, at3, kept, picked, theirs, back, again, otherBack].join(" "));
+  document.querySelectorAll("#ol-pop").forEach(function (p) { p.remove(); }); chat.remove(); JR.state = hadState;
   box.remove();
 })();
 (function () { // 2026-11-18: the question item is hidden even when its answer item is not mounted (end of DeepSeek's window)
