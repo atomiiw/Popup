@@ -10,6 +10,8 @@
 
 **2026-11-20 15:45: NOT released — the ChatGPT popup jump after a send is open (docs/TODO-2026H2.md "OPEN — ChatGPT: the popup jumps"); user: fix another day, don't release yet. main = f789649's code + glue diagnostics (#jr-poslog only).**
 
+**2026-11-22 21:50: 1.3.1 (Claude Code images in popups, fdb2996) = commit 28c3d15, `dist/popup-1.3.1.zip` (sha256 dcfc0ed9…), submitted to the store by Codex (NT29) — pending review, auto-publish on approval; 1.3.0 is public. NT29: Beta + main Chrome × claude.ai + Claude Code PASS (screenshots collab/evidence/NT29/). Next version: content.js:166 mouseup `e.target.closest` on a non-element target (2 errors on the extensions page); the store description still only talks about ChatGPT.**
+
 **2026-11-21 21:30: 1.3.0 (the three-site release: ChatGPT, Claude, DeepSeek) = commit eda4c3a, `dist/popup-1.3.0.zip` (sha256 98f8aa76…), uploaded to the Chrome Web Store by the user — pending review. Store had 1.2.15 public before.**
 
 **2026-11-21 20:50: 1.2.15 re-zipped = commit 331c6b1, `dist/popup-1.2.15.zip` (32 files, sha256 9a348340436d0433…) — the store upload is the user's. Since 11-20: popup flashes at the send fixed (ties), the user's side/height rules (room to the conversation's start/end), ChatGPT 'can make mistakes' line covered, ∧ from the end, claude.ai/Claude Code blank top during a send, DeepSeek outline pick, chat-switch hiding, zh UI, Beta NT25 (docs/REGRESSION-LOG.md first row; docs/TODO-2026H2.md 'AFTERNOON/EVENING/NIGHT 11-21', 'AUDIT 11-21 night'). Accepted by the user: G2 (ChatGPT re-lays its list in a 20 000 px chat). Test sessions: Claude Code session_018GupgVC1Lkb77UFbrptNXp (new). Old Chrome: the store copy of Popup is disabled (it ran next to the unpacked one).**
