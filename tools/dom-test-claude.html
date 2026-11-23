@@ -87,7 +87,15 @@ check("popupHost: the transcript column", S.popupHost(row(5)) === document.query
   check("Claude Code, a tool used: the reply row is the answer, its text from either row, its question, all three rows hidden",
     S.findTurnByKey(tk) === reply && S.assistantText(step) === "当前目录是空的。" && S.assistantText(reply) === "当前目录是空的。" &&
     S.userText(reply) === "Regarding this part of your response: code" && got2 === "10,11,12", [S.findTurnByKey(tk) && S.findTurnByKey(tk).getAttribute("data-index"), S.assistantText(step), S.userText(reply), got2].join(" | "));
-  hu2.remove(); step.remove(); reply.remove();
+  // a row with only an image it made, no status line (live 11-22, Claude Code "ff.png": the popup had the text, not the image)
+  var pic = document.createElement("div"); pic.setAttribute("data-testid", "transcript-row"); pic.setAttribute("data-index", "13");
+  pic.innerHTML = '<div data-cds="AssistantMessage" data-turn-key="' + tk + '"><div class="col"><div class="box"><div class="tiles">' +
+    '<div class="tile"><button><img alt="ff.png" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></button></div></div></div></div></div>';
+  sizer.appendChild(pic);
+  var html = S.assistantHTML(reply);
+  check("Claude Code: an image it made in a row of its own (no status line) is in the answer, with the reply text",
+    html.indexOf('alt="ff.png"') !== -1 && html.indexOf("当前目录是空的。") !== -1, html.slice(0, 160));
+  hu2.remove(); step.remove(); reply.remove(); pic.remove();
   var dock = document.getElementById("dock"), saved = dock.innerHTML;
   dock.innerHTML = '<div data-cds="ChatComposer"><div><div data-cds="ChatComposerEditor"><div contenteditable="true" role="textbox" data-cds="Editor" data-testid="code-prompt-input" class="tiptap ProseMirror"><p>abc</p></div></div></div><button type="button" aria-label="Add">+</button></div>';
   var box = S.composer(), card = dock.querySelector("[data-cds=ChatComposer]");

@@ -60,14 +60,20 @@
   /** A row's reply text with the blocks beside it that hold a card or media (Claude Code: a file it made, "HTML
    *  login.html 6.5 kB"; claude.ai: an artifact, "Red Button · Artifact" — its preview opens from it), not the status
    *  line ("Created login.html"); in page order. */
+  function hasMedia(c, strict) { // (strict: real media, not a bare button — an answer's action bar has those)
+    return Array.prototype.some.call(c.querySelectorAll(strict ? "img, video, audio, iframe, canvas, picture" : "button, img, video, audio, iframe, canvas, picture"),
+      function (m) { return !m.closest(C.answerBody); });
+  }
   function mediaBeside(row, prose) {
-    var status = row.querySelector(C.answer + " [data-cds=TurnStatus]"), box = status && status.parentElement;
-    if (!box) return prose;
+    var status = row.querySelector(C.answer + " [data-cds=TurnStatus]"), boxes = status ? [status.parentElement] : [];
+    // no status line in the row (live 11-22, Claude Code: a row with only the image it made, "ff.png"): the blocks of
+    // the answer's column that hold media and no reply text
+    var col = !status && row.querySelector(C.answer);
+    if (col && (col = col.firstElementChild)) boxes = Array.prototype.filter.call(col.children, function (c) { return !c.querySelector(C.answerBody) && hasMedia(c, true); });
     // (a card's block holds its title as reply text too: the whole block, and that text not twice — live T-e4)
-    var media = Array.prototype.filter.call(box.children, function (c) {
-      return c !== status && Array.prototype.some.call(c.querySelectorAll("button, img, video, audio, iframe, canvas, picture"),
-        function (m) { return !m.closest(C.answerBody); });
-    });
+    var media = boxes.reduce(function (all, box) {
+      return all.concat(Array.prototype.filter.call(box.children, function (c) { return c !== status && hasMedia(c); }));
+    }, []);
     if (!media.length) return prose;
     return prose.filter(function (p) { return !media.some(function (m) { return m.contains(p); }); }).concat(media)
       .sort(function (x, y) { return x.compareDocumentPosition(y) & 4 ? -1 : 1; });
